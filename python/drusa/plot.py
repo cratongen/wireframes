@@ -143,6 +143,7 @@ def plan(
                 ax.scatter(item.x, item.y, c=c, s=8, cmap=cmap)
     ax.set_aspect("equal")
     ax.ticklabel_format(useOffset=False, style="plain")
+    ax.locator_params(nbins=5)
     ax.set_xlabel(_unit_label(items, "x"))
     ax.set_ylabel(_unit_label(items, "y"))
     return fig, ax
@@ -290,9 +291,11 @@ def surface3d(
             faces = colormaps[cmap](norm(fv))
             shade = 0.6 + 0.4 * np.abs(item.face_normals[:, 2])
             faces[:, :3] *= shade[:, None]
-            if problems is not None and first_mesh:
-                _mark_problems(ax, item, problems, faces)
+            segments = _mark_problems(item, problems, faces) if problems is not None and first_mesh else []
             ax.add_collection3d(Poly3DCollection(tris, facecolors=faces, edgecolors="none"))
+            if segments:
+                ax.computed_zorder = False
+                ax.add_collection3d(Line3DCollection(segments, colors="red", linewidths=2.0, zorder=10))
             first_mesh = False
         elif isinstance(item, Polylines):
             for part, closed in zip(item.parts, item.closed, strict=True):
@@ -312,7 +315,8 @@ def surface3d(
     return fig, ax
 
 
-def _mark_problems(ax: Any, mesh: Mesh, report: MeshReport, faces: np.ndarray) -> None:
+def _mark_problems(mesh: Mesh, report: MeshReport, faces: np.ndarray) -> list[np.ndarray]:
+    """Colours problem faces orange in `faces`; returns the boundary and non-manifold edges as segments."""
     table = report.problems
     kind, face, edge = table["kind"], table["face"], table["edge"]
     has_face, has_edge = table.mask("face"), table.mask("edge")
@@ -325,5 +329,4 @@ def _mark_problems(ax: Any, mesh: Mesh, report: MeshReport, faces: np.ndarray) -
             segments.append(mesh.coords[[t[e], t[(e + 1) % 3]]])
         else:
             faces[f] = (1.0, 0.55, 0.0, 1.0)
-    if segments:
-        ax.add_collection3d(Line3DCollection(segments, colors="red", linewidths=2.0))
+    return segments
