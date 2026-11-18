@@ -3,6 +3,8 @@ _.path = ["~/.cargo/bin"]
 UV_PYTHON = "3.13"
 
 [tools]
+micromamba = "2.9.0-0"
+pixi = "0.81.0"
 python = "3.13"
 uv = "0.12"
 
@@ -48,3 +50,23 @@ run = "uv run --no-sync mkdocs serve"
 [tasks.docs-build]
 depends = ["py:build"]
 run = "uv run --no-sync mkdocs build --strict"
+
+[tasks.compat]
+description = "Install the release wheel with pip, uv, pixi and conda (micromamba) in fresh environments and import it"
+depends = ["py:sync"]
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+out=target/compat
+rm -rf "$out" && mkdir -p "$out"
+uv run --no-sync maturin build -q --release --out "$out/wheels"
+whl=$(realpath "$out"/wheels/*.whl)
+check='import drusa as dr; assert dr.datasets.box([0, 0, 0], [1, 2, 3]).volume == 6.0; print(dr.__version__)'
+python -m venv "$out/pip" && "$out/pip/bin/pip" install -q "$whl" && echo "pip: $("$out/pip/bin/python" -c "$check")"
+uv venv -q "$out/uv" && uv pip install -q --python "$out/uv/bin/python" "$whl" && echo "uv: $("$out/uv/bin/python" -c "$check")"
+micromamba create -y -q -r "$out/mamba-root" -p "$out/conda" -c conda-forge python=3.12 pip >/dev/null
+"$out/conda/bin/pip" install -q "$whl" && echo "conda: $("$out/conda/bin/python" -c "$check")"
+mkdir -p "$out/pixi" && cd "$out/pixi"
+pixi init -q . && pixi add -q "python=3.11.*" pip >/dev/null
+pixi run -q pip install -q "$whl" && echo "pixi: $(pixi run -q python -c "$check")"
+'''

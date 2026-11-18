@@ -23,7 +23,7 @@ mise run bench      # criterion benchmarks; pass a filter to run a subset
 mise run examples   # rerun examples/NN-*/*.py
 mise run docs       # mkdocs serve
 mise run docs-build # mkdocs build --strict
-mise run compat     # (planned) install check across pip, uv, pixi, and conda
+mise run compat     # install check across pip, uv, pixi, and conda
 ```
 
 ## Layout
