@@ -225,6 +225,8 @@ version = "0.1.0"
 dependencies = [
  "drusa-core",
  "drusa-ops",
+ "num-bigint",
+ "num-rational",
  "proptest",
  "rayon",
 ]

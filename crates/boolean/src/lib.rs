@@ -1,11 +1,10 @@
 //! Exact mesh arrangements, booleans, surface clipping, plane slicing and cut and fill.
 
-#![allow(unused_variables)]
-
 mod arrangement;
 mod classify;
 pub mod clip;
 pub mod cutfill;
+mod hp;
 pub mod ops;
 pub mod slice;
 mod triangulate;

@@ -13,6 +13,8 @@ drusa-ops.workspace = true
 rayon.workspace = true
 
 [dev-dependencies]
+num-bigint.workspace = true
+num-rational.workspace = true
 proptest.workspace = true
 
 [lints]
