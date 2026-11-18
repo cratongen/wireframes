@@ -1,7 +1,5 @@
 //! Measures, slab volumes, thickness, repair, components and transforms.
 
-#![allow(unused_variables)]
-
 pub mod components;
 pub mod measure;
 pub mod repair;
