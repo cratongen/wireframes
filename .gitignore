@@ -1,0 +1,17 @@
+/target
+__pycache__/
+/.venv
+*.pyd
+*.so
+*.pdb
+/docs/examples/
+/site/
+/dist/
+/.pixi/
+/.compat/
+pixi.lock
+/docs/learn/
+/learn/**/*.png
+/python/boitata/_viewer.js
+node_modules/
+/.codegraph/
