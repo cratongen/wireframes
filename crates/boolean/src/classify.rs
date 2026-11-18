@@ -1,6 +1,8 @@
 //! Patch labelling. A patch is a maximal edge-connected set of sub-triangles
-//! of one mesh that does not cross the other mesh's surface. Each patch is
-//! labelled from one point strictly inside it by an exact axis-aligned ray.
+//! of one mesh that does not cross the other mesh's surface. A patch with an
+//! input vertex off the other mesh is labelled from that vertex by an exact
+//! axis-aligned ray; other patches by an exact side test across an
+//! intersection edge.
 
 use std::collections::HashMap;
 
@@ -106,17 +108,93 @@ impl Sample {
     }
 }
 
+fn vertex_sample(arr: &Arrangement, members: &[u32]) -> Option<Sample> {
+    let n_input = arr.n_vert[0] + arr.n_vert[1];
+    members.iter().find_map(|&s| {
+        arr.subs[s as usize]
+            .v
+            .iter()
+            .find(|&&v| (v as usize) < n_input && !arr.touched[v as usize])
+            .map(|&v| Sample::explicit(arr.pts[v as usize].explicit().expect("input vertex")))
+    })
+}
+
+/// Side of the other mesh's surface holding sub-triangle `s` next to its
+/// edge `e`, which lies on that surface: `Some(true)` for the side the
+/// normals point to, `None` when `s` is coplanar with the faces at `e`.
+fn wedge_side(arr: &Arrangement, p: &Patches, other: usize, s: u32, e: (u32, u32)) -> Option<bool> {
+    let w = *arr.subs[s as usize]
+        .v
+        .iter()
+        .find(|&&v| v != e.0 && v != e.1)
+        .expect("edge of the sub-triangle");
+    let w = &arr.pts[w as usize];
+    let mut faces: Vec<u32> = p.edges[other][&e]
+        .iter()
+        .map(|&t| arr.subs[t as usize].face)
+        .collect();
+    faces.sort_unstable();
+    faces.dedup();
+    let side = |f: u32| hp::side(w, &arr.planes[f as usize]);
+    let decided = |s: Sign| (s != Sign::Zero).then_some(s == Sign::Positive);
+    match faces[..] {
+        [g] => decided(side(g)),
+        [g1, g2] => {
+            let c1 = arr.faces[g1 as usize].v;
+            let far = arr.faces[g2 as usize]
+                .v
+                .iter()
+                .position(|v| !c1.contains(v))
+                .expect("faces sharing an edge");
+            let far = Pt::E(arr.faces[g2 as usize].c[far]);
+            let (s1, s2) = (side(g1), side(g2));
+            match hp::side(&far, &arr.planes[g1 as usize]) {
+                Sign::Positive => Some(s1 == Sign::Positive && s2 == Sign::Positive),
+                Sign::Negative => Some(!(s1 == Sign::Negative && s2 == Sign::Negative)),
+                Sign::Zero => decided(s1),
+            }
+        }
+        _ => None,
+    }
+}
+
+/// Side of the other mesh's surface holding a patch, from the first edge of
+/// the patch on that surface where the exact side test of the opposite
+/// vertex is decisive: `Some(true)` for the side the normals point to.
+pub(crate) fn curve_side(arr: &Arrangement, p: &Patches, members: &[u32]) -> Option<bool> {
+    let other = 1 - mesh_of(arr, &arr.subs[members[0] as usize]);
+    members.iter().find_map(|&s| {
+        let v = arr.subs[s as usize].v;
+        (0..3)
+            .map(|k| ekey(v[k], v[(k + 1) % 3]))
+            .filter(|e| p.edges[other].contains_key(e))
+            .find_map(|e| wedge_side(arr, p, other, s, e))
+    })
+}
+
+/// Exact containment of a patch in the closed mesh `target`: from an input
+/// vertex off `target`, else from a neighbour across an intersection edge,
+/// else from an `f64` point strictly inside the patch.
+pub(crate) fn patch_inside(
+    arr: &Arrangement,
+    p: &Patches,
+    members: &[u32],
+    target: &Target,
+) -> Result<bool> {
+    if let Some(s) = vertex_sample(arr, members) {
+        return target.inside(&s);
+    }
+    if let Some(above) = curve_side(arr, p, members) {
+        return Ok(!above);
+    }
+    target.inside(&sample(arr, members)?)
+}
+
 /// Prefers an input vertex that does not lie on the other mesh, else a point
 /// strictly inside one of the patch's sub-triangles, largest first.
 pub(crate) fn sample(arr: &Arrangement, members: &[u32]) -> Result<Sample> {
-    let n_input = arr.n_vert[0] + arr.n_vert[1];
-    for &s in members {
-        for &v in &arr.subs[s as usize].v {
-            if (v as usize) < n_input && !arr.touched[v as usize] {
-                let q = arr.pts[v as usize].explicit().expect("input vertex");
-                return Ok(Sample::explicit(q));
-            }
-        }
+    if let Some(s) = vertex_sample(arr, members) {
+        return Ok(s);
     }
     let mut order: Vec<(f64, u32)> = members
         .iter()
@@ -292,7 +370,7 @@ pub(crate) fn solid_status(arr: &Arrangement, p: &Patches) -> Result<Vec<Status>
             .par_iter()
             .map(|members| {
                 let m = mesh_of(arr, &arr.subs[members[0] as usize]);
-                targets[1 - m].inside(&sample(arr, members)?)
+                patch_inside(arr, p, members, &targets[1 - m])
             })
             .collect()
     };

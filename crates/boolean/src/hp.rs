@@ -250,13 +250,95 @@ pub(crate) fn height_diff_sign(p: &Pt, top: &Plane, bottom: &Plane) -> Sign {
     s.times(top.n[2].sign()).times(bottom.n[2].sign())
 }
 
-/// Exact sign of `(p - origin) . normal`.
-pub(crate) fn plane_side(p: [f64; 3], origin: [f64; 3], normal: [f64; 3]) -> Sign {
-    (0..3)
-        .fold(Expansion::zero(), |acc, k| {
-            acc.sum(&Expansion::diff_f64(p[k], origin[k]).scale(normal[k]))
+/// `x = m 2^e` with an integer `m`.
+fn split_f64(x: f64) -> (bool, u64, i32) {
+    let b = x.to_bits();
+    let (exp, frac) = (((b >> 52) & 0x7ff) as i32, b & ((1 << 52) - 1));
+    let (m, e) = if exp == 0 {
+        (frac, -1074)
+    } else {
+        (frac | (1 << 52), exp - 1075)
+    };
+    (x < 0.0, m, e)
+}
+
+fn add_at(acc: &mut [u64], mut i: usize, v: u128) {
+    let mut carry = v;
+    while carry != 0 {
+        let s = acc[i] as u128 + (carry & u64::MAX as u128);
+        acc[i] = s as u64;
+        carry = (carry >> 64) + (s >> 64);
+        i += 1;
+    }
+}
+
+/// Exact sign of `sum x_k y_k` over finite `f64` pairs, in integer
+/// arithmetic, so no product underflows or overflows.
+fn dot_sign_wide(terms: &[(f64, f64)]) -> Sign {
+    let parts: Vec<(bool, u128, i32)> = terms
+        .iter()
+        .filter(|(x, y)| *x != 0.0 && *y != 0.0)
+        .map(|&(x, y)| {
+            let ((sx, mx, ex), (sy, my, ey)) = (split_f64(x), split_f64(y));
+            (sx != sy, mx as u128 * my as u128, ex + ey)
         })
-        .sign()
+        .collect();
+    let Some(emin) = parts.iter().map(|t| t.2).min() else {
+        return Sign::Zero;
+    };
+    let emax = parts.iter().map(|t| t.2).max().expect("nonempty");
+    let limbs = (emax - emin) as usize / 64 + 4;
+    let mut acc = [vec![0u64; limbs], vec![0u64; limbs]];
+    for &(neg, m, e) in &parts {
+        let shift = (e - emin) as usize;
+        let (i, bit) = (shift / 64, shift % 64);
+        let a = &mut acc[usize::from(neg)];
+        add_at(a, i, (m & u64::MAX as u128) << bit);
+        add_at(a, i + 1, (m >> 64) << bit);
+    }
+    match acc[0].iter().rev().cmp(acc[1].iter().rev()) {
+        Ordering::Greater => Sign::Positive,
+        Ordering::Equal => Sign::Zero,
+        Ordering::Less => Sign::Negative,
+    }
+}
+
+/// Exact sign of `(p - origin) . normal` for any finite input.
+pub(crate) fn plane_side(p: [f64; 3], origin: [f64; 3], normal: [f64; 3]) -> Sign {
+    let safe = |x: f64| x == 0.0 || (x.abs() >= 2f64.powi(-450) && x.abs() <= 2f64.powi(450));
+    let terms = [0, 1, 2].map(|k| [(p[k], normal[k]), (-origin[k], normal[k])]);
+    let terms = terms.as_flattened();
+    if terms.iter().all(|&(x, y)| safe(x) && safe(y)) {
+        terms
+            .iter()
+            .fold(Expansion::zero(), |acc, &(x, y)| {
+                acc.sum(&Expansion::from_f64(x).scale(y))
+            })
+            .sign()
+    } else {
+        dot_sign_wide(terms)
+    }
+}
+
+/// `normal` scaled by a power of two so that its largest component lies
+/// near 1, when that scaling is exact; else `normal` unchanged. Side tests
+/// and plane crossings do not change, and their expansions avoid underflow.
+pub(crate) fn unit_scale(normal: [f64; 3]) -> [f64; 3] {
+    let big = normal.iter().fold(0.0f64, |m, x| m.max(x.abs()));
+    if big == 0.0 {
+        return normal;
+    }
+    let k = -split_f64(big).2 - 52;
+    let scale = |x: f64, k: i32| {
+        let (half, rest) = (k / 2, k - k / 2);
+        x * 2f64.powi(half) * 2f64.powi(rest)
+    };
+    let n = normal.map(|x| scale(x, k));
+    if (0..3).all(|i| n[i].is_finite() && scale(n[i], -k) == normal[i]) {
+        n
+    } else {
+        normal
+    }
 }
 
 #[cfg(test)]
@@ -378,6 +460,32 @@ mod tests {
     }
 
     #[test]
+    fn plane_side_survives_underflow_and_overflow() {
+        let o = [0.0; 3];
+        assert_eq!(
+            plane_side([-1e-200, 0.0, 0.0], o, [1e-200, 0.0, 0.0]),
+            Sign::Negative
+        );
+        assert_eq!(
+            plane_side([0.0, 1e-200, 0.0], o, [1.0, 1e-300, 0.0]),
+            Sign::Positive
+        );
+        assert_eq!(
+            plane_side([1e300, -1e300, 0.0], o, [1e10, 1e10, 0.0]),
+            Sign::Zero
+        );
+        assert_eq!(
+            plane_side([1e300, -1e300, 5e-324], o, [1e10, 1e10, 1.0]),
+            Sign::Positive
+        );
+        assert_eq!(
+            unit_scale([1e-200, 0.0, -3e-201])[0],
+            1e-200 * 2f64.powi(665)
+        );
+        assert_eq!(unit_scale([5e-324, 0.0, 0.0]), [2f64.powi(-52), 0.0, 0.0]);
+    }
+
+    #[test]
     fn lpi_of_axis_line_and_plane_is_exact() {
         let pl = Plane::new([
             [0.0, 0.0, 1.0 / 3.0],
@@ -441,6 +549,22 @@ mod tests {
             let r = p.to_f64();
             for k in 0..3 {
                 prop_assert_eq!(r[k], nearest(&x[k]));
+            }
+        }
+
+        #[test]
+        fn plane_side_matches_rationals_at_any_scale(
+            v in proptest::array::uniform9((-4i64..5, -1074i32..1020)),
+        ) {
+            let x: Vec<f64> = v.iter().map(|&(m, e)| m as f64 * 2f64.powi(e / 2) * 2f64.powi(e - e / 2)).collect();
+            prop_assume!(x.iter().all(|c| c.is_finite()));
+            let (p, o, n) = ([x[0], x[1], x[2]], [x[3], x[4], x[5]], [x[6], x[7], x[8]]);
+            let s = (0..3).fold(qz(), |acc, k| acc + q(n[k]) * (q(p[k]) - q(o[k])));
+            prop_assert_eq!(plane_side(p, o, n), sgn(&s));
+            let u = unit_scale(n);
+            prop_assert_eq!(plane_side(p, o, u), sgn(&s));
+            for k in 0..3 {
+                prop_assert_eq!(sgn(&q(u[k])), sgn(&q(n[k])));
             }
         }
 

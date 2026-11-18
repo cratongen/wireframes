@@ -87,6 +87,7 @@ fn check_identities(a: &Mesh, b: &Mesh, tol: f64) {
 fn validate_failure_rate_is_reported() {
     let mut rng = fixtures::Rng::new(7);
     let (mut runs, mut bad) = (0, 0);
+    let (mut sym_runs, mut sym_dup, mut sym_bad) = (0, 0, 0);
     for _ in 0..40 {
         let a = fixtures::sphere(1);
         let ang = [0, 1, 2].map(|_| rng.uniform(-3.2, 3.2));
@@ -98,8 +99,22 @@ fn validate_failure_rate_is_reported() {
             runs += 1;
             bad += usize::from(!validates(&m));
         }
+        let x = run(&a, &b, Op::SymmetricDifference);
+        assert!(closed_manifold(&x));
+        let s = x.validate(0.0).unwrap().summary;
+        let only_touching = s.is_closed
+            && s.degenerate_faces + s.duplicate_faces + s.non_manifold_edges == 0
+            && s.non_manifold_vertices + s.inconsistent_edges + s.inward_shells == 0
+            && s.self_intersections + s.coplanar_overlaps == 0;
+        sym_runs += 1;
+        sym_dup += usize::from(s.duplicate_vertices > 0);
+        sym_bad += usize::from(!x.is_empty() && !only_touching);
     }
     println!("validate(0.0) failed on {bad} of {runs} rounded boolean outputs");
+    println!(
+        "symmetric difference: {sym_dup} of {sym_runs} have duplicate vertices where the pieces \
+         touch; {sym_bad} of {sym_runs} fail validate(0.0) for any other reason"
+    );
 }
 
 #[test]
@@ -391,4 +406,94 @@ fn tet(p: [[f64; 3]; 4]) -> Option<Mesh> {
     };
     let m = Mesh::new(p.to_vec(), t).ok()?;
     m.validate(0.0).ok()?.summary.is_solid().then_some(m)
+}
+
+fn hexahedron(x: [[f64; 2]; 2], y: [f64; 2], z: [f64; 2]) -> Mesh {
+    let b = fixtures::box_mesh([0.0; 3], [1.0; 3]);
+    let v: Vec<[f64; 3]> = (0..8)
+        .map(|i| {
+            let (xi, yi, zi) = (i & 1, (i >> 1) & 1, (i >> 2) & 1);
+            [x[zi][xi], y[yi], z[zi]]
+        })
+        .collect();
+    Mesh::new(v, b.triangles().to_vec()).unwrap()
+}
+
+/// B crosses A's top face in a strip `x in (0.625 + 2^-55, 0.625 + 2^-53)`
+/// that holds no `f64`.
+fn sliver_crossing_unit_cube() -> (Mesh, Mesh) {
+    let u = 2f64.powi(-55);
+    let b = hexahedron(
+        [[0.5 - 2.0 * u, 0.5], [0.75 + 4.0 * u, 0.75 + 8.0 * u]],
+        [0.2, 0.8],
+        [0.5, 1.5],
+    );
+    (fixtures::cube(), b)
+}
+
+#[test]
+fn sliver_inputs_are_valid_solids() {
+    let (a, b) = sliver_crossing_unit_cube();
+    assert!(a.validate(0.0).unwrap().summary.is_solid());
+    assert!(b.validate(0.0).unwrap().summary.is_solid());
+}
+
+#[test]
+fn boolean_with_a_patch_thinner_than_f64_spacing_succeeds() {
+    let (a, b) = sliver_crossing_unit_cube();
+    for op in [Op::Union, Op::Intersection, Op::Difference] {
+        let r = boolean(&a, &b, op, &BooleanOptions::default());
+        assert!(
+            r.is_ok(),
+            "{op:?} on valid solids failed: {}",
+            r.err().unwrap()
+        );
+    }
+    check_identities(&a, &b, 1e-12);
+    check_identities(&b, &a, 1e-12);
+}
+
+#[test]
+fn symmetric_difference_pieces_touch_only_along_the_curve() {
+    let a = fixtures::cube();
+    let b = fixtures::translated(&a, [0.5, 0.25, 0.125]);
+    let m = run(&a, &b, Op::SymmetricDifference);
+    let s = m.validate(0.0).unwrap().summary;
+    assert!(closed_manifold(&m) && s.is_closed, "{s:?}");
+    assert_eq!(
+        (
+            s.non_manifold_edges,
+            s.non_manifold_vertices,
+            s.inward_shells
+        ),
+        (0, 0, 0),
+        "{s:?}"
+    );
+    assert_eq!((s.self_intersections, s.coplanar_overlaps), (0, 0), "{s:?}");
+    assert_eq!(s.shells, 2, "{s:?}");
+    let d = [run(&a, &b, Op::Difference), run(&b, &a, Op::Difference)];
+    let curve: std::collections::HashSet<[u64; 3]> = d[0]
+        .vertices()
+        .iter()
+        .filter(|p| d[1].vertices().contains(p))
+        .map(|p| p.map(f64::to_bits))
+        .collect();
+    assert_eq!(s.duplicate_vertices, curve.len(), "{s:?}");
+}
+
+#[test]
+#[ignore = "unsatisfiable as written: the closures of a - b and b - a always meet along the \
+            intersection curve, so no output without duplicate or shared vertices there exists; \
+            spec 6.2 item 8 needs a decision from the lead"]
+fn symmetric_difference_of_overlapping_cubes_is_a_valid_solid() {
+    let a = fixtures::cube();
+    let b = fixtures::translated(&a, [0.5, 0.25, 0.125]);
+    let m = boolean(&a, &b, Op::SymmetricDifference, &BooleanOptions::default())
+        .unwrap()
+        .mesh;
+    let rep = m.validate(0.0).unwrap();
+    assert!(rep.summary.is_solid(), "summary: {:?}", rep.summary);
+    let c = fixtures::translated(&a, [-0.3, -0.3, -0.3]);
+    let r = boolean(&m, &c, Op::Union, &BooleanOptions::default());
+    assert!(r.is_ok(), "reusing the result failed: {}", r.err().unwrap());
 }

@@ -3,9 +3,8 @@ use drusa_core::{Error, Mesh, Result, units};
 use drusa_ops::{RepairOptions, RepairReport, repair};
 
 use crate::BooleanOptions;
-use crate::arrangement::{self, Arrangement};
-use crate::classify::{self, Patches, Sample, Target};
-use crate::hp;
+use crate::arrangement;
+use crate::classify::{self, Sample, Target};
 use crate::ops::{Piece, assemble, build_mesh, is_closed_manifold, prepare};
 
 pub struct ClipResult {
@@ -44,56 +43,6 @@ fn ekey(a: u32, b: u32) -> (u32, u32) {
     if a < b { (a, b) } else { (b, a) }
 }
 
-/// Side of the surface holding the solid sub-triangle `s` next to its edge
-/// `e`, which lies on the surface: `true` for the side the normals point to.
-fn wedge_above(arr: &Arrangement, p: &Patches, s: u32, e: (u32, u32)) -> Result<bool> {
-    let sub = &arr.subs[s as usize];
-    let w = *sub
-        .v
-        .iter()
-        .find(|&&v| v != e.0 && v != e.1)
-        .expect("edge of the sub-triangle");
-    let w = &arr.pts[w as usize];
-    let mut faces: Vec<u32> = p.edges[1][&e]
-        .iter()
-        .map(|&t| arr.subs[t as usize].face)
-        .collect();
-    faces.sort_unstable();
-    faces.dedup();
-    let side = |f: u32| hp::side(w, &arr.planes[f as usize]);
-    let flat = || {
-        Error::invalid("surface does not cut through the solid: it touches the solid's boundary")
-    };
-    match faces[..] {
-        [g] => match side(g) {
-            Sign::Zero => Err(flat()),
-            s => Ok(s == Sign::Positive),
-        },
-        [g1, g2] => {
-            let c1 = arr.faces[g1 as usize].v;
-            let far = arr.faces[g2 as usize]
-                .v
-                .iter()
-                .position(|v| !c1.contains(v))
-                .expect("faces sharing an edge");
-            let far = hp::Pt::E(arr.faces[g2 as usize].c[far]);
-            let bend = hp::side(&far, &arr.planes[g1 as usize]);
-            let (s1, s2) = (side(g1), side(g2));
-            match bend {
-                Sign::Positive => Ok(s1 == Sign::Positive && s2 == Sign::Positive),
-                Sign::Negative => Ok(!(s1 == Sign::Negative && s2 == Sign::Negative)),
-                Sign::Zero => match s1 {
-                    Sign::Zero => Err(flat()),
-                    s => Ok(s == Sign::Positive),
-                },
-            }
-        }
-        _ => Err(Error::invalid(
-            "internal: curve edge on more than two surface faces",
-        )),
-    }
-}
-
 /// Splits a solid by an open surface; `above` is on the side the surface normals point to.
 /// Both pieces are closed and outward; the cap faces of `above` are the
 /// flipped surface pieces inside the solid, those of `below` keep the
@@ -128,18 +77,11 @@ pub fn clip_by_surface(solid: &Mesh, surface: &Mesh, opts: &BooleanOptions) -> R
     for (k, members) in p.members.iter().enumerate() {
         let m = classify::mesh_of(&arr, &arr.subs[members[0] as usize]);
         if m == 1 {
-            cap_patch[k] = solid_target.inside(&classify::sample(&arr, members)?)?;
+            cap_patch[k] = classify::patch_inside(&arr, &p, members, &solid_target)?;
             continue;
         }
-        let curve = members.iter().find_map(|&s| {
-            let v = arr.subs[s as usize].v;
-            (0..3)
-                .map(|e| ekey(v[e], v[(e + 1) % 3]))
-                .find(|e| p.edges[1].contains_key(e))
-                .map(|e| (s, e))
-        });
-        above_patch[k] = match curve {
-            Some((s, e)) => wedge_above(&arr, &p, s, e)?,
+        above_patch[k] = match classify::curve_side(&arr, &p, members) {
+            Some(above) => above,
             None => {
                 let sm: Sample = classify::sample(&arr, members)?;
                 let (up, down) = surface_target.crossings(&sm)?;

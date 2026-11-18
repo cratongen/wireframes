@@ -1,7 +1,7 @@
 use std::cmp::Ordering;
 use std::collections::HashMap;
 
-use drusa_core::predicates::Sign;
+use drusa_core::predicates::{Sign, orient2d_axis};
 use drusa_core::{Column, Error, Mesh, Polylines, Result, Table};
 use rayon::prelude::*;
 
@@ -138,10 +138,55 @@ fn dominant(normal: [f64; 3]) -> usize {
 
 /// `(negative, positive)`; points on the plane go to positive.
 /// Closed meshes are capped with a triangulation of the section; cap faces
-/// have null attributes. Faces lying in the plane go to the positive side.
+/// have null attributes. Faces lying in the plane go to the positive side,
+/// except faces of a closed mesh whose normal points along `normal`: those
+/// bound material on the negative side only, so they go to the negative
+/// side and are cut out of the cap.
 pub fn split_by_plane(mesh: &Mesh, origin: [f64; 3], normal: [f64; 3]) -> Result<(Mesh, Mesh)> {
     check_plane(origin, normal)?;
-    let sec = section(mesh, origin, normal);
+    let normal = hp::unit_scale(normal);
+    let mut sec = section(mesh, origin, normal);
+    let drop = dominant(normal);
+    let closed = mesh.is_closed();
+    let on: Vec<bool> = mesh
+        .vertices()
+        .par_iter()
+        .map(|&p| hp::plane_side(p, origin, normal) == Sign::Zero)
+        .collect();
+    let roof: Vec<bool> = mesh
+        .triangles()
+        .iter()
+        .map(|t| {
+            closed
+                && t.iter().all(|&v| on[v as usize])
+                && Sign::of(orient2d_axis(
+                    mesh.vertices()[t[0] as usize],
+                    mesh.vertices()[t[1] as usize],
+                    mesh.vertices()[t[2] as usize],
+                    drop,
+                )) == Sign::of(normal[drop])
+        })
+        .collect();
+    let mut cap_segs: Vec<[u32; 2]> = sec.segs.iter().map(|s| [s.0, s.1]).collect();
+    for (t, _) in mesh.triangles().iter().zip(&roof).filter(|(_, r)| **r) {
+        for k in 0..3 {
+            let mut id = |v: u32| {
+                let n = sec.keys.len() as u32;
+                *sec.index.entry(Key::V(v)).or_insert_with(|| {
+                    sec.keys.push(Key::V(v));
+                    n
+                })
+            };
+            cap_segs.push([id(t[k]), id(t[(k + 1) % 3])]);
+        }
+    }
+    let mut count: HashMap<(u32, u32), usize> = HashMap::new();
+    for s in &cap_segs {
+        *count.entry((s[0].min(s[1]), s[0].max(s[1]))).or_default() += 1;
+    }
+    cap_segs.retain(|s| count[&(s[0].min(s[1]), s[0].max(s[1]))] % 2 == 1);
+    cap_segs.sort_unstable_by_key(|s| (s[0].min(s[1]), s[0].max(s[1])));
+    cap_segs.dedup_by_key(|s| (s[0].min(s[1]), s[0].max(s[1])));
     let pts: Vec<Pt> = sec
         .keys
         .par_iter()
@@ -152,14 +197,13 @@ pub fn split_by_plane(mesh: &Mesh, origin: [f64; 3], normal: [f64; 3]) -> Result
         Key::V(v) => v,
         Key::E(..) => nv + sec.index[&k],
     };
-    let on: Vec<bool> = mesh
-        .vertices()
-        .iter()
-        .map(|&p| hp::plane_side(p, origin, normal) == Sign::Zero)
-        .collect();
     let mut faces: [Vec<([u32; 3], Option<u32>)>; 2] = [vec![], vec![]];
     for (f, t) in mesh.triangles().iter().enumerate() {
         let neg = t.map(|v| sec.negative[v as usize]);
+        if roof[f] {
+            faces[0].push((*t, Some(f as u32)));
+            continue;
+        }
         if neg.iter().all(|&x| x) || neg.iter().all(|&x| !x) {
             faces[usize::from(!neg[0])].push((*t, Some(f as u32)));
             continue;
@@ -184,10 +228,8 @@ pub fn split_by_plane(mesh: &Mesh, origin: [f64; 3], normal: [f64; 3]) -> Result
             }
         }
     }
-    if mesh.is_closed() && !sec.segs.is_empty() {
-        let drop = dominant(normal);
-        let segs: Vec<[u32; 2]> = sec.segs.iter().map(|s| [s.0, s.1]).collect();
-        let c = cdt(&CapGeom { pts: &pts, drop }, pts.len() as u32, &segs)
+    if closed && !cap_segs.is_empty() {
+        let c = cdt(&CapGeom { pts: &pts, drop }, pts.len() as u32, &cap_segs)
             .map_err(|e| Error::invalid(format!("cannot cap the section: {e}")))?;
         let up = Sign::of(normal[drop]) == Sign::Positive;
         for t in even_odd(&c) {
@@ -261,7 +303,8 @@ pub fn slice_by_plane(
     } else {
         offsets
     };
-    let len = normal.iter().map(|x| x * x).sum::<f64>().sqrt();
+    let unit = hp::unit_scale(normal);
+    let len = unit.iter().map(|x| x * x).sum::<f64>().sqrt();
     let ft = mesh.face_attributes();
     let same_attr =
         |f: u32, g: u32| f == g || ft.num_columns() == 0 || ft.take(&[f]) == ft.take(&[g]);
@@ -270,12 +313,12 @@ pub fn slice_by_plane(
     let mut feat_offset = vec![];
     let mut feat_face = vec![];
     for &t in offsets {
-        let o = [0, 1, 2].map(|k| origin[k] + t * normal[k] / len);
-        let sec = section(mesh, o, normal);
+        let o = [0, 1, 2].map(|k| origin[k] + t * unit[k] / len);
+        let sec = section(mesh, o, unit);
         let pts: Vec<[f64; 3]> = sec
             .keys
             .par_iter()
-            .map(|&k| key_point(mesh, k, o, normal).to_f64())
+            .map(|&k| key_point(mesh, k, o, unit).to_f64())
             .collect();
         let mut next: HashMap<u32, Vec<usize>> = HashMap::new();
         let mut has_in = vec![false; sec.keys.len()];

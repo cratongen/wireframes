@@ -348,3 +348,45 @@ fn clip_and_cut_fill_do_not_depend_on_thread_count() {
     assert_eq!(a.1, b.1);
     assert_eq!(a.2, b.2);
 }
+
+#[test]
+fn split_side_test_survives_underflow() {
+    let tet = Mesh::new(
+        vec![
+            [-1e-200, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [1.0, 1.0, 0.0],
+            [1.0, 0.0, 1.0],
+        ],
+        vec![[0, 2, 1], [0, 1, 3], [0, 3, 2], [1, 2, 3]],
+    )
+    .unwrap();
+    assert!(tet.validate(0.0).unwrap().summary.is_solid());
+    let (neg, pos) = split_by_plane(&tet, [0.0; 3], [1e-200, 0.0, 0.0]).unwrap();
+    assert!(
+        neg.n_faces() > 0,
+        "vertex at x = -1e-200 lies strictly on the negative side of x = 0"
+    );
+    let unit = split_by_plane(&tet, [0.0; 3], [1.0, 0.0, 0.0]).unwrap();
+    assert_eq!((&neg, &pos), (&unit.0, &unit.1));
+    let lines = slice_by_plane(&tet, [0.0; 3], [1e-200, 0.0, 0.0], &[]).unwrap();
+    assert_eq!(lines.n_parts(), 1);
+}
+
+#[test]
+#[ignore = "known defect: the cap of a section narrower than about 1e-154 is lost, because \
+            the implicit-point orientation test multiplies expansions that underflow"]
+fn split_of_a_sub_underflow_sliver_is_closed() {
+    let tet = Mesh::new(
+        vec![
+            [-1e-200, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [1.0, 1.0, 0.0],
+            [1.0, 0.0, 1.0],
+        ],
+        vec![[0, 2, 1], [0, 1, 3], [0, 3, 2], [1, 2, 3]],
+    )
+    .unwrap();
+    let (neg, pos) = split_by_plane(&tet, [0.0; 3], [1.0, 0.0, 0.0]).unwrap();
+    assert!(closed_manifold(&neg) && closed_manifold(&pos));
+}
