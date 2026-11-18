@@ -65,6 +65,43 @@ impl Expansion {
         out
     }
 
+    /// Shewchuk's compression: same value, usually far fewer components, so
+    /// chained products stay short.
+    fn compress(mut self) -> Self {
+        let e = &mut self.0;
+        let m = e.len();
+        if m < 2 {
+            return self;
+        }
+        let mut g = vec![0.0; m];
+        let mut bottom = m - 1;
+        let mut q = e[m - 1];
+        for i in (0..m - 1).rev() {
+            let (s, t) = fast_two_sum(q, e[i]);
+            if t != 0.0 {
+                g[bottom] = s;
+                bottom -= 1;
+                q = t;
+            } else {
+                q = s;
+            }
+        }
+        g[bottom] = q;
+        let mut h = Vec::with_capacity(m - bottom);
+        let mut q = g[bottom];
+        for &c in &g[bottom + 1..] {
+            let (s, t) = fast_two_sum(c, q);
+            if t != 0.0 {
+                h.push(t);
+            }
+            q = s;
+        }
+        if q != 0.0 {
+            h.push(q);
+        }
+        Expansion(h)
+    }
+
     pub fn sum(&self, o: &Self) -> Self {
         let (big, small) = if self.0.len() >= o.0.len() {
             (self, o)
@@ -75,7 +112,7 @@ impl Expansion {
         for &c in &small.0 {
             e = Self::grow(e, c);
         }
-        Expansion(e)
+        Expansion(e).compress()
     }
 
     pub fn neg(&self) -> Self {
@@ -110,7 +147,7 @@ impl Expansion {
         if q != 0.0 {
             out.push(q);
         }
-        Expansion(out)
+        Expansion(out).compress()
     }
 
     pub fn product(&self, o: &Self) -> Self {
@@ -236,8 +273,8 @@ impl ImplicitPoint {
     }
 }
 
-/// Nearest `f64` to `n / d` for `d > 0`.
-fn round_quotient(n: &Expansion, d: &Expansion) -> f64 {
+/// Nearest `f64` to `n / d` (ties to even) for `d > 0`.
+pub fn round_quotient(n: &Expansion, d: &Expansion) -> f64 {
     let above = |c: f64| n.diff(&d.scale(c)).sign();
     let mut c = n.estimate() / d.estimate() + 0.0;
     if !c.is_finite() {
