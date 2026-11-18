@@ -142,7 +142,8 @@ pub fn dip(mesh: &Mesh) -> Vec<(f64, f64)> {
             let direction = if up[0] == 0.0 && up[1] == 0.0 {
                 f64::NAN
             } else {
-                up[0].atan2(up[1]).to_degrees().rem_euclid(360.0)
+                let d = up[0].atan2(up[1]).to_degrees().rem_euclid(360.0);
+                if d < 360.0 { d } else { 0.0 }
             };
             (dip, direction)
         })
@@ -243,6 +244,18 @@ mod tests {
 
     fn close(a: f64, b: f64) -> bool {
         (a - b).abs() <= 1e-9 * 1f64.max(a.abs()).max(b.abs())
+    }
+
+    #[test]
+    fn dip_direction_stays_below_360() {
+        let m = Mesh::new(
+            vec![[0.0, 0.0, 0.0], [1.0, 0.0, 1e-17], [0.0, 1.0, -1.0]],
+            vec![[0, 1, 2]],
+        )
+        .unwrap();
+        let (d, dir) = dip(&m)[0];
+        assert!((d - 45.0).abs() < 1e-9);
+        assert!((0.0..360.0).contains(&dir), "dip direction {dir}");
     }
 
     #[test]

@@ -43,16 +43,17 @@ pub fn transform(mesh: &Mesh, m: [[f64; 4]; 4]) -> Result<Mesh> {
     with_geometry(mesh, vertices, det < 0.0)
 }
 
-/// Panics when a translated coordinate is not finite.
-pub fn translate(mesh: &Mesh, d: [f64; 3]) -> Mesh {
+/// `InvalidInput` when `d` or a translated coordinate is not finite.
+pub fn translate(mesh: &Mesh, d: [f64; 3]) -> Result<Mesh> {
+    if d.iter().any(|x| !x.is_finite()) {
+        return Err(Error::invalid(format!("d must be finite: {d:?}")));
+    }
     let vertices = mesh
         .vertices()
         .iter()
         .map(|p| [p[0] + d[0], p[1] + d[1], p[2] + d[2]])
         .collect();
-    mesh.clone()
-        .with_vertices(vertices)
-        .expect("translated coordinates must be finite")
+    mesh.clone().with_vertices(vertices)
 }
 
 /// `InvalidInput` when the mesh declares no unit.
@@ -102,8 +103,16 @@ mod tests {
         let m = fixtures::cube();
         assert_eq!(volume(&flip(&m)).unwrap(), -1.0);
         assert_eq!(
-            translate(&m, [1.0, 2.0, 3.0]).vertices()[0],
+            translate(&m, [1.0, 2.0, 3.0]).unwrap().vertices()[0],
             [1.0, 2.0, 3.0]
+        );
+        assert!(translate(&m, [f64::NAN, 0.0, 0.0]).is_err());
+        assert!(
+            translate(
+                &m.clone().with_vertices(vec![[f64::MAX; 3]; 8]).unwrap(),
+                [f64::MAX; 3]
+            )
+            .is_err()
         );
         assert!(to_length_unit(&m, "ft").is_err());
         let ft = to_length_unit(&m.with_length_unit(Some("m".into())), "ft").unwrap();

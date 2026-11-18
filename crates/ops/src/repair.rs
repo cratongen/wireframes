@@ -1,5 +1,6 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
+use drusa_core::predicates::collinear3;
 use drusa_core::topology::locate_point;
 use drusa_core::validate::{degenerate_mask, earliest_within};
 use drusa_core::{Aabb, EdgeMap, Mesh, MeshProblemKind, MeshSummary, Result, tolerance, validate};
@@ -71,7 +72,9 @@ pub struct RepairReport {
     pub face_map: Vec<Option<u32>>,
     pub before: MeshSummary,
     pub after: MeshSummary,
-    /// Loops not filled (pinched at a vertex used by two boundary edges).
+    /// Loops not filled: pinched at a vertex used by two boundary edges, or
+    /// whose fill would add a degenerate face, a duplicate face, or a diagonal
+    /// on an edge the mesh already has.
     pub holes_left: usize,
 }
 
@@ -447,20 +450,28 @@ pub fn repair(mesh: &Mesh, opts: &RepairOptions) -> Result<(Mesh, RepairReport)>
         .map(|&f| tris[f as usize].map(|i| new_index[i as usize].expect("used vertex kept")))
         .collect();
 
+    let reverse = |t: &mut [u32; 3]| *t = [t[0], t[2], t[1]];
+    let mut flipped = vec![false; out_tris.len()];
     if opts.orient {
-        let flip = orient(&Mesh::new(vertices.clone(), out_tris.clone())?);
-        for (k, t) in out_tris.iter_mut().enumerate() {
-            if flip[k] {
-                *t = [t[0], t[2], t[1]];
-                actions.push(RepairAction::FaceFlipped {
-                    face: kept_faces[k],
-                });
-            }
+        flipped = orient(&Mesh::new(vertices.clone(), out_tris.clone())?);
+        for (t, _) in out_tris.iter_mut().zip(&flipped).filter(|(_, f)| **f) {
+            reverse(t);
         }
     }
 
     let loops = boundary_loops(&Mesh::new(vertices.clone(), out_tris.clone())?);
+    let edge = |a: u32, b: u32| [a.min(b), a.max(b)];
+    let sorted = |mut t: [u32; 3]| {
+        t.sort_unstable();
+        t
+    };
+    let mut edges: HashSet<[u32; 2]> = out_tris
+        .iter()
+        .flat_map(|t| (0..3).map(move |k| edge(t[k], t[(k + 1) % 3])))
+        .collect();
+    let mut faces: HashSet<[u32; 3]> = out_tris.iter().map(|&t| sorted(t)).collect();
     let mut holes_left = 0;
+    let mut added = vec![];
     for (hole, (ring, ok)) in loops.iter().enumerate() {
         let Some(how) = opts.fill_holes.filter(|_| *ok) else {
             holes_left += 1;
@@ -468,14 +479,51 @@ pub fn repair(mesh: &Mesh, opts: &RepairOptions) -> Result<(Mesh, RepairReport)>
         };
         let mut p = ring.clone();
         p[1..].reverse();
-        for t in fill(&vertices, &p, how) {
-            actions.push(RepairAction::FaceAdded {
+        let new = fill(&vertices, &p, how);
+        let rim: HashSet<[u32; 2]> = (0..p.len())
+            .map(|k| edge(p[k], p[(k + 1) % p.len()]))
+            .collect();
+        let valid = new.iter().all(|&t| {
+            let [a, b, c] = t.map(|i| vertices[i as usize]);
+            !collinear3(a, b, c)
+                && !faces.contains(&sorted(t))
+                && (0..3)
+                    .map(|k| edge(t[k], t[(k + 1) % 3]))
+                    .all(|e| rim.contains(&e) || !edges.contains(&e))
+        });
+        if !valid {
+            holes_left += 1;
+            continue;
+        }
+        for t in new {
+            edges.extend((0..3).map(|k| edge(t[k], t[(k + 1) % 3])));
+            faces.insert(sorted(t));
+            added.push(RepairAction::FaceAdded {
                 face: out_tris.len() as u32,
                 hole: hole as u32,
             });
             out_tris.push(t);
         }
     }
+    // A fill can close a shell or change nesting, so orient again to keep
+    // repair idempotent; a face flipped twice nets to no action.
+    if opts.orient && !added.is_empty() {
+        let again = orient(&Mesh::new(vertices.clone(), out_tris.clone())?);
+        for (k, t) in out_tris.iter_mut().enumerate().filter(|&(k, _)| again[k]) {
+            reverse(t);
+            if let Some(f) = flipped.get_mut(k) {
+                *f = !*f;
+            }
+        }
+    }
+    actions.extend(
+        (0..flipped.len())
+            .filter(|&k| flipped[k])
+            .map(|k| RepairAction::FaceFlipped {
+                face: kept_faces[k],
+            }),
+    );
+    actions.extend(added);
 
     let mut face_rows: Vec<Option<u32>> = kept_faces.iter().map(|&f| Some(f)).collect();
     face_rows.resize(out_tris.len(), None);
@@ -687,6 +735,50 @@ mod tests {
         }
         let (_, r) = fix(&fixtures::open_cube());
         assert_eq!(r.holes_left, 1);
+    }
+
+    fn fan_fill_twice(v: Vec<[f64; 3]>, t: Vec<[u32; 3]>) -> (RepairReport, RepairReport) {
+        let opts = RepairOptions {
+            fill_holes: Some(HoleFill::Fan),
+            ..RepairOptions::default()
+        };
+        let (out, r) = repair(&Mesh::new(v, t).unwrap(), &opts).unwrap();
+        let (_, again) = repair(&out, &opts).unwrap();
+        (r, again)
+    }
+
+    #[test]
+    fn fan_fill_of_a_flat_surface_is_idempotent() {
+        let square = vec![
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [1.0, 1.0, 0.0],
+            [0.0, 1.0, 0.0],
+        ];
+        let (r, again) = fan_fill_twice(square.clone(), vec![[0, 1, 2], [0, 2, 3]]);
+        assert!(r.actions.is_empty(), "{:?}", r.actions);
+        assert_eq!(r.holes_left, 1);
+        assert_eq!(r.after.duplicate_faces, 0);
+        assert!(again.actions.is_empty(), "{:?}", again.actions);
+        let (r, again) = fan_fill_twice(square, vec![[0, 1, 2]]);
+        assert_eq!(r.holes_left, 1);
+        assert!(again.actions.is_empty(), "{:?}", again.actions);
+    }
+
+    #[test]
+    fn fan_fill_does_not_add_degenerate_faces() {
+        let (r, again) = fan_fill_twice(
+            vec![
+                [0.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0],
+                [2.0, 0.0, 0.0],
+                [1.0, 1.0, 0.0],
+            ],
+            vec![[0, 1, 3], [1, 2, 3]],
+        );
+        assert_eq!(r.after.degenerate_faces, 0);
+        assert_eq!(r.holes_left, 1);
+        assert!(again.actions.is_empty(), "{:?}", again.actions);
     }
 
     #[test]

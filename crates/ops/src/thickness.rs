@@ -37,12 +37,9 @@ fn z_on(c: [[f64; 3]; 3], p: [f64; 2]) -> Option<f64> {
     if w.iter().any(|&x| x != 0.0 && (x > 0.0) != (whole > 0.0)) {
         return None;
     }
-    let (a, b, cc) = (c[0], c[1], c[2]);
-    let det = (b[0] - a[0]) * (cc[1] - a[1]) - (b[1] - a[1]) * (cc[0] - a[0]);
-    let (dx, dy) = (p[0] - a[0], p[1] - a[1]);
-    let s = (dx * (cc[1] - a[1]) - dy * (cc[0] - a[0])) / det;
-    let t = ((b[0] - a[0]) * dy - (b[1] - a[1]) * dx) / det;
-    Some(a[2] + s * (b[2] - a[2]) + t * (cc[2] - a[2]))
+    // Every w shares the sign of `whole` or is 0, and not all are 0, so sum != 0.
+    let sum = w[0] + w[1] + w[2];
+    Some(c[0][2] + (w[1] * (c[1][2] - c[0][2]) + w[2] * (c[2][2] - c[0][2])) / sum)
 }
 
 fn surface_z_with(surface: &Mesh, index: &Bvh, p: [f64; 2]) -> f64 {
@@ -179,6 +176,18 @@ mod tests {
         assert!(z[3].is_nan());
         let d = vertical_distance(&c, &[[0.5, 0.5, 3.0]]);
         assert_eq!(d, vec![2.0]);
+    }
+
+    #[test]
+    fn surface_z_is_defined_at_a_vertex_of_a_thin_face() {
+        let third = 1.0 / 3.0;
+        let m = Mesh::new(
+            vec![[0.0, 0.0, 5.0], [3.0, 1.0, 5.0], [1.0, third, 5.0]],
+            vec![[0, 1, 2]],
+        )
+        .unwrap();
+        let z = surface_z(&m, &[[0.0, 0.0], [3.0, 1.0], [1.0, third]]);
+        assert_eq!(z, vec![5.0, 5.0, 5.0]);
     }
 
     #[test]
