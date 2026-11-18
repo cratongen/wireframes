@@ -1,12 +1,11 @@
 //! Surface and solid construction and mesh editing.
 
-#![allow(unused_variables)]
-
 pub mod close;
 pub mod contour;
 pub mod decimate;
 pub mod dtm;
 pub mod extrude;
+mod geom;
 pub mod loft;
 pub mod offset;
 pub mod polygon;
