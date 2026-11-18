@@ -18,48 +18,59 @@ pub struct DtmOptions<'a> {
 /// Merges plan positions closer than `spacing` (exact equality at 0) into the earliest.
 struct Merger {
     spacing: f64,
+    origin: [f64; 2],
     kept: Vec<[f64; 3]>,
-    grid: HashMap<(i64, i64), Vec<u32>>,
+    grid: HashMap<(u64, u64), Vec<u32>>,
+}
+
+fn cell_key(x: f64, y: f64) -> (u64, u64) {
+    let c = tolerance::canonical;
+    (c(x).to_bits(), c(y).to_bits())
 }
 
 impl Merger {
-    fn cell(&self, p: [f64; 3]) -> (i64, i64) {
+    /// Cell coordinates stay `f64` so a spacing tiny against the coordinates
+    /// cannot overflow; neighbour cells that round onto the same value are
+    /// visited once.
+    fn cell(&self, p: [f64; 3]) -> [f64; 2] {
         if self.spacing > 0.0 {
-            (
-                (p[0] / self.spacing).floor() as i64,
-                (p[1] / self.spacing).floor() as i64,
-            )
+            [0, 1].map(|k| ((p[k] - self.origin[k]) / self.spacing).floor())
         } else {
-            let c = tolerance::canonical;
-            (c(p[0]).to_bits() as i64, c(p[1]).to_bits() as i64)
+            [p[0], p[1]]
         }
     }
 
     fn add(&mut self, p: [f64; 3]) -> u32 {
-        let (cx, cy) = self.cell(p);
-        let r = if self.spacing > 0.0 { 1 } else { 0 };
+        let [cx, cy] = self.cell(p);
+        let steps: &[f64] = if self.spacing > 0.0 {
+            &[-1.0, 0.0, 1.0]
+        } else {
+            &[0.0]
+        };
+        let mut cells: Vec<(u64, u64)> = steps
+            .iter()
+            .flat_map(|&dx| steps.iter().map(move |&dy| cell_key(cx + dx, cy + dy)))
+            .collect();
+        cells.sort_unstable();
+        cells.dedup();
         let s2 = self.spacing * self.spacing;
         let mut found: Option<u32> = None;
-        for dx in -r..=r {
-            for dy in -r..=r {
-                for &i in self.grid.get(&(cx + dx, cy + dy)).into_iter().flatten() {
-                    let q = self.kept[i as usize];
-                    let d2 = (p[0] - q[0]).powi(2) + (p[1] - q[1]).powi(2);
-                    let hit = if self.spacing > 0.0 {
-                        d2 < s2
-                    } else {
-                        p[0] == q[0] && p[1] == q[1]
-                    };
-                    if hit && found.is_none_or(|f| i < f) {
-                        found = Some(i);
-                    }
-                }
+        for &i in cells.iter().flat_map(|c| self.grid.get(c)).flatten() {
+            let q = self.kept[i as usize];
+            let d2 = (p[0] - q[0]).powi(2) + (p[1] - q[1]).powi(2);
+            let hit = if self.spacing > 0.0 {
+                d2 < s2
+            } else {
+                p[0] == q[0] && p[1] == q[1]
+            };
+            if hit && found.is_none_or(|f| i < f) {
+                found = Some(i);
             }
         }
         found.unwrap_or_else(|| {
             let i = self.kept.len() as u32;
             self.kept.push(p);
-            self.grid.entry((cx, cy)).or_default().push(i);
+            self.grid.entry(cell_key(cx, cy)).or_default().push(i);
             i
         })
     }
@@ -78,12 +89,14 @@ pub fn dtm(points: &[[f64; 3]], opts: &DtmOptions) -> Result<Mesh> {
     }
     let mut merger = Merger {
         spacing,
+        origin: points.first().map_or([0.0; 2], |p| [p[0], p[1]]),
         kept: vec![],
         grid: HashMap::new(),
     };
     for &p in points {
         merger.add(p);
     }
+    let n_points = merger.kept.len();
     let mut strings: Vec<(Vec<u32>, bool)> = vec![];
     if let Some(b) = opts.breaklines {
         for part in 0..b.n_parts() {
@@ -106,6 +119,9 @@ pub fn dtm(points: &[[f64; 3]], opts: &DtmOptions) -> Result<Mesh> {
         }
     }
     let mut cdt = Cdt::new(merger.kept)?;
+    for id in 0..n_points as u32 {
+        cdt.pin(id);
+    }
     for (ids, closed) in &strings {
         let n = ids.len();
         let segs = if *closed { n } else { n.saturating_sub(1) };

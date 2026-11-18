@@ -76,6 +76,19 @@ pub fn check_finite(what: &str, points: &[[f64; 3]]) -> Result<()> {
     }
 }
 
+pub fn check_distinct_corners(triangles: &[[u32; 3]]) -> Result<()> {
+    match triangles
+        .iter()
+        .position(|t| t[0] == t[1] || t[1] == t[2] || t[2] == t[0])
+    {
+        Some(f) => Err(Error::invalid(format!(
+            "mesh triangles must use three distinct vertices: face {f} is {:?}",
+            triangles[f]
+        ))),
+        None => Ok(()),
+    }
+}
+
 /// Even-odd inside test of `p` against closed rings; exact through `orient2d`.
 pub fn even_odd(rings: &[Vec<[f64; 2]>], p: [f64; 2]) -> bool {
     let mut inside = false;
@@ -107,6 +120,7 @@ pub struct Cdt {
     handle_of: Vec<FixedVertexHandle>,
     id_of: Vec<u32>,
     by_pos: HashMap<(u64, u64), u32>,
+    pinned: Vec<bool>,
 }
 
 impl Cdt {
@@ -129,18 +143,26 @@ impl Cdt {
             handle_of[id as usize] = v;
             id_of[v.index()] = id;
         }
+        let pinned = vec![false; verts.len()];
         Ok(Cdt {
             tri,
             verts,
             handle_of,
             id_of,
             by_pos,
+            pinned,
         })
+    }
+
+    /// Keeps `w` of vertex `id` when a later constraint passes through it.
+    pub fn pin(&mut self, id: u32) {
+        self.pinned[id as usize] = true;
     }
 
     fn push(&mut self, p: [f64; 3], h: FixedVertexHandle) -> u32 {
         let id = self.verts.len() as u32;
         self.verts.push(p);
+        self.pinned.push(true);
         self.handle_of.push(h);
         if self.id_of.len() <= h.index() {
             self.id_of.resize(h.index() + 1, u32::MAX);
@@ -152,7 +174,9 @@ impl Cdt {
 
     /// Adds the constraint `a -> b`, splitting crossed constraints; a split
     /// vertex takes `w` interpolated along the constraint it splits (the one
-    /// inserted first). Returns the number of vertices it created.
+    /// inserted first). An unpinned vertex the constraint passes through takes
+    /// `w` interpolated along `a -> b`. Every vertex on the constraint is then
+    /// pinned. Returns the number of vertices it created.
     pub fn constrain(&mut self, a: u32, b: u32) -> usize {
         if a == b {
             return 0;
@@ -164,7 +188,20 @@ impl Cdt {
             .map(|e| [e.from().fix(), e.to().fix()].map(|h| self.id_of[h.index()]))
             .collect();
         let before = self.tri.num_vertices();
-        self.tri.add_constraint_and_split(ha, hb, |p| p);
+        let chain = self.tri.add_constraint_and_split(ha, hb, |p| p);
+        let on_line: Vec<FixedVertexHandle> = chain
+            .iter()
+            .flat_map(|&e| self.tri.directed_edge(e).vertices().map(|v| v.fix()))
+            .filter(|h| h.index() < before)
+            .collect();
+        for h in on_line {
+            let id = self.id_of[h.index()];
+            if id != a && id != b && !self.pinned[id as usize] {
+                let w = self.lerp_w([a, b], self.uv(id));
+                self.verts[id as usize][2] = w;
+            }
+            self.pinned[id as usize] = true;
+        }
         let after = self.tri.num_vertices();
         for i in before..after {
             let h = FixedVertexHandle::from_index(i);

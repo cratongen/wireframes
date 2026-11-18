@@ -4,7 +4,9 @@ use std::collections::BinaryHeap;
 use drusa_core::predicates::{Sign, collinear3, side_of_plane};
 use drusa_core::{Error, HalfEdges, Mesh, Result, tolerance};
 
-use crate::geom::{add, check_finite, cross, dot, face_normal, normalize, scale, sub};
+use crate::geom::{
+    add, check_distinct_corners, check_finite, cross, dot, face_normal, normalize, scale, sub,
+};
 
 #[derive(Clone, Debug, Default)]
 pub struct DecimateOptions {
@@ -300,6 +302,7 @@ pub fn decimate(mesh: &Mesh, opts: &DecimateOptions) -> Result<Mesh> {
     if opts.target_faces.is_none() && max_error.is_none() {
         return Err(Error::invalid("decimate needs target_faces or max_error"));
     }
+    check_distinct_corners(mesh.triangles())?;
     HalfEdges::new(mesh)?;
     let origin = mesh.bounds().map_or([0.0; 3], |b| b.min);
     let n = mesh.n_vertices();

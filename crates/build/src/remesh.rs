@@ -1,8 +1,21 @@
+use std::collections::HashSet;
+
 use drusa_core::{Error, HalfEdges, Mesh, Result, Table, tolerance};
 
 use drusa_query::SurfaceIndex;
 
-use crate::geom::{add, centroid, check_finite, dist, dot, ekey, face_normal, scale, sub};
+use crate::geom::{
+    add, centroid, check_distinct_corners, check_finite, dist, dot, ekey, face_normal, norm, scale,
+    sub,
+};
+
+/// Cosine of the angle above which two face normals, or two consecutive
+/// feature edges, make a sharp feature.
+const SHARP_COS: f64 = 0.5;
+
+fn sharp(u: [f64; 3], v: [f64; 3]) -> bool {
+    dot(u, v) < SHARP_COS * norm(u) * norm(v)
+}
 
 struct Work {
     pos: Vec<[f64; 3]>,
@@ -10,9 +23,52 @@ struct Work {
     face_alive: Vec<bool>,
     vf: Vec<Vec<u32>>,
     alive: Vec<bool>,
+    feature: HashSet<(u32, u32)>,
+    corner: Vec<bool>,
 }
 
 impl Work {
+    fn mark_features(&mut self) {
+        for (a, b) in self.edges() {
+            let f = self.edge_faces(a, b);
+            if f.len() != 2 || sharp(self.normal(f[0]), self.normal(f[1])) {
+                self.feature.insert((a, b));
+            }
+        }
+        self.corner = (0..self.pos.len() as u32)
+            .map(|v| match self.feature_neighbours(v)[..] {
+                [] => false,
+                [x, y] => {
+                    let p = self.pos[v as usize];
+                    sharp(sub(p, self.pos[x as usize]), sub(self.pos[y as usize], p))
+                }
+                _ => true,
+            })
+            .collect();
+    }
+
+    fn feature_neighbours(&self, v: u32) -> Vec<u32> {
+        self.neighbours(v)
+            .into_iter()
+            .filter(|&w| self.feature.contains(&ekey(v, w)))
+            .collect()
+    }
+
+    /// 0 on a smooth patch, 1 on a feature line or boundary, 2 at a corner.
+    fn rank(&self, v: u32) -> u8 {
+        if self.corner[v as usize] {
+            2
+        } else if self
+            .neighbours(v)
+            .into_iter()
+            .any(|w| self.feature.contains(&ekey(v, w)))
+        {
+            1
+        } else {
+            0
+        }
+    }
+
     fn faces_of(&self, v: u32) -> impl Iterator<Item = u32> + '_ {
         self.vf[v as usize]
             .iter()
@@ -69,7 +125,12 @@ impl Work {
         self.pos
             .push(scale(add(self.pos[a as usize], self.pos[b as usize]), 0.5));
         self.alive.push(true);
+        self.corner.push(false);
         self.vf.push(vec![]);
+        if self.feature.remove(&ekey(a, b)) {
+            self.feature.insert(ekey(a, m));
+            self.feature.insert(ekey(m, b));
+        }
         for f in self.edge_faces(a, b) {
             let t = self.faces[f as usize];
             let k = (0..3)
@@ -105,17 +166,19 @@ impl Work {
         if shared.len() != 2 {
             return false;
         }
-        let (ba, bb) = (self.on_boundary(a), self.on_boundary(b));
-        let (keep, gone) = match (ba, bb) {
-            (true, true) => return false,
-            (true, false) => (a, b),
-            (false, true) => (b, a),
-            (false, false) => (a.min(b), a.max(b)),
+        let (ra, rb) = (self.rank(a), self.rank(b));
+        let on_feature = self.feature.contains(&ekey(a, b));
+        let (keep, gone) = match (ra, rb) {
+            (2, 2) => return false,
+            _ if ra > 0 && rb > 0 && !on_feature => return false,
+            _ if ra > rb => (a, b),
+            _ if rb > ra => (b, a),
+            _ => (a.min(b), a.max(b)),
         };
-        let target = if ba || bb {
-            self.pos[keep as usize]
-        } else {
+        let target = if ra == 0 && rb == 0 {
             scale(add(self.pos[a as usize], self.pos[b as usize]), 0.5)
+        } else {
+            self.pos[keep as usize]
         };
         let mut opposite: Vec<u32> = shared
             .iter()
@@ -152,6 +215,11 @@ impl Work {
         if !self.flips_ok(a, target, &shared) || !self.flips_ok(b, target, &shared) {
             return false;
         }
+        for w in if gone == b { nb } else { na } {
+            if self.feature.remove(&ekey(gone, w)) && w != keep {
+                self.feature.insert(ekey(keep, w));
+            }
+        }
         for &f in &shared {
             self.face_alive[f as usize] = false;
         }
@@ -176,7 +244,7 @@ impl Work {
 
     fn try_flip(&mut self, a: u32, b: u32) -> bool {
         let shared = self.edge_faces(a, b);
-        if shared.len() != 2 {
+        if shared.len() != 2 || self.feature.contains(&ekey(a, b)) {
             return false;
         }
         let t = self.faces[shared[0] as usize];
@@ -243,6 +311,7 @@ pub fn remesh(mesh: &Mesh, edge_length: f64, iterations: usize) -> Result<Mesh> 
     if mesh.is_empty() {
         return Err(Error::invalid("mesh must have faces"));
     }
+    check_distinct_corners(mesh.triangles())?;
     HalfEdges::new(mesh)?;
     let (hi, lo) = (4.0 / 3.0 * l, 4.0 / 5.0 * l);
     let n = mesh.n_vertices();
@@ -252,12 +321,15 @@ pub fn remesh(mesh: &Mesh, edge_length: f64, iterations: usize) -> Result<Mesh> 
         face_alive: vec![true; mesh.n_faces()],
         vf: vec![vec![]; n],
         alive: vec![true; n],
+        feature: HashSet::new(),
+        corner: vec![],
     };
     for (f, t) in mesh.triangles().iter().enumerate() {
         for &v in t {
             w.vf[v as usize].push(f as u32);
         }
     }
+    w.mark_features();
     let index = SurfaceIndex::new(mesh);
     for _ in 0..iterations {
         loop {
@@ -293,13 +365,13 @@ pub fn remesh(mesh: &Mesh, edge_length: f64, iterations: usize) -> Result<Mesh> 
         for (a, b) in w.edges() {
             w.try_flip(a, b);
         }
-        let used: Vec<bool> = (0..w.pos.len() as u32)
-            .map(|v| w.alive[v as usize] && w.faces_of(v).next().is_some())
+        let free: Vec<bool> = (0..w.pos.len() as u32)
+            .map(|v| w.alive[v as usize] && w.faces_of(v).next().is_some() && w.rank(v) == 0)
             .collect();
         let relaxed: Vec<[f64; 3]> = (0..w.pos.len() as u32)
             .map(|v| {
                 let p = w.pos[v as usize];
-                if !used[v as usize] || w.on_boundary(v) {
+                if !free[v as usize] {
                     return p;
                 }
                 let nb: Vec<[f64; 3]> =
@@ -309,9 +381,7 @@ pub fn remesh(mesh: &Mesh, edge_length: f64, iterations: usize) -> Result<Mesh> 
                 add(p, sub(d, scale(nrm, dot(nrm, d))))
             })
             .collect();
-        let moved: Vec<usize> = (0..w.pos.len())
-            .filter(|&v| used[v] && !w.on_boundary(v as u32))
-            .collect();
+        let moved: Vec<usize> = (0..w.pos.len()).filter(|&v| free[v]).collect();
         let targets: Vec<[f64; 3]> = moved.iter().map(|&v| relaxed[v]).collect();
         for (&v, c) in moved.iter().zip(index.closest(&targets)) {
             w.pos[v] = c.point;
