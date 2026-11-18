@@ -10,7 +10,8 @@
 | `dr.Table` | typed columns with validity masks and units | |
 
 `dr.UnstructuredGrid` holds the volume cells of a `.vtu` or `.vtk` file so they survive a round trip; it is data,
-and `grid.surface()` turns its surface cells into a `Mesh`.
+and `grid.surface()` turns its surface cells into a `Mesh`. Its members are `points`, `cell_types` (VTK type ids),
+`connectivity` with `offsets` (`n_cells + 1` entries), `n_cells`, and the `point_data` and `cell_data` tables.
 
 ## Shared accessors
 
@@ -32,6 +33,8 @@ mesh.to_table(on="faces")     # v0, v1, v2 and the face columns
 ```
 
 A `Mesh` winds a solid's triangles counter-clockwise seen from outside, so its signed volume is positive.
+`mesh.with_attributes(vertex=..., face=...)` replaces whole attribute tables (`None` keeps one), and
+`dr.concat([a, b])` appends meshes in order without welding; a column missing from one mesh is null there.
 
 ## Polylines
 
@@ -45,6 +48,7 @@ pad.area(), pad.length()
 pad.contains(points)                    # exact, in plan
 pad.distance(points, signed=True)       # negative inside
 dr.Polylines.from_table(table, feature="ID", x="X", y="Y", z="Z")
+pad.to_points()                         # every vertex, with feature, part and vertex columns
 ```
 
 ## Tables
@@ -54,6 +58,7 @@ t = dr.Table({"hole": ["DH1", None], "depth": [120.0, np.nan], "n": [3, None]})
 t["depth"]          # float64 with NaN for null
 t["n"], t.mask("n") # int64 payload and validity
 t.with_column("au", [1.2, 0.4], unit="g/t").units
+t.with_columns({"lab": ["A", "B"], "batch": [1, 2]})
 t.drop_null()
 ```
 

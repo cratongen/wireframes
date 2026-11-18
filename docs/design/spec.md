@@ -50,9 +50,10 @@ Each line: the decision, then why.
     booleans, so drusa reports it.
 12. drusa carries `crs` and `length_unit` as labels and checks them for equality.
     CRS transforms stay in boitata, which calls `Mesh::with_vertices`.
-13. DXF output is written by hand (ASCII R2000, shortest round-trip floats). The
-    `dxf` crate reads, because its writer neither guarantees round-trip float text
-    nor writes polyface vertex flags correctly.
+13. DXF is read and written by hand: a group-code reader (ASCII and binary) and an
+    ASCII R2000 writer with shortest round-trip floats. No DXF crate is used; the
+    `dxf` crate's writer neither guarantees round-trip float text nor writes
+    polyface vertex flags correctly.
 14. Datamine triangle id aliases are `TRIANGLE`, `TRIANG`, `TRI` and `TRISOL`
     (README says `TRISOL`, the survey says `TRIANGLE`; accept both, write
     `TRIANGLE`). Verify against a real export before M2 closes.
@@ -105,11 +106,9 @@ in `Cargo.lock`):
 | crate | used by | why |
 |---|---|---|
 | `robust = "1"` | core | adaptive exact `orient2d`, `orient3d`, `incircle`, `insphere` |
-| `rayon = "1"` | core, ops, query, boolean | data parallel loops |
+| `rayon = "1"` | core, ops, query, boolean; io and build (dev) | data parallel loops; thread-count determinism tests |
 | `thiserror = "2"` | core | `Error` derive |
-| `dxf = "0.6"` | io | DXF parsing (read only) |
 | `flate2 = "1"` | io | zlib in VTU |
-| `regex = "1"` | io | VTU XML attribute scan (boitata port) |
 | `spade = "2"` | build | constrained Delaunay |
 | `pyo3` (feature `abi3-py311`, `multiple-pymethods`), `numpy` | py | bindings, matching minor pair |
 | dev: `proptest = "1"`, `num-bigint = "0.4"`, `num-rational = "0.4"`, `criterion = "0.8"` | all | property tests, exact oracle, benchmarks |
@@ -849,7 +848,10 @@ Arrangement (`arrangement.rs`):
 8. Attributes: output face attributes are `Table::concat` of A's and B's face
    tables taken by `face_source`; vertex attributes keep input rows, null for new
    vertices. An empty result (nothing kept) is `Mesh::empty()` with the merged
-   schema. Result is a solid when inputs are solids (exact topology); touching along
+   schema. Result is a solid when inputs are solids (exact topology), except for
+   `SymmetricDifference` of inputs whose surfaces cross: its `a - b` and `b - a`
+   pieces keep separate vertices along the intersection curve, which `validate`
+   reports as duplicate vertices, so it is not reusable as a boolean input. Touching along
    an edge or vertex yields a non-manifold result, which errors with
    `InvalidInput("result is not manifold: solids touch along an edge or vertex")`.
 

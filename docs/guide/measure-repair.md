@@ -31,6 +31,8 @@ exact predicates; `tolerance` only widens the duplicate-vertex test.
 fixed, report = mesh.repair(weld=0.0, fill_holes="min_area")
 report.actions        # one row per change: action, vertex, face, other, reason
 report.vertex_map     # output vertex of each input vertex, -1 when removed
+report.face_map       # output face of each input face, -1 when removed
+report.holes_left     # boundary loops still open after the run
 report.summary        # count per action
 ```
 
