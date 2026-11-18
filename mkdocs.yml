@@ -1,8 +1,34 @@
 site_name: drusa
+site_description: Read, write, plot, measure and combine solids, surfaces and strings for mining, geology and petroleum.
 docs_dir: docs
 exclude_docs: |
   design/
+  hooks.py
 theme:
   name: material
+  features:
+    - navigation.sections
+    - content.code.copy
+hooks:
+  - docs/hooks.py
+markdown_extensions:
+  - admonition
+  - attr_list
+  - pymdownx.details
+  - pymdownx.highlight
+  - pymdownx.superfences
+  - pymdownx.snippets:
+      base_path: ["."]
+      check_paths: true
+  - toc:
+      permalink: true
 nav:
   - Home: index.md
+  - Guide:
+      - Containers and tables: guide/containers.md
+      - Files: guide/files.md
+      - Measure, validate and repair: guide/measure-repair.md
+      - Booleans and cutting: guide/booleans.md
+      - Queries: guide/queries.md
+      - Construction: guide/construction.md
+      - Plotting: guide/plotting.md
