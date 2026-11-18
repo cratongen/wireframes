@@ -1,13 +1,54 @@
-#![allow(unused_variables)]
-
 use std::path::PathBuf;
 
+use drusa_core::units::length_factor;
+use drusa_io::{Data, DxfEntity, ReadOptions, WriteOptions};
+use pyo3::IntoPyObjectExt;
 use pyo3::prelude::*;
 
-use crate::containers::{PyMesh, PyPointSet, PyPolylines};
-use crate::errors::not_implemented;
+use crate::containers::{PyMesh, PyPointSet, PyPolylines, PyUnstructuredGrid};
+use crate::errors::{invalid, to_py};
 
-/// `(mesh, polylines, points, grid, length_unit, warnings)`; `drusa.read` wraps it in a `Dataset`.
+fn load(
+    py: Python,
+    path: &PathBuf,
+    crs: Option<String>,
+    length_unit: Option<String>,
+) -> PyResult<Data> {
+    let data = py
+        .detach(|| drusa_io::read_with(path, &ReadOptions::default()))
+        .map_err(to_py)?;
+    let unit = match (length_unit, data.length_unit.clone()) {
+        (Some(given), Some(file)) => {
+            let (a, b) = (
+                length_factor(&given).map_err(to_py)?,
+                length_factor(&file).map_err(to_py)?,
+            );
+            if a != b {
+                return Err(invalid(format!(
+                    "{}: length_unit {given:?} disagrees with the file unit {file:?}",
+                    path.display()
+                )));
+            }
+            Some(given)
+        }
+        (given, file) => given.or(file),
+    };
+    Ok(Data {
+        mesh: data
+            .mesh
+            .map(|m| m.with_crs(crs.clone()).with_length_unit(unit.clone())),
+        polylines: data
+            .polylines
+            .map(|p| p.with_crs(crs.clone()).with_length_unit(unit.clone())),
+        points: data
+            .points
+            .map(|p| p.with_crs(crs.clone()).with_length_unit(unit.clone())),
+        ..data
+    })
+}
+
+/// ``(mesh, polylines, points, grid, length_unit, warnings)``; ``drusa.read``
+/// wraps it in a ``Dataset``.
 #[pyfunction]
 #[pyo3(signature = (path, *, crs=None, length_unit=None))]
 fn _read(
@@ -16,38 +57,177 @@ fn _read(
     crs: Option<String>,
     length_unit: Option<String>,
 ) -> PyResult<Py<PyAny>> {
-    Err(not_implemented("read"))
+    let d = load(py, &path, crs, length_unit)?;
+    (
+        d.mesh.map(PyMesh::from),
+        d.polylines.map(PyPolylines::from),
+        d.points.map(PyPointSet::from),
+        d.grid.map(|g| PyUnstructuredGrid { inner: g }),
+        d.length_unit,
+        d.warnings,
+    )
+        .into_py_any(py)
 }
 
+fn none_in(path: &std::path::Path, what: &str) -> PyErr {
+    invalid(format!("{}: file holds no {what}", path.display()))
+}
+
+/// The mesh in the file at `path`.
+///
+/// Parameters
+/// ----------
+/// path : str or PathLike
+///     File to read; see ``drusa.read`` for the formats.
+/// crs, length_unit : str, optional
+///     Labels of the result; None takes the unit the file declares.
+///
+/// Raises
+/// ------
+/// InvalidInput
+///     When the file holds no mesh.
 #[pyfunction]
 #[pyo3(signature = (path, *, crs=None, length_unit=None))]
-fn read_mesh(path: PathBuf, crs: Option<String>, length_unit: Option<String>) -> PyResult<PyMesh> {
-    Err(not_implemented("read_mesh"))
+fn read_mesh(
+    py: Python,
+    path: PathBuf,
+    crs: Option<String>,
+    length_unit: Option<String>,
+) -> PyResult<PyMesh> {
+    let d = load(py, &path, crs, length_unit)?;
+    Ok(d.mesh.ok_or_else(|| none_in(&path, "mesh"))?.into())
 }
 
+/// The polylines in the file at `path`; see ``read_mesh``.
 #[pyfunction]
 #[pyo3(signature = (path, *, crs=None, length_unit=None))]
 fn read_polylines(
+    py: Python,
     path: PathBuf,
     crs: Option<String>,
     length_unit: Option<String>,
 ) -> PyResult<PyPolylines> {
-    Err(not_implemented("read_polylines"))
+    let d = load(py, &path, crs, length_unit)?;
+    Ok(d.polylines
+        .ok_or_else(|| none_in(&path, "polylines"))?
+        .into())
 }
 
+/// The points in the file at `path`; see ``read_mesh``.
 #[pyfunction]
 #[pyo3(signature = (path, *, crs=None, length_unit=None))]
 fn read_points(
+    py: Python,
     path: PathBuf,
     crs: Option<String>,
     length_unit: Option<String>,
 ) -> PyResult<PyPointSet> {
-    Err(not_implemented("read_points"))
+    let d = load(py, &path, crs, length_unit)?;
+    Ok(d.points.ok_or_else(|| none_in(&path, "points"))?.into())
 }
 
+fn data_arg(data: &Bound<PyAny>) -> PyResult<Data> {
+    if let Ok(m) = data.cast::<PyMesh>() {
+        return Ok(Data {
+            mesh: Some(m.get().inner.clone()),
+            ..Data::default()
+        });
+    }
+    if let Ok(p) = data.cast::<PyPolylines>() {
+        return Ok(Data {
+            polylines: Some(p.get().inner.clone()),
+            ..Data::default()
+        });
+    }
+    if let Ok(p) = data.cast::<PyPointSet>() {
+        return Ok(Data {
+            points: Some(p.get().inner.clone()),
+            ..Data::default()
+        });
+    }
+    if let Ok(g) = data.cast::<PyUnstructuredGrid>() {
+        return Ok(Data {
+            grid: Some(g.get().inner.clone()),
+            ..Data::default()
+        });
+    }
+    let bad = || invalid("data must be a Mesh, Polylines, PointSet, UnstructuredGrid or Dataset");
+    if !data.hasattr("warnings")? {
+        return Err(bad());
+    }
+    let part = |name: &str| -> PyResult<Option<Bound<PyAny>>> {
+        let v = data.getattr(name)?;
+        Ok((!v.is_none()).then_some(v))
+    };
+    Ok(Data {
+        mesh: part("mesh")?
+            .map(|m| Ok::<_, PyErr>(m.cast::<PyMesh>().map_err(|_| bad())?.get().inner.clone()))
+            .transpose()?,
+        polylines: part("polylines")?
+            .map(|m| {
+                Ok::<_, PyErr>(
+                    m.cast::<PyPolylines>()
+                        .map_err(|_| bad())?
+                        .get()
+                        .inner
+                        .clone(),
+                )
+            })
+            .transpose()?,
+        points: part("points")?
+            .map(|m| {
+                Ok::<_, PyErr>(
+                    m.cast::<PyPointSet>()
+                        .map_err(|_| bad())?
+                        .get()
+                        .inner
+                        .clone(),
+                )
+            })
+            .transpose()?,
+        grid: part("grid")?
+            .map(|m| {
+                Ok::<_, PyErr>(
+                    m.cast::<PyUnstructuredGrid>()
+                        .map_err(|_| bad())?
+                        .get()
+                        .inner
+                        .clone(),
+                )
+            })
+            .transpose()?,
+        length_unit: part("length_unit")?.map(|u| u.extract()).transpose()?,
+        warnings: vec![],
+    })
+}
+
+/// Writes `data` to `path`; the extension picks the format.
+///
+/// Parameters
+/// ----------
+/// path : str or PathLike
+///     Target file; a Datamine pair writes both ``_pt.csv`` and ``_tr.csv``.
+/// data : Mesh, Polylines, PointSet, UnstructuredGrid or Dataset
+///     What to write.
+/// ascii : bool
+///     Text instead of binary for PLY, STL and VTK.
+/// dxf_entity : {"3dface", "polyface"}
+///     How DXF stores triangles.
+/// zlib : bool
+///     Compress VTU arrays.
+/// skip_unsupported_columns : bool
+///     Leave out columns the format cannot store instead of raising.
+///
+/// Raises
+/// ------
+/// InvalidInput
+///     When the format cannot hold part of `data`.
+/// FileError
+///     When the file cannot be written.
 #[pyfunction]
 #[pyo3(signature = (path, data, *, ascii=false, dxf_entity="3dface", zlib=false, skip_unsupported_columns=false))]
 fn write(
+    py: Python,
     path: PathBuf,
     data: &Bound<PyAny>,
     ascii: bool,
@@ -55,7 +235,24 @@ fn write(
     zlib: bool,
     skip_unsupported_columns: bool,
 ) -> PyResult<()> {
-    Err(not_implemented("write"))
+    let dxf_entity = match dxf_entity {
+        "3dface" => DxfEntity::Face3d,
+        "polyface" => DxfEntity::Polyface,
+        _ => {
+            return Err(invalid(format!(
+                "dxf_entity must be \"3dface\" or \"polyface\", not {dxf_entity:?}"
+            )));
+        }
+    };
+    let data = data_arg(data)?;
+    let opts = WriteOptions {
+        ascii,
+        dxf_entity,
+        zlib,
+        skip_unsupported_columns,
+    };
+    py.detach(|| drusa_io::write_with(&path, &data, &opts))
+        .map_err(to_py)
 }
 
 pub(crate) fn register(m: &Bound<PyModule>) -> PyResult<()> {

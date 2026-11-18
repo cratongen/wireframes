@@ -44,7 +44,3 @@ pub(crate) fn to_py(e: Error) -> PyErr {
         | Error::UnitMismatch { .. } => invalid(message),
     }
 }
-
-pub(crate) fn not_implemented(name: &str) -> PyErr {
-    pyo3::exceptions::PyNotImplementedError::new_err(format!("{name} is not implemented yet"))
-}
