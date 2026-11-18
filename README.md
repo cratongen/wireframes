@@ -15,8 +15,8 @@ drillholes, variograms, kriging, and simulation stay in `boitata`.
 
 ## Stack
 
-- **Rust workspace**: `crates/core`, `crates/io`, `crates/boolean`,
-  `crates/query`, `crates/construct`, and `crates/py`.
+- **Rust workspace**: `crates/core`, `crates/io`, `crates/ops`,
+  `crates/boolean`, `crates/query`, `crates/build`, and `crates/py`.
 - **Exact geometry**: the `robust` crate for adaptive-precision orientation and
   in-circle predicates, paired with implicit intersection points for mesh
   arrangements.
@@ -121,8 +121,9 @@ tonnage without warning. `drusa` enforces three rules:
   OBJ, PLY, OFF, and STL with round-trip property tests.
 - **Acceptance check**:
   ```sh
-  mise run verify && mise exec -- pytest python/tests/test_io_m1.py -k roundtrip
+  mise run verify && mise exec -- uv run --no-sync pytest python/tests/test_io_m1.py -k roundtrip
   ```
+- **Status**: done. The acceptance check passes.
 
 ### M2: Mining and subsurface formats (DXF, VTK/VTU, Datamine CSV pairs)
 
@@ -132,8 +133,11 @@ tonnage without warning. `drusa` enforces three rules:
   Datamine `_tr.csv`/`_pt.csv` wireframe pairs.
 - **Acceptance check**:
   ```sh
-  mise exec -- pytest python/tests/test_io_m2.py -k "dxf or vtk or vtu or datamine"
+  mise exec -- uv run --no-sync pytest python/tests/test_io_m2.py -k "dxf or vtk or vtu or datamine"
   ```
+- **Status**: partial. Every format reads and writes, and the acceptance check
+  passes. Still missing: a test against a real Datamine Studio export (spec
+  decision 14). Only synthetic `_tr.csv`/`_pt.csv` fixtures exist so far.
 
 ### M3: Measure, validate, repair, and matplotlib plots
 
@@ -145,8 +149,10 @@ tonnage without warning. `drusa` enforces three rules:
   `dr.plot.section`, and `dr.plot.surface3d` on `matplotlib`.
 - **Acceptance check**:
   ```sh
-  mise exec -- pytest python/tests/test_measure_repair_plot.py
+  mise exec -- uv run --no-sync pytest python/tests/test_measure_repair_plot.py
   ```
+- **Status**: done. Hole filling offers `fill_holes="fan"` and `"min_area"`, and
+  `repair()` returns `(mesh, RepairReport)`. The acceptance check passes.
 
 ### M4: Exact booleans, surface cutting, and plane slicing
 
@@ -159,8 +165,18 @@ tonnage without warning. `drusa` enforces three rules:
   between two surfaces.
 - **Acceptance check**:
   ```sh
-  mise exec -- pytest python/tests/test_booleans.py -k "volume_identity and closed_output"
+  mise exec -- uv run --no-sync pytest python/tests/test_booleans.py -k "volume_identity and closed_output"
   ```
+- **Status**: partial. Union, intersection, difference, `clip_by_surface`,
+  `split_by_plane`, `slice_by_plane` and `cut_fill` work, and the acceptance
+  check passes. Known gaps:
+  - `symmetric_difference` of solids whose surfaces cross is not a solid: its
+    `a - b` and `b - a` pieces keep separate vertices along the intersection
+    curve (spec 6.2 item 8). The Rust test for a solid result stays ignored.
+  - A split whose section is narrower than about 1e-154 loses its cap, because
+    the implicit-point orientation test underflows. Its Rust test stays ignored.
+  - The Manifold oracle comparison and a CI pipeline do not exist yet.
+  - The semi-static filter in front of the exact predicates is not written.
 
 ### M5: Spatial queries for drillholes and block models
 
@@ -171,8 +187,11 @@ tonnage without warning. `drusa` enforces three rules:
   rotated 3D block inside a solid).
 - **Acceptance check**:
   ```sh
-  mise exec -- pytest python/tests/test_queries.py -k "block_fraction_sums_to_solid_volume"
+  mise exec -- uv run --no-sync pytest python/tests/test_queries.py -k "block_fraction_sums_to_solid_volume"
   ```
+- **Status**: done. `contains`, `locate`, `signed_distance`, `closest_point`,
+  `ray_hits`, `segment_hits`, `trace_intervals` and `block_fraction` (with
+  `rotation`) run on a BVH. The acceptance check passes.
 
 ### M6: Surface and solid construction and mesh editing
 
@@ -183,8 +202,18 @@ tonnage without warning. `drusa` enforces three rules:
   isotropic surface offset; and isotropic remeshing.
 - **Acceptance check**:
   ```sh
-  mise exec -- pytest python/tests/test_construct.py
+  mise exec -- uv run --no-sync pytest python/tests/test_construct.py
   ```
+- **Status**: partial. `dtm` with breaklines, `triangulate`, `extrude`, `loft`,
+  `close_to_elevation`, `contours`, `decimate`, `smooth`, `offset` and `remesh`
+  exist, and the acceptance check passes. Missing against the scope above:
+  - `loft` links one ring to one ring. Branching sections raise `Unsupported`
+    (spec decision 15).
+  - `extrude` sweeps along a vector only, not along a path.
+  - `offset` moves vertices along angle-weighted normals. A true isotropic
+    (Minkowski) offset is deferred (spec decision 16).
+  - `smooth` runs Taubin smoothing, which does not preserve volume exactly: in
+    example 05 the orebody's volume changes by 0.16 percent.
 
 ### M7: Boitata adopts drusa
 
@@ -196,6 +225,9 @@ tonnage without warning. `drusa` enforces three rules:
   ```sh
   mise -C /home/user/Projects/boitata run verify
   ```
+- **Status**: not started. No wheels are published and boitata does not depend
+  on drusa yet. `mise run compat` checks that the wheel installs with pip, uv,
+  pixi and conda.
 
 ## Performance
 
@@ -203,7 +235,11 @@ No performance numbers are stated before the code exists. Every number in this
 table will come from reproducible benchmarks we run on the same machine and in
 the same session using `criterion` (Rust) and interleaved multi-round timings
 reporting medians (Python), with system load recorded, comparing `drusa` against
-`trimesh`, `PyVista`/VTK, and `Manifold`:
+`trimesh`, `PyVista`/VTK, and `Manifold`. Criterion benches exist for I/O
+(`crates/io/benches/io.rs`, a 500k-triangle pit surface), booleans, slicing and
+validation (`crates/boolean/benches/booleans.rs`, on 5k- and 20k-triangle spheres,
+smaller than the datasets below) and queries (`crates/query/benches`). No timing has
+been recorded here yet:
 
 | Operation | Dataset | drusa | trimesh | PyVista / VTK | Manifold |
 |---|---|---|---|---|---|
