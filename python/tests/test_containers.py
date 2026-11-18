@@ -39,6 +39,50 @@ def test_table_to_pandas_keeps_nulls():
     assert df["i"].isna().tolist() == [False, True]
 
 
+NULLED = {"f": [1.0, np.nan, 3.0], "i": [1, None, 3], "b": [True, None, False], "s": ["a", None, "c"]}
+
+
+def null_lists(table, frame, kind):
+    if kind == "pandas":
+        return {n: frame[n].isna().tolist() for n in table.column_names}
+    if kind == "polars":
+        return {n: frame[n].is_null().to_list() for n in table.column_names}
+    return {n: frame.column(n).is_null().to_pylist() for n in table.column_names}
+
+
+@pytest.mark.parametrize("kind", ["pandas", "polars", "pyarrow"])
+def test_table_conversions_keep_values_and_nulls(kind):
+    pytest.importorskip(kind)
+    t = dr.Table(NULLED)
+    frame = getattr(t, f"to_{kind}")()
+    assert list(frame.columns if kind != "pyarrow" else frame.column_names) == t.column_names
+    assert len(frame) == 3
+    assert null_lists(t, frame, kind) == {n: [False, True, False] for n in t.column_names}
+    row0 = [frame[n][0] if kind != "pyarrow" else frame[n][0].as_py() for n in t.column_names]
+    assert row0 == [1.0, 1, True, "a"]
+    full = dr.Table({"a": [1, 2]})
+    assert null_lists(full, getattr(full, f"to_{kind}")(), kind) == {"a": [False, False]}
+
+
+@pytest.mark.parametrize("kind", ["pandas", "polars", "pyarrow"])
+def test_container_conversions_match_to_table(kind, box, rng):
+    pytest.importorskip(kind)
+    mesh = box([0, 0, 0], [1, 1, 1], name="b").with_vertex_column("id", np.arange(8))
+    lines = dr.Polylines([[[0, 0, 0], [1, 0, 0]], [[2, 2, 2], [3, 3, 3]]], attributes={"n": ["x", None]})
+    points = dr.PointSet(rng.uniform(0, 1, (5, 3)), {"g": [0.1, None, 0.3, 0.4, 0.5]})
+    cases = [
+        (mesh, {}, mesh.to_table()),
+        (mesh, {"on": "faces"}, mesh.to_table(on="faces")),
+        (lines, {}, lines.to_table()),
+        (points, {}, points.to_table()),
+    ]
+    for obj, kw, table in cases:
+        frame = getattr(obj, f"to_{kind}")(**kw)
+        names = list(frame.column_names if kind == "pyarrow" else frame.columns)
+        assert names == table.column_names and len(frame) == table.num_rows
+        assert null_lists(table, frame, kind) == {n: (~table.mask(n)).tolist() for n in table.column_names}
+
+
 def test_mesh_construction_and_attributes(box):
     b = box([0, 0, 0], [1, 2, 3], name="b")
     assert b.n_vertices == len(b) == 8 and b.n_faces == 12

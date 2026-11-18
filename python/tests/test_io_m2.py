@@ -24,7 +24,7 @@ def test_mesh_round_trip(tmp_path, lens, name):
     assert back.volume == lens.volume
 
 
-def test_polyface_and_zlib(tmp_path, lens):
+def test_dxf_polyface_and_vtu_zlib(tmp_path, lens):
     dr.write(tmp_path / "p.dxf", lens, dxf_entity="polyface", skip_unsupported_columns=True)
     assert dr.read_mesh(tmp_path / "p.dxf").n_faces == lens.n_faces
     dr.write(tmp_path / "z.vtu", lens, zlib=True)
@@ -33,7 +33,7 @@ def test_polyface_and_zlib(tmp_path, lens):
         dr.write(tmp_path / "q.dxf", lens, dxf_entity="mesh")
 
 
-def test_polylines_and_points_round_trip(tmp_path):
+def test_dxf_vtk_polylines_and_points_round_trip(tmp_path):
     holes = dr.datasets.drillholes(n=4)
     points = holes.to_points()
     for name in ("h.dxf", "h.vtk", "h.vtp"):
@@ -44,14 +44,14 @@ def test_polylines_and_points_round_trip(tmp_path):
         assert np.array_equal(dr.read_points(tmp_path / f"p{name}").coords, points.coords)
 
 
-def test_dataset_round_trip(tmp_path, lens):
+def test_vtk_dataset_round_trip(tmp_path, lens):
     data = dr.Dataset(lens, dr.datasets.drillholes(n=2), None, None, None, [])
     dr.write(tmp_path / "all.vtp", data, skip_unsupported_columns=True)
     back = dr.read(tmp_path / "all.vtp")
     assert back.mesh.n_faces == lens.n_faces and len(back.polylines) == 2 and back.warnings == []
 
 
-def test_grid_fixtures():
+def test_vtu_grid_fixtures():
     data = dr.read(FIXTURES / "two_pieces.vtu")
     grid = data.grid if data.grid is not None else None
     assert grid is not None and grid.n_cells >= 2
@@ -64,7 +64,7 @@ def test_grid_fixtures():
     assert poly is not None and poly.n_cells >= 1
 
 
-def test_grid_round_trips(tmp_path):
+def test_vtu_vtk_grid_round_trips(tmp_path):
     grid = dr.read(FIXTURES / "two_pieces.vtu").grid
     for name in ("g.vtu", "g.vtk"):
         dr.write(tmp_path / name, grid)

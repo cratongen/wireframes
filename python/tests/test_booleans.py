@@ -26,7 +26,7 @@ def vol(m):
     return 0.0 if m.n_faces == 0 else m.volume
 
 
-def test_volume_identities(box, rng):
+def test_volume_identity_and_closed_output(box, rng):
     for a, b in pairs(box, rng):
         u, i, d, x = a | b, a & b, a - b, a ^ b
         for m in (u, i, d):

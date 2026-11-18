@@ -69,7 +69,7 @@ def test_drillholes_through_the_orebody(orebody):
     assert total > 0
 
 
-def test_block_fraction_sums_to_volume(orebody):
+def test_block_fraction_sums_to_solid_volume(orebody):
     lo, hi = (np.array(b) for b in orebody.bounds)
     size = np.array([25.0, 20.0, 10.0])
     axes = [np.arange(lo[k] - size[k] / 3, hi[k] + size[k], size[k]) for k in range(3)]

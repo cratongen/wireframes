@@ -13,7 +13,7 @@ def solid(box):
 
 @pytest.mark.parametrize("ext", ["obj", "off", "ply", "stl"])
 @pytest.mark.parametrize("ascii", [False, True])
-def test_write_then_read_keeps_geometry(tmp_path, solid, ext, ascii):
+def test_roundtrip_keeps_geometry(tmp_path, solid, ext, ascii):
     path = tmp_path / f"m.{ext}"
     plain = dr.Mesh(solid.coords, solid.triangles)
     dr.write(path, plain, ascii=ascii)
@@ -24,7 +24,7 @@ def test_write_then_read_keeps_geometry(tmp_path, solid, ext, ascii):
     assert back.volume == plain.volume
 
 
-def test_ply_keeps_numeric_attributes(tmp_path, solid):
+def test_ply_roundtrip_keeps_numeric_attributes(tmp_path, solid):
     for ascii in (False, True):
         path = tmp_path / f"a{ascii}.ply"
         dr.write(path, solid, ascii=ascii)
@@ -33,7 +33,7 @@ def test_ply_keeps_numeric_attributes(tmp_path, solid):
         assert back["t"].tolist() == solid["t"].tolist()
 
 
-def test_obj_polygons_and_lines(tmp_path):
+def test_obj_roundtrip_polygons_and_lines(tmp_path):
     path = tmp_path / "q.obj"
     path.write_text("v 0 0 0\nv 1 0 0\nv 1 1 0\nv 0 1 0\nv 5 5 5\nv 6 5 5\ng pad\nf 1 2 3 4\nl 5 6\n")
     data = dr.read(path)
