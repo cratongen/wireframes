@@ -15,6 +15,8 @@ HERE = Path(__file__).parent if "__file__" in globals() else Path.cwd()
 sys.path.insert(0, str(HERE.parent))
 
 # %%
+import importlib.util
+
 import drusa as dr
 import numpy as np
 from common import save
@@ -72,3 +74,47 @@ save(fig, "basics")
 # %%
 print(holes.to_table().column_names)
 assert cube.volume == 8000.0
+
+# %% [markdown]
+# ## Joining meshes and editing tables
+#
+# `dr.concat` appends meshes in order without welding, so volumes add. `with_attributes` swaps whole attribute
+# tables, and `Table.with_columns` adds several columns at once.
+
+# %%
+second = cube.translate([40, 0, 0])
+pair = dr.concat([cube, second])
+print(pair.n_faces, "faces,", f"{pair.volume:.0f} m3")
+assert pair.volume == cube.volume + second.volume
+relabelled = pair.with_attributes(face={"block": [1] * 12 + [2] * 12})
+print(relabelled.column_names, table.with_columns({"lab": ["A", "B", "C"]}).column_names)
+
+# %% [markdown]
+# ## Strings from a table
+#
+# `Polylines.from_table` groups rows into features by an id column, as a CSV export of a pit crest would give.
+# `length` measures each feature in 3D, `contains` tests points in plan, and `to_points` turns every vertex into a
+# point with its feature, part and vertex index.
+
+# %%
+crest = dr.Polylines.from_table(
+    {"ID": ["pad"] * 4, "X": [0, 30, 30, 0], "Y": [0, 0, 30, 30], "Z": [5, 5, 5, 5]}, z="Z", closed=True
+)
+print(crest.length(), crest.contains([[15, 15], [45, 15]]))
+assert crest.length()[0] == 120.0 and crest.contains([[15, 15]])[0]
+vertices = crest.to_points()
+print(vertices.column_names, len(vertices))
+
+# %% [markdown]
+# The DataFrame converters keep nulls and need only the library they name.
+
+# %%
+for lib in ("polars", "pandas", "pyarrow"):
+    if importlib.util.find_spec(lib):
+        print(
+            lib,
+            len(getattr(table, f"to_{lib}")()),
+            "table rows,",
+            len(getattr(collars, f"to_{lib}")()),
+            "collars",
+        )

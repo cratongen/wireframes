@@ -73,6 +73,17 @@ print(f"lofted frustum {column.volume:,.4f} m3, analytic {frustum:,.4f} m3, soli
 assert abs(column.volume - frustum) <= 1e-9 * frustum
 
 # %% [markdown]
+# `triangulate` fills each feature's closed rings with triangles, treating inner rings as holes by even-odd, so a
+# pad with a sump becomes a flat mesh whose area is the polygon area.
+
+# %%
+sump = [[15, 10], [25, 10], [25, 20], [15, 20]]
+holed_pad = dr.Polylines([pad.parts[0][:, :2], sump], closed=True, features=[0, 0])
+floor = dr.triangulate(holed_pad)
+print(f"triangulated {floor.n_faces} triangles, {floor.area:,.1f} m2 = {holed_pad.area()[0]:,.1f} m2")
+assert abs(floor.area - holed_pad.area()[0]) <= 1e-9 * floor.area
+
+# %% [markdown]
 # ## Editing meshes
 #
 # `decimate` collapses edges by quadric error and keeps a solid closed; `smooth` applies Taubin's

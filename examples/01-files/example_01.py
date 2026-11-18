@@ -82,3 +82,39 @@ print(pair)
 fig, ax = dr.plot.surface3d(pair, "section", azim=-50, elev=25)
 ax.set_title("Orebody read back from lens_tr.csv")
 save(fig, "files")
+
+# %% [markdown]
+# ## One kind of geometry at a time
+#
+# `dr.read_polylines` and `dr.read_points` return just the strings or just the points of a file, for scripts that
+# expect one kind.
+
+# %%
+collars = dr.PointSet(np.array([p[0] for p in holes.parts]), {"hole": holes.attributes["hole"]})
+dr.write(folder / "collars.dxf", collars, skip_unsupported_columns=True)
+traces = dr.read_polylines(folder / "holes.dxf")
+points = dr.read_points(folder / "collars.dxf")
+print(traces, points, sep="\n")
+assert len(traces) == len(holes) and np.array_equal(points.coords, collars.coords)
+
+# %% [markdown]
+# ## Volume cells
+#
+# A `.vtu` or `.vtk` file with tetrahedra or hexahedra comes back as an `UnstructuredGrid`: points, VTK cell types,
+# connectivity with offsets, and point and cell data. drusa keeps these cells as data so a reservoir or
+# finite-element mesh round-trips; `surface()` gives the triangles among them as a `Mesh`.
+
+# %%
+(folder / "cells.vtk").write_text(
+    "# vtk DataFile Version 3.0\ntetra and cap\nASCII\nDATASET UNSTRUCTURED_GRID\n"
+    "POINTS 5 double\n0 0 0\n10 0 0\n0 10 0\n0 0 10\n10 10 0\n"
+    "CELLS 2 9\n4 0 1 2 3\n3 1 4 2\nCELL_TYPES 2\n10\n5\n"
+    "CELL_DATA 2\nSCALARS rock double 1\nLOOKUP_TABLE default\n1\n2\n"
+)
+grid = dr.read(folder / "cells.vtk").grid
+print(grid.n_cells, grid.cell_types, grid.connectivity, grid.cell_data["rock"], grid.point_data.column_names)
+cap = grid.surface()
+print(cap)
+dr.write(folder / "cells.vtu", grid)
+again = dr.read(folder / "cells.vtu").grid
+assert np.array_equal(again.connectivity, grid.connectivity) and cap.n_faces == 1

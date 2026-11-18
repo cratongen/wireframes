@@ -37,6 +37,35 @@ assert np.array_equal(np.sign(distance).astype(np.int8), where)
 assert (orebody.locate(orebody.coords) == 0).all()
 
 # %% [markdown]
+# `contains` answers the same question as a boolean, with `boundary` choosing what a point on the surface counts
+# as. `closest_point` returns the nearest surface point, its face and the unsigned distance.
+
+# %%
+inside = orebody.contains(points)
+assert np.array_equal(inside, where <= 0) and not orebody.contains(orebody.coords, boundary=False).any()
+nearest, face, gap = orebody.closest_point(points)
+assert np.allclose(gap, np.abs(distance)) and np.allclose(np.linalg.norm(nearest - points, axis=1), gap)
+print(f"furthest sample point is {gap.max():.1f} m from the orebody, nearest face {face[np.argmax(gap)]}")
+
+# %% [markdown]
+# ## Surfaces seen from above
+#
+# For an open surface, `surface_z` gives the highest elevation above each plan point and `vertical_distance` the
+# height of a point above it, negative below ground. `segment_hits` lists where straight segments, such as
+# blast holes, pierce a mesh.
+
+# %%
+topography = dr.datasets.topography()
+collars = np.column_stack([o[:2] + rng.uniform(-300, 300, (5, 2)), np.full(5, 400.0)])
+ground = topography.surface_z(collars[:, :2])
+print("ground", np.round(ground, 2))
+assert np.allclose(topography.vertical_distance(collars), 400.0 - ground)
+toes = collars - [0, 0, 300]
+hits = topography.segment_hits(collars, toes)
+print(hits.column_names)
+assert np.allclose(np.sort(hits["z"]), np.sort(ground))
+
+# %% [markdown]
 # ## Drillhole intervals
 #
 # `trace_intervals` splits a desurveyed trace into runs inside and outside the solid, with the faces where it

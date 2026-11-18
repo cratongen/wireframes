@@ -95,3 +95,56 @@ ax2.set_xlabel("Volume (thousand m3)")
 ax2.set_ylabel("Elevation (m)")
 ax2.set_title("Orebody volume by 5 m slab")
 save(fig, "measure_repair")
+
+# %% [markdown]
+# The report also says where every input face went (`face_map`, -1 for a dropped face) and how many boundary loops
+# stayed open (`holes_left`), so a script can refuse a repair that left the solid open.
+
+# %%
+print("soup faces dropped:", int((log.face_map < 0).sum()), "holes left:", fill_log.holes_left)
+assert (log.face_map < 0).sum() == 6 and fill_log.holes_left == 0 and filled.is_solid
+
+# %% [markdown]
+# ## Per-face measures
+#
+# `face_areas` add up to `area`. `face_normals` are unit normals per triangle, `vertex_normals` average them by
+# corner angle, and `dip` gives each triangle's dip and dip direction in degrees, as a structural geologist reads a
+# fault plane.
+
+# %%
+assert abs(orebody.face_areas.sum() - orebody.area) <= 1e-9 * orebody.area
+print("normal lengths", np.unique(np.round(np.linalg.norm(orebody.face_normals, axis=1), 12)))
+print("vertex normals", orebody.vertex_normals.shape)
+dips = orebody.dip
+print(f"steepest triangle dips {dips[:, 0].max():.1f} degrees")
+
+# %% [markdown]
+# ## Moving, rescaling and splitting
+#
+# `transform` applies a 4x4 affine matrix; a mirror flips the winding back so the solid stays outward.
+# `to_length_unit` rescales and relabels. `components` splits a mesh into edge-connected pieces, and
+# `component_labels` gives the piece of each triangle.
+
+# %%
+mirror = np.diag([-1.0, 1.0, 1.0, 1.0])
+assert abs(orebody.transform(mirror).volume - orebody.volume) <= 1e-9 * orebody.volume
+in_feet = orebody.to_length_unit("ft")
+print(in_feet.length_unit, f"{in_feet.volume:,.0f} ft3")
+two = dr.concat([orebody, orebody.translate([500, 0, 0])])
+pieces = two.components()
+print(len(pieces), "components", np.bincount(two.component_labels()))
+assert abs(sum(p.volume for p in pieces) - two.volume) <= 1e-9 * two.volume
+
+# %% [markdown]
+# ## Thickness between two surfaces
+#
+# `thickness` measures from this surface down to another one, vertically or along the normal. A topography
+# lowered by 12 m is 12 m thick everywhere.
+
+# %%
+topography = dr.datasets.topography(n=60)
+floor = topography.translate([0, 0, -12])
+probe = np.random.default_rng(3).uniform(topography.bounds[0][:2], topography.bounds[1][:2], (200, 2))
+depth = topography.thickness(floor, probe)
+print(np.round(depth[:5], 6))
+assert np.allclose(depth, 12.0)
