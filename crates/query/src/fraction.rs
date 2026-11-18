@@ -41,40 +41,40 @@ fn check(blocks: &Blocks) -> Result<()> {
     Ok(())
 }
 
+/// Fractions are integrated in the block frame scaled to unit blocks, so the
+/// block volume is 1 and tiny sizes do not underflow.
 pub(crate) fn fractions(surface: &SurfaceIndex, blocks: &Blocks) -> Result<Vec<f64>> {
     check(blocks)?;
-    let Some(r) = blocks.rotation else {
-        return Ok(axis_fractions(
-            &surface.mesh,
-            &surface.bvh,
-            &blocks.centroids,
-            blocks.size,
-        ));
-    };
     let Some(&c0) = blocks.centroids.first() else {
         return Ok(vec![]);
     };
+    let r = blocks
+        .rotation
+        .unwrap_or([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]);
+    let size = blocks.size;
     let local = |v: &[f64; 3]| {
         let d = [v[0] - c0[0], v[1] - c0[1], v[2] - c0[2]];
-        [0, 1, 2].map(|k| r[0][k] * d[0] + r[1][k] * d[1] + r[2][k] * d[2])
+        [0, 1, 2].map(|k| (r[0][k] * d[0] + r[1][k] * d[1] + r[2][k] * d[2]) / size[k])
     };
-    let mesh = surface
-        .mesh
-        .clone()
-        .with_vertices(surface.mesh.vertices().iter().map(local).collect())?;
+    let vertices: Vec<[f64; 3]> = surface.mesh.vertices().iter().map(local).collect();
+    if vertices.iter().flatten().any(|x| !x.is_finite()) {
+        return Err(Error::invalid(format!(
+            "size is too small for the extent of the solid: size is {size:?}"
+        )));
+    }
+    let mesh = surface.mesh.clone().with_vertices(vertices)?;
     let bvh = Bvh::new(&mesh.face_aabbs());
     let centroids: Vec<[f64; 3]> = blocks.centroids.iter().map(local).collect();
-    Ok(axis_fractions(&mesh, &bvh, &centroids, blocks.size))
+    Ok(unit_fractions(&mesh, &bvh, &centroids))
 }
 
-fn axis_fractions(mesh: &Mesh, bvh: &Bvh, centroids: &[[f64; 3]], size: [f64; 3]) -> Vec<f64> {
-    let volume = size[0] * size[1] * size[2];
+fn unit_fractions(mesh: &Mesh, bvh: &Bvh, centroids: &[[f64; 3]]) -> Vec<f64> {
     centroids
         .par_iter()
         .map(|c| {
             let b = Aabb {
-                min: [0, 1, 2].map(|k| c[k] - 0.5 * size[k]),
-                max: [0, 1, 2].map(|k| c[k] + 0.5 * size[k]),
+                min: c.map(|x| x - 0.5),
+                max: c.map(|x| x + 0.5),
             };
             let column = Aabb {
                 min: b.min,
@@ -82,7 +82,7 @@ fn axis_fractions(mesh: &Mesh, bvh: &Bvh, centroids: &[[f64; 3]], size: [f64; 3]
             };
             let mut faces = vec![];
             bvh.query(&column, |f| faces.push(f));
-            (box_volume(mesh, &faces, &b) / volume).clamp(0.0, 1.0)
+            box_volume(mesh, &faces, &b).clamp(0.0, 1.0)
         })
         .collect()
 }
@@ -147,6 +147,9 @@ mod tests {
         b.rotation = Some([[1.0, 0.1, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]);
         assert!(s.block_fraction(&b).is_err());
         b.rotation = None;
+        b.size = [1e-310; 3];
+        assert!(s.block_fraction(&b).is_err());
+        b.size = [1.0; 3];
         b.centroids = vec![[f64::NAN; 3]];
         assert!(s.block_fraction(&b).is_err());
     }

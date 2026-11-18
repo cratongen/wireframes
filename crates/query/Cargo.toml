@@ -13,7 +13,12 @@ drusa-ops.workspace = true
 rayon.workspace = true
 
 [dev-dependencies]
+criterion.workspace = true
 proptest.workspace = true
+
+[[bench]]
+name = "queries"
+harness = false
 
 [lints]
 workspace = true

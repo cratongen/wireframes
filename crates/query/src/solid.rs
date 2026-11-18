@@ -1,9 +1,39 @@
+use drusa_core::exact::Expansion;
 use drusa_core::intersect::point_in_triangle;
+use drusa_core::predicates::{Sign, orient2d};
 use drusa_core::topology::ray_crosses;
-use drusa_core::{Error, Mesh, Result};
+use drusa_core::{Aabb, Error, Mesh, Result};
 use rayon::prelude::*;
 
+use crate::ray::{Line, Param, V, dot, normal};
 use crate::{Blocks, Interval, SurfaceIndex, Trace};
+
+/// `ray_crosses` for the exact point `x / w`, `w > 0`, with the same plan
+/// perturbation. The point must not lie on the closed face.
+fn ray_crosses_h(c: [[f64; 3]; 3], x: &V, w: &Expansion) -> bool {
+    let plan = c.map(|v| [v[0], v[1]]);
+    let s = Sign::of(orient2d(plan[0], plan[1], plan[2]));
+    if s == Sign::Zero {
+        return false;
+    }
+    let side = |a: [f64; 2], b: [f64; 2]| {
+        let o = Expansion::diff_f64(b[0], a[0])
+            .product(&x[1].diff(&w.scale(a[1])))
+            .diff(&Expansion::diff_f64(b[1], a[1]).product(&x[0].diff(&w.scale(a[0]))));
+        match o.sign() {
+            Sign::Zero => match Sign::of(a[1] - b[1]) {
+                Sign::Zero => Sign::of(b[0] - a[0]),
+                t => t,
+            },
+            t => t,
+        }
+    };
+    if (0..3).any(|i| side(plan[i], plan[(i + 1) % 3]) != s) {
+        return false;
+    }
+    let below = [0, 1, 2].map(|k| w.scale(c[0][k]).diff(&x[k]));
+    dot(&normal(&c), &below).sign() == s
+}
 
 /// Sign agrees with signed distance.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -59,6 +89,32 @@ impl SolidIndex {
             (true, _) => Location::Boundary,
             (false, true) => Location::Inside,
             (false, false) => Location::Outside,
+        }
+    }
+
+    /// Inside or outside for the exact point of `line` at `t`, which must not
+    /// lie on the surface.
+    pub(crate) fn locate_on_line(&self, line: &Line, t: &Param) -> Location {
+        let mesh = self.mesh();
+        let (x, w) = line.point_h(t);
+        let est = line.at(t.value());
+        let o = line.origin();
+        let m = (0..3).fold(0.0f64, |m, k| m.max(o[k].abs() + est[k].abs()));
+        let pad = 64.0 * f64::EPSILON * m + f64::MIN_POSITIVE;
+        let column = Aabb {
+            min: [est[0] - pad, est[1] - pad, est[2] - pad],
+            max: [est[0] + pad, est[1] + pad, f64::INFINITY],
+        };
+        let mut odd = false;
+        self.surface.bvh.query(&column, |f| {
+            if ray_crosses_h(mesh.corners(f), &x, &w) {
+                odd = !odd;
+            }
+        });
+        if odd {
+            Location::Inside
+        } else {
+            Location::Outside
         }
     }
 

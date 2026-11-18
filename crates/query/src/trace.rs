@@ -53,7 +53,7 @@ fn check(trace: &Trace) -> Result<()> {
 
 /// Pieces of one trace segment between consecutive distinct exact crossing
 /// parameters. A piece inside a coplanar range lies in a face and is inside;
-/// any other piece is open and holds no boundary point, so its float midpoint
+/// any other piece is open and holds no boundary point, so its exact midpoint
 /// decides its label.
 fn segment_pieces(index: &SolidIndex, line: Line, d0: f64, d1: f64, out: &mut Vec<Interval>) {
     let hits = index.surface.raw_hits(&line);
@@ -86,10 +86,7 @@ fn segment_pieces(index: &SolidIndex, line: Line, d0: f64, d1: f64, out: &mut Ve
         let in_face = hits.iter().any(|h| {
             h.kind == HitKind::Coplanar && h.lo.cmp(&a.0).is_le() && b.0.cmp(&h.hi).is_le()
         });
-        let inside = in_face || {
-            let mid = line.at(0.5 * (a.0.value() + b.0.value()));
-            index.locate(mid) != Location::Outside
-        };
+        let inside = in_face || index.locate_on_line(&line, &a.0.mid(&b.0)) == Location::Inside;
         out.push(Interval {
             from: depths[i],
             to: depths[i + 1],

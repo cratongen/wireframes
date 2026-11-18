@@ -1,6 +1,56 @@
+use drusa_core::intersect::point_in_triangle;
+use drusa_core::predicates::{Sign, orient3d};
 use drusa_core::{Mesh, fixtures};
 use drusa_query::{Blocks, HitKind, Location, SolidIndex, SurfaceIndex, Trace};
 use proptest::prelude::*;
+
+/// Float solid-angle winding number of `m` around `p`.
+fn winding(m: &Mesh, p: [f64; 3]) -> f64 {
+    (0..m.n_faces() as u32)
+        .map(|f| {
+            let [a, b, c] = m
+                .corners(f)
+                .map(|v| [v[0] - p[0], v[1] - p[1], v[2] - p[2]]);
+            let n = |v: [f64; 3]| (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt();
+            let dot = |u: [f64; 3], v: [f64; 3]| u[0] * v[0] + u[1] * v[1] + u[2] * v[2];
+            let det = a[0] * (b[1] * c[2] - b[2] * c[1]) - a[1] * (b[0] * c[2] - b[2] * c[0])
+                + a[2] * (b[0] * c[1] - b[1] * c[0]);
+            let den = n(a) * n(b) * n(c) + dot(a, b) * n(c) + dot(b, c) * n(a) + dot(c, a) * n(b);
+            2.0 * det.atan2(den)
+        })
+        .sum::<f64>()
+        / (4.0 * std::f64::consts::PI)
+}
+
+/// Exact winding number of `m` around `p`, which must be off the surface, as the
+/// signed count of crossings of the segment from `p` to `far` (exact `orient3d`
+/// signs, so a rational computation). `None` when the segment meets an edge, a
+/// vertex or a face plane at `far`, or runs in a face plane.
+fn exact_winding(m: &Mesh, p: [f64; 3], far: [f64; 3]) -> Option<i32> {
+    let mut w = 0;
+    for f in 0..m.n_faces() as u32 {
+        let [a, b, c] = m.corners(f);
+        let (sp, sf) = (
+            Sign::of(orient3d(a, b, c, p)),
+            Sign::of(orient3d(a, b, c, far)),
+        );
+        if sf == Sign::Zero {
+            return None;
+        }
+        if sp == Sign::Zero || sp == sf {
+            continue;
+        }
+        let s = [(a, b), (b, c), (c, a)].map(|(u, v)| Sign::of(orient3d(p, far, u, v)));
+        if s.contains(&Sign::Positive) && s.contains(&Sign::Negative) {
+            continue;
+        }
+        if s.contains(&Sign::Zero) {
+            return None;
+        }
+        w += if sp == Sign::Positive { 1 } else { -1 };
+    }
+    Some(w)
+}
 
 fn close(a: f64, b: f64, rel: f64) -> bool {
     (a - b).abs() <= rel * 1f64.max(a.abs()).max(b.abs())
@@ -192,15 +242,7 @@ proptest! {
         let s = SolidIndex::new(&m).unwrap();
         for p in fixtures::random_points(seed, 40, [-1.5; 3], [1.5; 3]) {
             prop_assume!(s.signed_distance(&[p])[0].abs() > 1e-6);
-            let w: f64 = (0..m.n_faces() as u32).map(|f| {
-                let [a, b, c] = m.corners(f).map(|v| [v[0] - p[0], v[1] - p[1], v[2] - p[2]]);
-                let n = |v: [f64; 3]| (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt();
-                let dot = |u: [f64; 3], v: [f64; 3]| u[0] * v[0] + u[1] * v[1] + u[2] * v[2];
-                let det = a[0] * (b[1] * c[2] - b[2] * c[1]) - a[1] * (b[0] * c[2] - b[2] * c[0]) + a[2] * (b[0] * c[1] - b[1] * c[0]);
-                let den = n(a) * n(b) * n(c) + dot(a, b) * n(c) + dot(b, c) * n(a) + dot(c, a) * n(b);
-                2.0 * det.atan2(den)
-            }).sum::<f64>() / (4.0 * std::f64::consts::PI);
-            let want = if w.round() != 0.0 { Location::Inside } else { Location::Outside };
+            let want = if winding(&m, p).round() != 0.0 { Location::Inside } else { Location::Outside };
             prop_assert_eq!(s.locate(p), want);
         }
     }
@@ -248,4 +290,229 @@ fn utm_scale_fractions_match_the_origin() {
         total(&z)
     );
     assert!(a.iter().zip(&z).all(|(x, y)| (x - y).abs() < 1e-6));
+}
+
+fn small_solids() -> Vec<Mesh> {
+    vec![
+        fixtures::cube(),
+        fixtures::tetrahedron(),
+        fixtures::sphere(1),
+        fixtures::torus(10, 6),
+        fixtures::nested_shells(),
+    ]
+}
+
+/// Points at random heights that share x, y or both with mesh vertices.
+fn vertex_plan_points(m: &Mesh, rng: &mut fixtures::Rng, n: usize) -> Vec<[f64; 3]> {
+    let verts = m.vertices();
+    let mut pts = vec![];
+    for _ in 0..n {
+        let v = verts[rng.below(verts.len())];
+        let w = verts[rng.below(verts.len())];
+        let z = rng.uniform(-1.6, 1.6);
+        let u = rng.uniform(-1.6, 1.6);
+        pts.extend([
+            [v[0], v[1], z],
+            [v[0], w[1], z],
+            [w[0], v[1], z],
+            [v[0], u, z],
+            [u, v[1], z],
+            [v[0], v[1], w[2]],
+        ]);
+    }
+    pts
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(48))]
+
+    #[test]
+    fn locate_agrees_with_the_exact_winding_number(seed in 0u64..10_000) {
+        for m in small_solids() {
+            let s = SolidIndex::new(&m).unwrap();
+            let mut rng = fixtures::Rng::new(seed);
+            let mut pts = vertex_plan_points(&m, &mut rng, 8);
+            pts.extend(fixtures::random_points(seed, 16, [-1.6; 3], [1.6; 3]));
+            for p in pts {
+                if (0..m.n_faces() as u32).any(|f| point_in_triangle(p, m.corners(f))) {
+                    prop_assert_eq!(s.locate(p), Location::Boundary);
+                    continue;
+                }
+                let w = (0..32)
+                    .find_map(|_| {
+                        let d = [0; 3].map(|_| rng.uniform(-1.0, 1.0));
+                        exact_winding(&m, p, [0, 1, 2].map(|k| p[k] + 100.0 * d[k]))
+                    })
+                    .expect("a generic direction exists");
+                let want = if w != 0 { Location::Inside } else { Location::Outside };
+                prop_assert_eq!(s.locate(p), want, "p = {:?}, winding {}", p, w);
+            }
+        }
+    }
+
+    #[test]
+    fn locate_matches_winding_at_vertex_plan_coordinates(seed in 0u64..10_000) {
+        for m in [fixtures::torus(10, 6), fixtures::sphere(1), fixtures::nested_shells()] {
+            let s = SolidIndex::new(&m).unwrap();
+            let mut rng = fixtures::Rng::new(seed);
+            let verts = m.vertices();
+            for _ in 0..20 {
+                let v = verts[rng.below(verts.len())];
+                let w = verts[rng.below(verts.len())];
+                let z = rng.uniform(-1.6, 1.6);
+                for p in [[v[0], v[1], z], [v[0], w[1], z], [w[0], v[1], z]] {
+                    let d = s.signed_distance(&[p])[0];
+                    if d.abs() < 1e-6 {
+                        continue;
+                    }
+                    let want = if winding(&m, p).round() != 0.0 { Location::Inside } else { Location::Outside };
+                    prop_assert_eq!(s.locate(p), want, "p = {:?}", p);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn trace_labels_match_locate_on_tiny_pieces(seed in 0u64..10_000, k in 1u32..64) {
+        let m = fixtures::cube();
+        let s = SolidIndex::new(&m).unwrap();
+        let mut rng = fixtures::Rng::new(seed);
+        let a = [rng.uniform(0.1, 0.9), rng.uniform(0.1, 0.9), rng.uniform(0.1, 0.9)];
+        let axis = rng.below(3);
+        let mut b = a;
+        b[axis] = if rng.below(2) == 0 { 1.0 + k as f64 * f64::EPSILON } else { -(k as f64) * f64::EPSILON * 0.5 };
+        let iv = s.trace_intervals(&Trace { xyz: vec![a, b], depth: vec![0.0, 1.0] }).unwrap();
+        prop_assert_eq!(s.locate(b), Location::Outside);
+        prop_assert!(iv.first().unwrap().inside);
+        prop_assert!(!iv.last().unwrap().inside, "{:?}", iv);
+        prop_assert_eq!(iv.len(), 2);
+        prop_assert!(iv[0].exit_face.is_some() && iv[1].entry_face.is_some());
+    }
+}
+
+#[test]
+fn trace_leaving_by_one_ulp_has_an_outside_tail() {
+    let s = SolidIndex::new(&fixtures::cube()).unwrap();
+    let q = [0.5, 0.5, 1.0 + f64::EPSILON];
+    assert_eq!(s.locate(q), Location::Outside);
+    let iv = s
+        .trace_intervals(&Trace {
+            xyz: vec![[0.5, 0.5, 0.5], q],
+            depth: vec![0.0, 1.0],
+        })
+        .unwrap();
+    assert!(iv.first().unwrap().inside);
+    assert!(
+        !iv.last().unwrap().inside,
+        "the trace ends outside the solid but its last interval is inside: {iv:?}"
+    );
+}
+
+#[test]
+fn closest_tie_on_a_shared_edge_takes_the_smaller_face() {
+    let s = SurfaceIndex::new(&fixtures::cube());
+    let mut rng = fixtures::Rng::new(7);
+    let mut bad = vec![];
+    for _ in 0..2000 {
+        let x = rng.uniform(0.05, 0.95);
+        let p = [x, -1e-20, -1e-20];
+        let c = s.closest(&[p])[0];
+        if c.face != 1 {
+            bad.push((x, c.face));
+        }
+    }
+    assert!(
+        bad.is_empty(),
+        "{} of 2000 points equidistant from faces 1 and 4 chose another face, first {:?}",
+        bad.len(),
+        bad.first()
+    );
+}
+
+#[test]
+fn ray_through_two_cube_corners_reports_two_vertex_hits() {
+    let s = SurfaceIndex::new(&fixtures::cube());
+    let h = s
+        .ray_hits(&[[-1.0, -1.0, -1.0]], &[[1.0, 1.0, 1.0]])
+        .unwrap();
+    let pts: Vec<_> = h[0].iter().map(|x| (x.t, x.point, x.kind)).collect();
+    assert_eq!(h[0].len(), 2, "{pts:?}");
+    assert_eq!(h[0][0].point, [0.0; 3]);
+    assert_eq!(h[0][1].point, [1.0; 3]);
+    assert!(h[0].iter().all(|x| x.kind == HitKind::Vertex));
+}
+
+#[test]
+fn block_equal_to_the_solid_and_its_neighbour() {
+    let s = SolidIndex::new(&fixtures::cube()).unwrap();
+    let f = s
+        .block_fraction(&Blocks {
+            centroids: vec![[0.5; 3], [1.5, 0.5, 0.5], [0.5, 0.5, 1.5], [0.5, 0.5, -0.5]],
+            size: [1.0; 3],
+            rotation: None,
+        })
+        .unwrap();
+    assert_eq!(f, [1.0, 0.0, 0.0, 0.0]);
+}
+
+#[test]
+fn utm_trace_chord() {
+    let off = [700_000.0, 7_500_000.0, 1_000.0];
+    let m = fixtures::translated(&fixtures::cube(), off);
+    let s = SolidIndex::new(&m).unwrap();
+    let a = [off[0] + 0.3, off[1] + 0.4, off[2] + 2.0];
+    let b = [off[0] + 0.6, off[1] + 0.7, off[2] - 1.0];
+    let len = ((0.3f64).powi(2) * 2.0 + 9.0).sqrt();
+    let iv = s
+        .trace_intervals(&Trace {
+            xyz: vec![a, b],
+            depth: vec![0.0, len],
+        })
+        .unwrap();
+    assert_eq!(iv.len(), 3, "{iv:?}");
+    let inside = iv[1].to - iv[1].from;
+    assert!(
+        (inside - len / 3.0).abs() < 1e-9,
+        "{inside} vs {}",
+        len / 3.0
+    );
+}
+
+#[test]
+fn signed_distance_sign_at_utm_scale() {
+    let off = [700_000.0, 7_500_000.0, 1_000.0];
+    let m = fixtures::translated(&fixtures::sphere(2), off);
+    let s = SolidIndex::new(&m).unwrap();
+    let pts = fixtures::random_points(3, 200, [-1.2; 3], [1.2; 3]);
+    let far: Vec<_> = pts
+        .iter()
+        .map(|p| [0, 1, 2].map(|k| p[k] + off[k]))
+        .collect();
+    let near = SolidIndex::new(&fixtures::sphere(2)).unwrap();
+    let a = near.signed_distance(&pts);
+    let b = s.signed_distance(&far);
+    for (x, y) in a.iter().zip(&b) {
+        if x.abs() > 1e-6 {
+            assert_eq!(x.signum(), y.signum());
+            assert!((x - y).abs() < 1e-6, "{x} vs {y}");
+        }
+    }
+}
+
+#[test]
+fn tiny_positive_block_size_gives_a_fraction_in_range() {
+    let s = SolidIndex::new(&fixtures::cube()).unwrap();
+    let f = s
+        .block_fraction(&Blocks {
+            centroids: vec![[0.5; 3]],
+            size: [1e-110; 3],
+            rotation: None,
+        })
+        .unwrap();
+    assert!((0.0..=1.0).contains(&f[0]), "fraction is {}", f[0]);
+}
+
+#[test]
+fn empty_mesh_is_not_a_solid() {
+    assert!(SolidIndex::new(&Mesh::empty()).is_err());
 }

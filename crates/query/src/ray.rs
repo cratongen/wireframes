@@ -23,13 +23,13 @@ pub struct Hit {
     pub entering: Option<bool>,
 }
 
-type V = [Expansion; 3];
+pub(crate) type V = [Expansion; 3];
 
 fn ex(p: [f64; 3]) -> V {
     p.map(Expansion::from_f64)
 }
 
-fn sub(a: [f64; 3], b: [f64; 3]) -> V {
+pub(crate) fn sub(a: [f64; 3], b: [f64; 3]) -> V {
     [0, 1, 2].map(|k| Expansion::diff_f64(a[k], b[k]))
 }
 
@@ -40,11 +40,11 @@ fn cross(u: &V, v: &V) -> V {
     })
 }
 
-fn dot(u: &V, v: &V) -> Expansion {
+pub(crate) fn dot(u: &V, v: &V) -> Expansion {
     (0..3).fold(Expansion::zero(), |acc, k| acc.sum(&u[k].product(&v[k])))
 }
 
-fn normal(t: &[[f64; 3]; 3]) -> V {
+pub(crate) fn normal(t: &[[f64; 3]; 3]) -> V {
     cross(&sub(t[1], t[0]), &sub(t[2], t[0]))
 }
 
@@ -57,7 +57,7 @@ pub(crate) enum Line {
 }
 
 impl Line {
-    fn origin(&self) -> [f64; 3] {
+    pub(crate) fn origin(&self) -> [f64; 3] {
         match *self {
             Line::Ray(p, _) | Line::Segment(p, _) => p,
         }
@@ -76,6 +76,13 @@ impl Line {
             Line::Segment(p, q) => Sign::of(orient3d(u, v, q, p)),
             Line::Ray(p, d) => dot(&cross(&sub(u, p), &sub(v, p)), &ex(d)).sign(),
         }
+    }
+
+    /// Homogeneous coordinates `(X, W)`, `W > 0`, of the exact point at `t`.
+    pub(crate) fn point_h(&self, t: &Param) -> (V, Expansion) {
+        let (p, d) = (self.origin(), self.dir());
+        let x = [0, 1, 2].map(|k| t.den.scale(p[k]).sum(&t.num.product(&d[k])));
+        (x, t.den.clone())
     }
 
     pub(crate) fn at(&self, t: f64) -> [f64; 3] {
@@ -124,6 +131,13 @@ impl Param {
             Sign::Zero => Ordering::Equal,
             Sign::Positive => Ordering::Greater,
         }
+    }
+
+    pub(crate) fn mid(&self, o: &Param) -> Param {
+        Param::new(
+            self.num.product(&o.den).sum(&o.num.product(&self.den)),
+            self.den.product(&o.den).scale(2.0),
+        )
     }
 
     pub(crate) fn value(&self) -> f64 {
