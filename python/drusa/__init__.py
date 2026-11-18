@@ -1,6 +1,6 @@
 """Read, write, plot, measure and combine solids, surfaces and strings."""
 
-from . import errors
+from . import _containers, errors
 from ._containers import Dataset, read
 from ._drusa import (
     Mesh,
@@ -28,6 +28,8 @@ from ._drusa import (
 )
 from .errors import DrusaError, FileError, InvalidInput, InvalidMesh, MissingColumn
 
+del _containers
+
 __all__ = [
     "Dataset",
     "DrusaError",
@@ -45,6 +47,7 @@ __all__ = [
     "__version__",
     "concat",
     "cut_fill",
+    "datasets",
     "difference",
     "dtm",
     "errors",
@@ -64,8 +67,8 @@ __all__ = [
 
 
 def __getattr__(name: str):
-    if name == "plot":
+    if name in ("plot", "datasets"):
         import importlib
 
-        return importlib.import_module(f"{__name__}.plot")
+        return importlib.import_module(f"{__name__}.{name}")
     raise AttributeError(f"module 'drusa' has no attribute {name!r}")
