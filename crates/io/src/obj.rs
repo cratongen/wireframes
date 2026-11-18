@@ -3,7 +3,7 @@ use std::io::Write;
 
 use drusa_core::{Column, ColumnData, Error, Mesh, PointSet, Polylines, Result, Table};
 
-use crate::common::{polygon_corners, polygon_groups};
+use crate::common::{decode_name, encode_name, polygon_corners, polygon_groups};
 use crate::{Data, WriteOptions};
 
 pub(crate) fn is_ws(b: &u8) -> bool {
@@ -36,8 +36,8 @@ pub(crate) fn strip_comment(line: &[u8]) -> &[u8] {
 }
 
 /// Calls `f(line_number, line)` for each line without its terminator. With
-/// `continuation`, a line ending in `\` joins the next one; the number is that of
-/// the first physical line.
+/// `continuation`, a line ending in `\` outside a `#` comment joins the next one;
+/// the number is that of the first physical line.
 pub(crate) fn for_each_line(
     data: &[u8],
     continuation: bool,
@@ -58,7 +58,7 @@ pub(crate) fn for_each_line(
             line = head;
         }
         if continuation {
-            let t = trim(line);
+            let t = trim(strip_comment(line));
             if let [head @ .., b'\\'] = t {
                 if joined.is_empty() {
                     joined_line = line_no;
@@ -234,10 +234,12 @@ fn index(tok: &[u8], n: usize, line: u64) -> Result<u32> {
     Ok(r as u32)
 }
 
+const NULL_ID: u32 = u32::MAX;
+
 struct Names {
-    ids: HashMap<String, u32>,
+    ids: HashMap<Vec<u8>, u32>,
     names: Vec<String>,
-    buf: String,
+    buf: Vec<u8>,
 }
 
 impl Names {
@@ -245,28 +247,39 @@ impl Names {
         self.buf.clear();
         for t in tokens(toks) {
             if !self.buf.is_empty() {
-                self.buf.push(' ');
+                self.buf.push(b' ');
             }
-            self.buf.push_str(&String::from_utf8_lossy(t));
-        }
-        if self.buf.is_empty() {
-            self.buf.push_str("default");
+            self.buf.extend_from_slice(t);
         }
         if let Some(&id) = self.ids.get(&self.buf) {
             return id;
         }
-        let id = self.names.len() as u32;
-        self.names.push(self.buf.clone());
+        let name = match self.buf.as_slice() {
+            b"" => Some("default".into()),
+            raw => decode_name(raw),
+        };
+        let id = match name {
+            None => NULL_ID,
+            Some(n) => {
+                self.names.push(n);
+                self.names.len() as u32 - 1
+            }
+        };
         self.ids.insert(self.buf.clone(), id);
         id
     }
 
-    fn column(&self, ids: &[u32]) -> Column {
-        Column::utf8(
-            ids.iter()
-                .map(|&i| self.names[i as usize].clone())
-                .collect(),
-        )
+    fn column(&self, ids: &[u32]) -> Result<Column> {
+        let values = ids
+            .iter()
+            .map(|&i| self.names.get(i as usize).cloned().unwrap_or_default())
+            .collect();
+        let c = Column::utf8(values);
+        if ids.contains(&NULL_ID) {
+            c.with_valid(ids.iter().map(|&i| i != NULL_ID).collect())
+        } else {
+            Ok(c)
+        }
     }
 }
 
@@ -277,7 +290,7 @@ pub fn read(r: &[u8]) -> Result<Data> {
     let mut names = Names {
         ids: HashMap::new(),
         names: Vec::new(),
-        buf: String::new(),
+        buf: Vec::new(),
     };
     let default = names.intern(b"");
     let (mut obj, mut grp) = (default, default);
@@ -410,10 +423,10 @@ pub fn read(r: &[u8]) -> Result<Data> {
     if n_faces > 0 || !mesh_verts.is_empty() {
         let mut mesh = Mesh::new(mesh_verts, tris)?;
         if saw_o {
-            mesh = mesh.with_face_column("object", names.column(&face_obj))?;
+            mesh = mesh.with_face_column("object", names.column(&face_obj)?)?;
         }
         if saw_g {
-            mesh = mesh.with_face_column("group", names.column(&face_grp))?;
+            mesh = mesh.with_face_column("group", names.column(&face_grp)?)?;
         }
         if let Some(c) = polygon_col {
             mesh = mesh.with_face_column("polygon", c)?;
@@ -455,16 +468,10 @@ fn push_vertex(out: &mut Vec<u8>, p: &[f64; 3]) -> Result<()> {
     Ok(())
 }
 
-fn push_name(out: &mut Vec<u8>, kw: &[u8], name: &str) {
+fn push_name(out: &mut Vec<u8>, kw: &[u8], name: Option<&str>) {
     out.extend_from_slice(kw);
     out.push(b' ');
-    out.extend(name.bytes().map(|b| {
-        if b == b'\n' || b == b'\r' || b == b'#' {
-            b' '
-        } else {
-            b
-        }
-    }));
+    encode_name(name, true, out);
     out.push(b'\n');
 }
 
@@ -492,16 +499,12 @@ pub fn write(data: &Data, opts: &WriteOptions) -> Result<Vec<u8>> {
         }
         let tris = m.triangles();
         let mut corners = Vec::new();
-        let (mut last_o, mut last_g): (Option<&str>, Option<&str>) = (None, None);
+        let (mut last_o, mut last_g): (Option<Option<&str>>, Option<Option<&str>>) = (None, None);
         for g in polygon_groups(m)? {
             let f = g.start;
             for (vals, last, kw) in [(&objects, &mut last_o, b"o"), (&groups, &mut last_g, b"g")] {
                 if let Some((v, c)) = vals {
-                    let name = if c.is_valid(f) {
-                        v[f].as_str()
-                    } else {
-                        "default"
-                    };
+                    let name = c.is_valid(f).then(|| v[f].as_str());
                     if *last != Some(name) {
                         push_name(&mut out, kw, name);
                         *last = Some(name);

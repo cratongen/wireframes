@@ -182,7 +182,7 @@ impl Ty {
         }
         Ok(match self {
             Ty::I8 => Values::I64(decode_as!(i8, b, big).map(i64::from).collect()),
-            Ty::U8 => Values::I64(decode_as!(u8, b, big).map(i64::from).collect()),
+            Ty::U8 => Values::U8(b.to_vec()),
             Ty::I16 => Values::I64(decode_as!(i16, b, big).map(i64::from).collect()),
             Ty::U16 => Values::I64(decode_as!(u16, b, big).map(i64::from).collect()),
             Ty::I32 => Values::I64(decode_as!(i32, b, big).map(i64::from).collect()),
@@ -209,6 +209,12 @@ impl Ty {
                 tokens
                     .iter()
                     .map(|t| t.parse::<f64>().map_err(|_| bad(t)))
+                    .collect::<Result<_>>()?,
+            ),
+            Ty::U8 => Values::U8(
+                tokens
+                    .iter()
+                    .map(|t| t.parse::<u8>().map_err(|_| bad(t)))
                     .collect::<Result<_>>()?,
             ),
             Ty::U64 => Values::I64(
@@ -246,6 +252,16 @@ pub(crate) fn fmt_f64(x: f64) -> String {
 pub(crate) fn flatten(table: &Table, opts: &WriteOptions, format: &str) -> Result<Vec<Array>> {
     let mut out = Vec::new();
     for (name, col) in table.names().iter().zip(table.columns()) {
+        let companion = format!("{name}_valid");
+        let is_companion = matches!(col.data, ColumnData::Bool(_))
+            && name
+                .strip_suffix("_valid")
+                .is_some_and(|base| table.column(base).is_some());
+        if is_companion || (col.null_count() > 0 && table.column(&companion).is_some()) {
+            return Err(Error::Unsupported(format!(
+                "{format} stores the nulls of a column x in a UInt8 column x_valid, so column {name:?} would be ambiguous; rename it"
+            )));
+        }
         let values = match &col.data {
             ColumnData::Float64(v) => Values::F64(v.clone()),
             ColumnData::Int64(v) => Values::I64(v.clone()),
@@ -265,7 +281,7 @@ pub(crate) fn flatten(table: &Table, opts: &WriteOptions, format: &str) -> Resul
         if col.null_count() > 0 {
             let valid = (0..col.len()).map(|i| col.is_valid(i) as u8).collect();
             out.push(Array {
-                name: format!("{name}_valid"),
+                name: companion,
                 ncomp: 1,
                 values: Values::U8(valid),
             });
@@ -274,12 +290,14 @@ pub(crate) fn flatten(table: &Table, opts: &WriteOptions, format: &str) -> Resul
     Ok(out)
 }
 
-/// Arrays as columns: components split into `<name>_0..`, `<name>_valid`
-/// companions applied as validity.
+/// Arrays as columns: components split into `<name>_0..`, UInt8 `<name>_valid`
+/// companions applied as validity. A multi-component array over zero rows adds
+/// no columns, so the column count stays bounded by the input size.
 pub(crate) fn unflatten(arrays: Vec<Array>, rows: usize, what: &str) -> Result<Table> {
     let mut t = Table::new(rows);
+    let mut companions = Vec::new();
     for a in arrays {
-        if a.ncomp == 0 || a.values.len() != rows * a.ncomp {
+        if a.ncomp == 0 || rows.checked_mul(a.ncomp) != Some(a.values.len()) {
             return Err(Error::format(format!(
                 "{what} array {:?} has {} values for {rows} rows of {} components",
                 a.name,
@@ -288,31 +306,28 @@ pub(crate) fn unflatten(arrays: Vec<Array>, rows: usize, what: &str) -> Result<T
             )));
         }
         if a.ncomp == 1 {
+            if let Values::U8(v) = &a.values
+                && v.iter().all(|&f| f <= 1)
+                && let Some(base) = a.name.strip_suffix("_valid")
+            {
+                companions.push((base.to_string(), v.iter().map(|&f| f == 1).collect()));
+            }
             t = t.with_column(&a.name, a.values.into_column())?;
-        } else {
+        } else if rows > 0 {
             for c in 0..a.ncomp {
                 let col = a.values.component(c, a.ncomp).into_column();
                 t = t.with_column(&format!("{}_{c}", a.name), col)?;
             }
         }
     }
-    let names = t.names().to_vec();
-    for name in names {
-        let Some(base) = name.strip_suffix("_valid") else {
+    for (base, valid) in companions {
+        let Some(col) = t.column(&base) else {
             continue;
         };
-        let (Some(col), Some(flag)) = (t.column(base), t.column(&name)) else {
-            continue;
-        };
-        let ColumnData::Int64(flags) = &flag.data else {
-            continue;
-        };
-        if flags.iter().any(|&f| f != 0 && f != 1) {
-            continue;
-        }
-        let valid = flags.iter().map(|&f| f == 1).collect();
         let col = col.clone().with_valid(valid)?;
-        t = t.with_column(base, col)?.without_column(&name);
+        t = t
+            .with_column(&base, col)?
+            .without_column(&format!("{base}_valid"));
     }
     Ok(t)
 }
@@ -324,7 +339,7 @@ pub(crate) fn tidy(t: Table, drop_all_null: bool) -> Table {
     let mut out = Table::new(rows);
     for (name, col) in t.names().iter().zip(t.columns()) {
         let nulls = col.null_count();
-        if drop_all_null && rows > 0 && nulls == rows {
+        if drop_all_null && nulls == rows {
             continue;
         }
         let mut col = col.clone();
@@ -464,16 +479,46 @@ pub(crate) fn poly_to_data(pd: PolyData) -> Result<Data> {
         data.points = Some(PointSet::new(coords)?.with_attributes(attrs)?);
     }
     if nl > 0 {
-        let mut parts = Vec::with_capacity(nl);
-        let mut closed = Vec::with_capacity(nl);
+        let rows: Vec<u32> = (nv as u32..(nv + nl) as u32).collect();
+        let mut table = tidy(pd.cell_data.take(&rows), multi);
+        let feature_of_cell: Vec<i64> = match table.column(FEATURE).map(|c| &c.data) {
+            Some(ColumnData::Int64(v)) => {
+                let f = v.clone();
+                table = table.without_column(FEATURE);
+                f
+            }
+            _ => (0..nl as i64).collect(),
+        };
+        let mut vertices = Vec::new();
         let mut vids: Vec<u32> = Vec::new();
+        let mut parts = vec![0u32];
+        let mut features = vec![0u32];
+        let mut closed = Vec::new();
+        let mut firsts = Vec::new();
         for c in 0..nl {
+            let f = feature_of_cell[c];
+            let prev = c.checked_sub(1).map(|p| feature_of_cell[p]);
+            match prev {
+                None if f == 0 => firsts.push(c as u32),
+                Some(q) if f == q => {}
+                Some(q) if Some(f) == q.checked_add(1) => {
+                    features.push(parts.len() as u32 - 1);
+                    firsts.push(c as u32);
+                }
+                _ => {
+                    return Err(Error::format(format!(
+                        "{FEATURE} must start at 0 and increase by at most 1 per line cell"
+                    )));
+                }
+            }
             let ids = pd.lines.cell(c);
-            if ids.len() < 2 {
+            if ids.len() == 1 {
                 return Err(Error::format(format!(
-                    "line cell {c} has {} points, needs at least 2",
-                    ids.len()
+                    "line cell {c} has 1 point, needs 0 (an empty feature) or at least 2"
                 )));
+            }
+            if ids.is_empty() {
+                continue;
             }
             let is_closed = ids.len() >= 4 && ids[0] == ids[ids.len() - 1];
             let used = if is_closed {
@@ -481,31 +526,14 @@ pub(crate) fn poly_to_data(pd: PolyData) -> Result<Data> {
             } else {
                 ids
             };
-            parts.push(used.iter().map(|&i| pd.points[i as usize]).collect());
+            vertices.extend(used.iter().map(|&i| pd.points[i as usize]));
             vids.extend(used.iter().map(|&i| i as u32));
+            parts.push(vertices.len() as u32);
             closed.push(is_closed);
         }
-        let rows: Vec<u32> = (nv as u32..(nv + nl) as u32).collect();
-        let mut table = tidy(pd.cell_data.take(&rows), multi);
-        let feature_of_part = match table.column(FEATURE).map(|c| &c.data) {
-            Some(ColumnData::Int64(v)) => {
-                let f = v
-                    .iter()
-                    .map(|&x| u32::try_from(x))
-                    .collect::<std::result::Result<Vec<u32>, _>>()
-                    .map_err(|_| Error::format(format!("{FEATURE} holds a negative id")))?;
-                table = table.without_column(FEATURE);
-                Some(f)
-            }
-            _ => None,
-        };
-        let pl = Polylines::from_parts(parts, closed, feature_of_part)
-            .map_err(|e| Error::format(e.to_string()))?;
-        let firsts: Vec<u32> = (0..pl.len())
-            .map(|f| pl.feature_parts(f).start as u32)
-            .collect();
-        let pl = pl
-            .with_attributes(table.take(&firsts))?
+        features.push(parts.len() as u32 - 1);
+        let pl = Polylines::new(vertices, parts, features, closed, table.take(&firsts))
+            .map_err(|e| Error::format(e.to_string()))?
             .with_vertex_attributes(tidy(pd.point_data.take(&vids), multi))?;
         data.polylines = Some(pl);
     }
@@ -587,26 +615,36 @@ pub(crate) fn data_to_poly(data: &Data) -> Result<PolyData> {
     }
     let mut ctables = vec![Table::new(verts.len())];
     if let Some(pl) = &data.polylines {
+        let mesh_faces = data.mesh.as_ref().map(Mesh::face_attributes);
+        if [Some(pl.attributes()), mesh_faces]
+            .iter()
+            .flatten()
+            .any(|t| t.column(FEATURE).is_some())
+        {
+            return Err(Error::Unsupported(format!(
+                "column {FEATURE:?} is reserved for the feature of each polyline part; rename it"
+            )));
+        }
         let mut feature = Vec::new();
         let mut rows = Vec::new();
         let mut multipart = false;
-        let mut dense = 0i64;
         for f in 0..pl.len() {
             let parts = pl.feature_parts(f);
-            if parts.is_empty() {
-                continue;
-            }
             multipart |= parts.len() > 1;
+            if parts.is_empty() {
+                lines.push(std::iter::empty());
+                feature.push(f as i64);
+                rows.push(f as u32);
+            }
             for p in parts {
                 let mut ids: Vec<i64> = pl.part_range(p).map(|i| pl_base + i as i64).collect();
                 if pl.closed()[p] {
                     ids.push(ids[0]);
                 }
                 lines.push(ids);
-                feature.push(dense);
+                feature.push(f as i64);
                 rows.push(f as u32);
             }
-            dense += 1;
         }
         let mut t = pl.attributes().take(&rows);
         if multipart {
@@ -1017,13 +1055,18 @@ pub fn read(r: &[u8]) -> Result<Data> {
                 let n = count(&t, 1, line)?;
                 types = Some(c.values(n, Ty::I32)?.to_i64("cell types")?);
             }
-            "POINT_DATA" => {
-                point_rows = Some(count(&t, 1, line)?);
-                target = Some(true);
-            }
-            "CELL_DATA" => {
-                cell_rows = Some(count(&t, 1, line)?);
-                target = Some(false);
+            "POINT_DATA" | "CELL_DATA" => {
+                let n = count(&t, 1, line)?;
+                let (slot, is_point) = if key == "POINT_DATA" {
+                    (&mut point_rows, true)
+                } else {
+                    (&mut cell_rows, false)
+                };
+                if slot.is_some_and(|r| r != n) {
+                    return Err(c.err(format!("{key} {n} repeats with a different count")));
+                }
+                *slot = Some(n);
+                target = Some(is_point);
             }
             "SCALARS" => {
                 let name = decode_name(t.get(1).ok_or_else(|| c.err("SCALARS needs a name"))?);

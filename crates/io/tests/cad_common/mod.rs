@@ -159,16 +159,31 @@ pub fn attributed_mesh() -> impl Strategy<Value = Mesh> {
         })
 }
 
-pub fn polylines(attrs: bool) -> impl Strategy<Value = Polylines> {
+/// Features of one or two parts (none too when `empty`); a part may repeat its
+/// first vertex at the end.
+pub fn polylines(attrs: bool, empty: bool) -> impl Strategy<Value = Polylines> {
     let part = (
+        any::<bool>(),
         any::<bool>(),
         prop::collection::vec([coord(), coord(), coord()], 3..6),
     );
-    prop::collection::vec(part, 1..5).prop_map(move |parts| {
-        let n = parts.len();
-        let closed = parts.iter().map(|p| p.0).collect();
-        let coords = parts.into_iter().map(|p| p.1).collect();
-        let pl = Polylines::from_parts(coords, closed, None).unwrap();
+    let feature = prop::collection::vec(part, if empty { 0..3 } else { 1..3 });
+    prop::collection::vec(feature, 1..5).prop_map(move |features| {
+        let n = features.len();
+        let mut vertices = Vec::new();
+        let (mut parts, mut feats, mut closed) = (vec![0u32], vec![0u32], Vec::new());
+        for f in features {
+            for (c, repeat, mut v) in f {
+                if repeat {
+                    v.push(v[0]);
+                }
+                vertices.extend(v);
+                parts.push(vertices.len() as u32);
+                closed.push(c);
+            }
+            feats.push(closed.len() as u32);
+        }
+        let pl = Polylines::new(vertices, parts, feats, closed, Table::new(n)).unwrap();
         if attrs {
             let ids = (0..n as i64).collect();
             pl.with_column("id", Column::i64(ids)).unwrap()

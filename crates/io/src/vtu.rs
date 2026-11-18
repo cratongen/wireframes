@@ -366,7 +366,7 @@ impl Piece {
                 Err(Error::format("piece has points but no Points array"))
             };
         };
-        if a.ncomp != 3 || a.values.len() != n * 3 {
+        if a.ncomp != 3 || n.checked_mul(3) != Some(a.values.len()) {
             return Err(Error::format(format!(
                 "Points array has {} values for {n} points",
                 a.values.len()
@@ -404,7 +404,7 @@ impl Piece {
 /// VTK XML offsets are end offsets; files from VTK 9.4 may carry a leading 0.
 fn full_offsets(o: Vec<i64>, count: Option<usize>, conn: Vec<i64>) -> Cells {
     let full = match count {
-        Some(n) => o.len() == n + 1,
+        Some(n) => o.len().checked_sub(1) == Some(n),
         None => o.first() == Some(&0),
     };
     if full {

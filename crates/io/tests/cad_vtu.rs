@@ -65,7 +65,7 @@ proptest! {
     }
 
     #[test]
-    fn vtp_mixed_round_trips(m in attributed_mesh(), pl in polylines(true), ps in points(), z in any::<bool>()) {
+    fn vtp_mixed_round_trips(m in attributed_mesh(), pl in polylines(true, true), ps in points(), z in any::<bool>()) {
         prop_assume!(m.n_faces() > 0);
         prop_assume!(m.vertex_attributes().columns().iter().all(|c| c.null_count() < c.len()));
         let data = Data { mesh: Some(m), polylines: Some(pl), points: Some(ps), ..Data::default() };
@@ -438,5 +438,91 @@ fn damaged_files_never_panic() {
         never_panics(&vtu::write(&g, &opts).unwrap(), |b| {
             let _ = vtu::read(b);
         });
+    }
+}
+
+fn vtu_piece(piece_attrs: &str, body: &str) -> Vec<u8> {
+    format!(
+        "<?xml version=\"1.0\"?>\n<VTKFile type=\"UnstructuredGrid\" version=\"1.0\" byte_order=\"LittleEndian\">\n<UnstructuredGrid>\n<Piece {piece_attrs}>\n{body}</Piece>\n</UnstructuredGrid>\n</VTKFile>\n"
+    )
+    .into_bytes()
+}
+
+const CELLS_EMPTY: &str = "<Cells>\n<DataArray type=\"Int64\" Name=\"connectivity\" format=\"ascii\"></DataArray>\n<DataArray type=\"Int64\" Name=\"offsets\" format=\"ascii\"></DataArray>\n<DataArray type=\"UInt8\" Name=\"types\" format=\"ascii\"></DataArray>\n</Cells>\n";
+
+#[test]
+fn huge_number_of_points_errors_not_panics() {
+    let body = "<Points>\n<DataArray type=\"Float64\" NumberOfComponents=\"3\" format=\"ascii\">0 0 0</DataArray>\n</Points>\n";
+    let b = vtu_piece(
+        "NumberOfPoints=\"6148914691236517206\" NumberOfCells=\"0\"",
+        &format!("{body}{CELLS_EMPTY}"),
+    );
+    assert!(vtu::read(&b).is_err());
+}
+
+#[test]
+fn huge_number_of_cells_errors_not_panics() {
+    let body = "<Points>\n<DataArray type=\"Float64\" NumberOfComponents=\"3\" format=\"ascii\">0 0 0</DataArray>\n</Points>\n";
+    let b = vtu_piece(
+        "NumberOfPoints=\"1\" NumberOfCells=\"18446744073709551615\"",
+        &format!("{body}{CELLS_EMPTY}"),
+    );
+    assert!(vtu::read(&b).is_err());
+}
+
+#[test]
+fn huge_component_count_errors_not_panics() {
+    let body = "<PointData>\n<DataArray type=\"Float64\" Name=\"a\" NumberOfComponents=\"9223372036854775808\" format=\"ascii\"></DataArray>\n</PointData>\n<Points>\n<DataArray type=\"Float64\" NumberOfComponents=\"3\" format=\"ascii\">0 0 0 1 1 1</DataArray>\n</Points>\n";
+    let b = vtu_piece(
+        "NumberOfPoints=\"2\" NumberOfCells=\"0\"",
+        &format!("{body}{CELLS_EMPTY}"),
+    );
+    assert!(vtu::read(&b).is_err());
+}
+
+#[test]
+fn component_count_without_data_does_not_create_columns() {
+    let body = "<PointData>\n<DataArray type=\"Float64\" Name=\"a\" NumberOfComponents=\"20000\" format=\"ascii\"></DataArray>\n</PointData>\n";
+    let b = vtu_piece(
+        "NumberOfPoints=\"0\" NumberOfCells=\"0\"",
+        &format!("{body}{CELLS_EMPTY}"),
+    );
+    if let Ok(d) = vtu::read(&b) {
+        let cols = d
+            .mesh
+            .map_or(0, |m| m.vertex_attributes().num_columns())
+            .max(d.grid.map_or(0, |g| g.point_data.num_columns()));
+        assert!(
+            cols <= 1,
+            "{} bytes of input produced {cols} columns",
+            b.len()
+        );
+    }
+}
+
+#[test]
+fn vtp_keeps_empty_features_and_valid_named_columns() {
+    let pl = Polylines::new(
+        vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [1.0, 1.0, 0.0]],
+        vec![0, 3],
+        vec![0, 0, 1, 1],
+        vec![false],
+        Table::new(3)
+            .with_column("id", Column::i64(vec![10, 20, 30]))
+            .unwrap()
+            .with_column("id_valid", Column::i64(vec![1, 0, 1]))
+            .unwrap(),
+    )
+    .unwrap();
+    let data = Data {
+        polylines: Some(pl.clone()),
+        ..Data::default()
+    };
+    for z in [false, true] {
+        let opts = WriteOptions {
+            zlib: z,
+            ..WriteOptions::default()
+        };
+        assert_eq!(round(&data, &opts, true).polylines, Some(pl.clone()));
     }
 }

@@ -123,8 +123,26 @@ fn writer_rules() {
     assert_eq!(empty, mesh_data(Mesh::empty()));
 }
 
-fn solid_names() -> impl Strategy<Value = String> {
-    prop::sample::select(vec!["a", "rock 2", "drusa ore", "x"]).prop_map(String::from)
+fn solid_names() -> impl Strategy<Value = Option<String>> {
+    let s = prop::sample::select(vec![
+        "a",
+        "rock 2",
+        "drusa ore",
+        "x",
+        "",
+        "drusa",
+        " pit ",
+        "a  b",
+        "%null",
+        "%empty",
+        "%64rusa",
+        "50%",
+        "tab\t",
+        "line\nbreak",
+        "ção",
+        "endsolid",
+    ]);
+    prop::option::weighted(0.9, s.prop_map(String::from))
 }
 
 proptest! {
@@ -144,7 +162,11 @@ proptest! {
     fn ascii_write_then_read_is_identity(m in stl_mesh(16), names in prop::collection::vec(solid_names(), 16), tag in any::<bool>()) {
         let mut m = m;
         if tag {
-            let col = Column::utf8(names[..m.n_faces()].to_vec());
+            let v = &names[..m.n_faces()];
+            let valid = v.iter().map(Option::is_some).collect();
+            let col = Column::utf8(v.iter().map(|n| n.clone().unwrap_or_default()).collect())
+                .with_valid(valid)
+                .unwrap();
             m = m.with_face_column("solid", col).unwrap();
         }
         let d = mesh_data(m);
@@ -162,4 +184,37 @@ proptest! {
         let bytes = stl::write(&mesh_data(m), &opts).unwrap();
         let _ = stl::read(&bytes[..(bytes.len() as f64 * cut) as usize]);
     }
+}
+
+fn tri() -> Mesh {
+    Mesh::new(
+        vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+        vec![[0, 1, 2]],
+    )
+    .unwrap()
+}
+
+fn ascii_solid_round_trip(col: Column) {
+    let d = mesh_data(tri().with_face_column("solid", col).unwrap());
+    assert_eq!(stl::read(&stl::write(&d, &ascii()).unwrap()).unwrap(), d);
+}
+
+#[test]
+fn ascii_solid_named_drusa_round_trips() {
+    ascii_solid_round_trip(Column::utf8(vec!["drusa".into()]));
+    ascii_solid_round_trip(Column::utf8(vec![String::new()]));
+}
+
+#[test]
+fn ascii_solid_name_with_outer_spaces_round_trips() {
+    ascii_solid_round_trip(Column::utf8(vec![" pit ".into()]));
+}
+
+#[test]
+fn ascii_null_solid_name_round_trips() {
+    ascii_solid_round_trip(
+        Column::utf8(vec!["a".into()])
+            .with_valid(vec![false])
+            .unwrap(),
+    );
 }

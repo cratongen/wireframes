@@ -31,32 +31,81 @@ pub(crate) fn decode_text(b: &[u8]) -> String {
     }
 }
 
-/// Replaces AutoCAD `\U+XXXX` escapes.
-fn unescape_unicode(s: &str) -> String {
-    if !s.contains("\\U+") && !s.contains("\\u+") {
-        return s.to_string();
+/// AC1021 (AutoCAD 2007) and later store text as UTF-8; earlier versions use a code page.
+fn utf8_only(b: &[u8]) -> bool {
+    let Some(i) = b.windows(8).position(|w| w == b"$ACADVER") else {
+        return false;
+    };
+    let rest = &b[i + 8..b.len().min(i + 48)];
+    rest.windows(6)
+        .find(|w| w.starts_with(b"AC") && w[2..].iter().all(u8::is_ascii_digit))
+        .is_some_and(|v| v >= &b"AC1021"[..])
+}
+
+fn dxf_text(b: &[u8], utf8_only: bool) -> Result<String> {
+    if !utf8_only {
+        return Ok(decode_text(b));
     }
+    String::from_utf8(b.to_vec())
+        .map_err(|_| Error::format("dxf from AC1021 on must be UTF-8, but the text is not"))
+}
+
+/// Replaces AutoCAD `\U+XXXX` escapes in one left-to-right pass, so a decoded
+/// backslash never starts another escape.
+fn unescape_unicode(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     let mut rest = s;
-    while let Some(i) = rest.find("\\U+").or_else(|| rest.find("\\u+")) {
+    while let Some(i) = rest.find('\\') {
         out.push_str(&rest[..i]);
-        let hex = rest.get(i + 3..i + 7);
-        match hex
-            .and_then(|h| u32::from_str_radix(h, 16).ok())
-            .and_then(char::from_u32)
-        {
+        let tail = &rest[i..];
+        let c = tail
+            .get(1..7)
+            .filter(|t| {
+                (t.starts_with("U+") || t.starts_with("u+"))
+                    && t[2..].bytes().all(|b| b.is_ascii_hexdigit())
+            })
+            .and_then(|t| u32::from_str_radix(&t[2..], 16).ok())
+            .and_then(char::from_u32);
+        match c {
             Some(c) => {
                 out.push(c);
-                rest = &rest[i + 7..];
+                rest = &tail[7..];
             }
             None => {
-                out.push_str(&rest[i..i + 3]);
-                rest = &rest[i + 3..];
+                out.push('\\');
+                rest = &tail[1..];
             }
         }
     }
     out.push_str(rest);
     out
+}
+
+/// The inverse of `unescape_unicode` for a layer name: backslashes, edge spaces
+/// and anything outside printable ASCII become `\U+XXXX`, so the name survives
+/// the reader's trimming and an R2000 code page.
+fn escape_layer(l: &str, what: &str) -> Result<String> {
+    if l.is_empty() || l.contains(['\n', '\r']) {
+        return Err(Error::invalid(format!(
+            "{what} layer {l:?} is not a valid dxf layer name"
+        )));
+    }
+    let n = l.chars().count();
+    let mut out = String::with_capacity(l.len());
+    for (i, c) in l.chars().enumerate() {
+        let edge = c == ' ' && (i == 0 || i + 1 == n);
+        if c == '\\' || edge || !(c.is_ascii_graphic() || c == ' ') {
+            if c as u32 > 0xFFFF {
+                return Err(Error::invalid(format!(
+                    "{what} layer {l:?} has {c:?}, outside what dxf \\U+XXXX escapes can hold"
+                )));
+            }
+            let _ = write!(out, "\\U+{:04X}", c as u32);
+        } else {
+            out.push(c);
+        }
+    }
+    Ok(out)
 }
 
 struct Group {
@@ -102,7 +151,7 @@ impl Group {
 }
 
 fn ascii_groups(b: &[u8]) -> Result<Vec<Group>> {
-    let text = decode_text(b);
+    let text = dxf_text(b, utf8_only(b))?;
     let lines: Vec<&str> = text.lines().collect();
     let mut out = Vec::with_capacity(lines.len() / 2);
     let mut i = 0;
@@ -135,6 +184,7 @@ const BINARY_SENTINEL: &[u8] = b"AutoCAD Binary DXF\r\n\x1a\0";
 fn binary_groups(b: &[u8]) -> Result<Vec<Group>> {
     let short = || Error::format("binary dxf ends inside a group");
     let two_byte = b.get(1) == Some(&0);
+    let utf8 = utf8_only(b);
     let mut pos = 0;
     let mut out = Vec::new();
     let take = |pos: &mut usize, n: usize| -> Result<&[u8]> {
@@ -186,7 +236,7 @@ fn binary_groups(b: &[u8]) -> Result<Vec<Group>> {
             | 1000..=1003
             | 1005..=1009 => {
                 let n = b[pos..].iter().position(|&c| c == 0).ok_or_else(short)?;
-                let s = unescape_unicode(&decode_text(&b[pos..pos + n]));
+                let s = unescape_unicode(&dxf_text(&b[pos..pos + n], utf8)?);
                 pos += n + 1;
                 s
             }
@@ -287,6 +337,7 @@ struct Out {
     closed: Vec<bool>,
     part_layer: Vec<String>,
     part_color: Vec<i64>,
+    part_feature: Vec<Option<i64>>,
     points: Vec<[f64; 3]>,
     point_layer: Vec<String>,
     point_color: Vec<i64>,
@@ -315,22 +366,41 @@ impl Out {
         }
     }
 
-    fn part(&mut self, mut v: Vec<[f64; 3]>, mut closed: bool, layer: String, color: i64) {
-        if closed && v.len() >= 2 && v[0].map(f64::to_bits) == v[v.len() - 1].map(f64::to_bits) {
-            v.pop();
-        }
+    fn part(&mut self, v: Vec<[f64; 3]>, mut closed: bool, body: &[Group]) -> Result<()> {
+        let (layer, color, feature) = (layer(body), color(body)?, xdata_feature(body)?);
         if closed && v.len() < 3 {
             closed = false;
         }
         if v.len() < 2 {
             self.short_parts += 1;
-            return;
+            return Ok(());
         }
         self.parts.push(v);
         self.closed.push(closed);
         self.part_layer.push(layer);
         self.part_color.push(color);
+        self.part_feature.push(feature);
+        Ok(())
     }
+}
+
+const DRUSA_APP: &str = "DRUSA";
+
+/// The feature index in a `DRUSA` extended-data block, written on every part of
+/// a feature with several parts.
+fn xdata_feature(body: &[Group]) -> Result<Option<i64>> {
+    let Some(k) = body
+        .iter()
+        .position(|g| g.code == 1001 && g.value == DRUSA_APP)
+    else {
+        return Ok(None);
+    };
+    body[k + 1..]
+        .iter()
+        .take_while(|g| g.code != 1001)
+        .find(|g| g.code == 1071)
+        .map(Group::i64)
+        .transpose()
 }
 
 fn polyline(out: &mut Out, head: &[Group], verts: &[&[Group]]) -> Result<()> {
@@ -437,8 +507,7 @@ fn polyline(out: &mut Out, head: &[Group], verts: &[&[Group]]) -> Result<()> {
             pts.push(to_wcs(m, [f_or(v, 10, 0.0)?, f_or(v, 20, 0.0)?, elevation]));
         }
     }
-    out.part(pts, flags & 1 != 0, lay, col);
-    Ok(())
+    out.part(pts, flags & 1 != 0, head)
 }
 
 fn extrusion(body: &[Group]) -> Result<[f64; 3]> {
@@ -469,8 +538,7 @@ fn lwpolyline(out: &mut Out, body: &[Group]) -> Result<()> {
         .iter()
         .map(|p| to_wcs(m, [p[0], p[1], elevation]))
         .collect();
-    out.part(pts, i_or(body, 70, 0)? & 1 != 0, layer(body), color(body)?);
-    Ok(())
+    out.part(pts, i_or(body, 70, 0)? & 1 != 0, body)
 }
 
 fn mesh_entity(out: &mut Out, body: &[Group]) -> Result<()> {
@@ -578,6 +646,7 @@ fn attr_table(layers: Vec<String>, colors: Vec<i64>) -> Result<Table> {
 }
 
 pub fn read(r: &[u8]) -> Result<Data> {
+    let binary = r.starts_with(BINARY_SENTINEL);
     let groups = match r.strip_prefix(BINARY_SENTINEL) {
         Some(rest) => binary_groups(rest)?,
         None => ascii_groups(r)?,
@@ -653,14 +722,14 @@ pub fn read(r: &[u8]) -> Result<Data> {
             "LWPOLYLINE" => lwpolyline(&mut out, body)?,
             "LINE" => {
                 let v = vec![point(body, 10)?, point(body, 11)?];
-                out.part(v, false, layer(body), color(body)?);
+                out.part(v, false, body)?;
             }
             "POINT" => {
                 out.points.push(point(body, 10)?);
                 out.point_layer.push(layer(body));
                 out.point_color.push(color(body)?);
             }
-            "MESH" => mesh_entity(&mut out, body)?,
+            "MESH" if !binary => mesh_entity(&mut out, body)?,
             "VERTEX" | "SEQEND" => {}
             other => *out.skipped.entry(other.to_string()).or_default() += 1,
         }
@@ -700,8 +769,18 @@ pub fn read(r: &[u8]) -> Result<Data> {
         data.mesh = Some(mesh.with_length_unit(length_unit.clone()));
     }
     if !out.parts.is_empty() {
-        let pl = Polylines::from_parts(out.parts, out.closed, None)?
-            .with_attributes(attr_table(out.part_layer, out.part_color)?)?;
+        let tags = &out.part_feature;
+        let mut feature_of_part = Vec::with_capacity(tags.len());
+        let mut firsts = Vec::new();
+        for (p, tag) in tags.iter().enumerate() {
+            if p == 0 || tag.is_none() || *tag != tags[p - 1] {
+                firsts.push(p as u32);
+            }
+            feature_of_part.push(firsts.len() as u32 - 1);
+        }
+        let parts = attr_table(out.part_layer, out.part_color)?;
+        let pl = Polylines::from_parts(out.parts, out.closed, Some(feature_of_part))?
+            .with_attributes(parts.take(&firsts))?;
         data.polylines = Some(pl.with_length_unit(length_unit.clone()));
     }
     if !out.points.is_empty() {
@@ -728,13 +807,7 @@ fn layer_color(
             ("layer", ColumnData::Utf8(v)) => {
                 for i in 0..rows {
                     if col.is_valid(i) {
-                        let l = &v[i];
-                        if l.is_empty() || l.contains(['\n', '\r']) {
-                            return Err(Error::invalid(format!(
-                                "{what} layer {l:?} is not a valid dxf layer name"
-                            )));
-                        }
-                        layers[i] = l.clone();
+                        layers[i] = escape_layer(&v[i], what)?;
                     }
                 }
             }
@@ -891,11 +964,22 @@ pub fn write(data: &Data, opts: &WriteOptions) -> Result<Vec<u8>> {
         let (layers, colors) = layer_color(pl.attributes(), &[], "polyline", opts)?;
         for f in 0..pl.len() {
             note(&layers[f]);
-            for p in pl.feature_parts(f) {
+            let parts = pl.feature_parts(f);
+            if parts.is_empty() {
+                return Err(Error::Unsupported(format!(
+                    "dxf cannot store polyline feature {f}: it has no parts"
+                )));
+            }
+            let multipart = parts.len() > 1;
+            for p in parts {
                 ents.entity("POLYLINE", &layers[f], colors[f]);
                 ents.g(66, 1);
                 ents.p(10, [0.0; 3]);
                 ents.g(70, 8 | pl.closed()[p] as i32);
+                if multipart {
+                    ents.g(1001, DRUSA_APP);
+                    ents.g(1071, f);
+                }
                 for &q in pl.part(p) {
                     ents.entity("VERTEX", &layers[f], None);
                     ents.p(10, q);
@@ -945,6 +1029,13 @@ pub fn write(data: &Data, opts: &WriteOptions) -> Result<Vec<u8>> {
         w.g(6, "CONTINUOUS");
     }
     w.g(0, "ENDTAB");
+    w.g(0, "TABLE");
+    w.g(2, "APPID");
+    w.g(70, 1);
+    w.g(0, "APPID");
+    w.g(2, DRUSA_APP);
+    w.g(70, 0);
+    w.g(0, "ENDTAB");
     w.g(0, "ENDSEC");
     w.g(0, "SECTION");
     w.g(2, "ENTITIES");
@@ -968,6 +1059,33 @@ mod tests {
     fn unicode_escapes_are_replaced() {
         assert_eq!(unescape_unicode("A\\U+00E9B"), "A\u{e9}B");
         assert_eq!(unescape_unicode("bad\\U+zz"), "bad\\U+zz");
+        assert_eq!(unescape_unicode("\\u+0041\\U+0042"), "AB");
+        assert_eq!(unescape_unicode("\\U++041"), "\\U++041");
+        assert_eq!(unescape_unicode("\\U+005CU+0041"), "\\U+0041");
+    }
+
+    #[test]
+    fn layer_escape_inverts_unescape() {
+        for l in [" A ", "X\\U+0041", "caf\u{e9}", "a\tb", "\\", "0"] {
+            let e = escape_layer(l, "t").unwrap();
+            assert!(e.bytes().all(|b| b.is_ascii_graphic()) || e.contains(' '));
+            assert_eq!(e.trim(), e);
+            assert_eq!(unescape_unicode(&e), l);
+        }
+        assert!(escape_layer("", "t").is_err());
+        assert!(escape_layer("a\nb", "t").is_err());
+        assert!(escape_layer("\u{1F600}", "t").is_err());
+    }
+
+    #[test]
+    fn version_gates_the_cp1252_fallback() {
+        let head = |v: &str| format!("  0\nSECTION\n  2\nHEADER\n  9\n$ACADVER\n  1\n{v}\n");
+        assert!(!utf8_only(head("AC1015").as_bytes()));
+        assert!(utf8_only(head("AC1021").as_bytes()));
+        assert!(utf8_only(head("AC1032").as_bytes()));
+        assert!(!utf8_only(b"no header"));
+        assert!(dxf_text(b"caf\xe9", true).is_err());
+        assert_eq!(dxf_text(b"caf\xe9", false).unwrap(), "caf\u{e9}");
     }
 
     #[test]

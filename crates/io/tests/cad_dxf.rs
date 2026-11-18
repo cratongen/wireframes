@@ -53,7 +53,7 @@ proptest! {
     }
 
     #[test]
-    fn polylines_and_points_round_trip(pl in polylines(false), ps in points()) {
+    fn polylines_and_points_round_trip(pl in polylines(false, false), ps in points()) {
         let n = pl.len();
         let pl = pl
             .with_column("layer", Column::utf8((0..n).map(|i| format!("S{i}")).collect()))
@@ -397,4 +397,169 @@ fn damaged_files_never_panic() {
             let _ = dxf::read(b);
         });
     }
+}
+
+fn layered_polylines(pl: Polylines) -> Polylines {
+    let n = pl.len();
+    let pl = pl
+        .with_column("layer", Column::utf8(vec!["S".into(); n]))
+        .unwrap();
+    let data = Data {
+        polylines: Some(pl),
+        ..Data::default()
+    };
+    dxf::read(&dxf::write(&data, &WriteOptions::default()).unwrap())
+        .unwrap()
+        .polylines
+        .unwrap()
+}
+
+#[test]
+fn multipart_feature_round_trips() {
+    let pl = Polylines::from_parts(
+        vec![
+            vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
+            vec![[5.0, 0.0, 0.0], [6.0, 0.0, 0.0]],
+            vec![[7.0, 0.0, 0.0], [8.0, 0.0, 0.0]],
+            vec![[9.0, 0.0, 0.0], [9.5, 0.0, 0.0]],
+        ],
+        vec![false; 4],
+        Some(vec![0, 0, 1, 1]),
+    )
+    .unwrap();
+    let n = pl.len();
+    let expect = pl
+        .clone()
+        .with_column("layer", Column::utf8(vec!["S".into(); n]))
+        .unwrap();
+    assert_eq!(layered_polylines(pl), expect);
+}
+
+#[test]
+fn closed_part_with_repeated_end_round_trips() {
+    let ring = vec![
+        [0.0, 0.0, 0.0],
+        [1.0, 0.0, 0.0],
+        [1.0, 1.0, 0.0],
+        [0.0, 0.0, 0.0],
+    ];
+    let pl = Polylines::from_parts(vec![ring], vec![true], None).unwrap();
+    let back = layered_polylines(pl.clone());
+    assert_eq!(back.n_vertices(), pl.n_vertices());
+}
+
+#[test]
+fn empty_feature_is_refused() {
+    let pl = Polylines::new(
+        vec![[0.0; 3], [1.0; 3]],
+        vec![0, 2],
+        vec![0, 0, 1],
+        vec![false],
+        Table::new(2),
+    )
+    .unwrap();
+    let data = Data {
+        polylines: Some(pl),
+        ..Data::default()
+    };
+    assert!(matches!(
+        dxf::write(&data, &WriteOptions::default()),
+        Err(Error::Unsupported(_))
+    ));
+}
+
+fn point_layer(layer: &str) -> String {
+    let ps = PointSet::new(vec![[1.0, 2.0, 3.0]])
+        .unwrap()
+        .with_column("layer", Column::utf8(vec![layer.to_string()]))
+        .unwrap();
+    let data = Data {
+        points: Some(ps),
+        ..Data::default()
+    };
+    let bytes = dxf::write(&data, &WriteOptions::default()).unwrap();
+    assert!(bytes.is_ascii(), "an R2000 file is written as ASCII");
+    let back = dxf::read(&bytes).unwrap();
+    match &back
+        .points
+        .unwrap()
+        .attributes()
+        .column("layer")
+        .unwrap()
+        .data
+    {
+        ColumnData::Utf8(v) => v[0].clone(),
+        _ => panic!("layer is not utf8"),
+    }
+}
+
+#[test]
+fn layer_names_round_trip_exactly() {
+    for l in [
+        " A ",
+        "X\\U+0041",
+        "caf\u{e9} \u{20AC}",
+        "a\\b",
+        "tab\there",
+    ] {
+        assert_eq!(point_layer(l), l);
+    }
+}
+
+#[test]
+fn mixed_case_unicode_escapes_are_both_decoded() {
+    let body = "  0\nSECTION\n  2\nENTITIES\n  0\nPOINT\n  8\n\\u+0041\\U+0042\n 10\n1\n 20\n2\n 30\n3\n  0\nENDSEC\n  0\nEOF\n";
+    let d = dxf::read(body.as_bytes()).unwrap();
+    match &d.points.unwrap().attributes().column("layer").unwrap().data {
+        ColumnData::Utf8(v) => assert_eq!(v[0], "AB"),
+        _ => panic!("layer is not utf8"),
+    }
+}
+
+#[test]
+fn utf8_is_required_from_ac1021() {
+    let file = |ver: &str| {
+        let mut b = groups(&[
+            (0, "SECTION"),
+            (2, "HEADER"),
+            (9, "$ACADVER"),
+            (1, ver),
+            (0, "ENDSEC"),
+            (0, "SECTION"),
+            (2, "ENTITIES"),
+            (0, "POINT"),
+        ])
+        .into_bytes();
+        b.extend_from_slice(b"  8\nL\xe9\n");
+        b.extend(groups(&[(0, "ENDSEC"), (0, "EOF")]).into_bytes());
+        b
+    };
+    let d = dxf::read(&file("AC1015")).unwrap();
+    assert_eq!(
+        d.points.unwrap().attributes().column("layer").unwrap().data,
+        ColumnData::Utf8(vec!["L\u{e9}".into()])
+    );
+    assert!(matches!(
+        dxf::read(&file("AC1021")),
+        Err(Error::Format { .. })
+    ));
+}
+
+#[test]
+fn binary_mesh_is_skipped_with_a_warning() {
+    let mut b = b"AutoCAD Binary DXF\r\n\x1a\0".to_vec();
+    let s = |b: &mut Vec<u8>, code: i16, v: &str| {
+        b.extend(code.to_le_bytes());
+        b.extend(v.as_bytes());
+        b.push(0);
+    };
+    s(&mut b, 0, "SECTION");
+    s(&mut b, 2, "ENTITIES");
+    s(&mut b, 0, "MESH");
+    s(&mut b, 8, "M");
+    s(&mut b, 0, "ENDSEC");
+    s(&mut b, 0, "EOF");
+    let d = dxf::read(&b).unwrap();
+    assert!(d.mesh.is_none());
+    assert_eq!(d.warnings, vec!["skipped 1 MESH entities".to_string()]);
 }

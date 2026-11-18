@@ -4,6 +4,7 @@ use std::io::Write;
 
 use drusa_core::{Column, ColumnData, Error, Mesh, Result};
 
+use crate::common::{decode_name, encode_name};
 use crate::obj::{
     as_str, check_no_columns, parse_coord, push_f64, trim, unsupported_column, utf8_values,
 };
@@ -178,16 +179,15 @@ fn read_ascii(r: &[u8]) -> Result<Data> {
         line: 1,
     };
     let mut w = Welder::default();
-    let mut names: Vec<String> = Vec::new();
+    let mut names: Vec<&[u8]> = Vec::new();
     let mut solid_of_face: Vec<u32> = Vec::new();
     let mut corners: Vec<[f64; 3]> = Vec::new();
     let mut current = None;
     let mut short = 0usize;
     while let Some(t) = c.token() {
         if t.eq_ignore_ascii_case(b"solid") {
-            let name = String::from_utf8_lossy(c.rest_of_line()).into_owned();
             current = Some(names.len() as u32);
-            names.push(name);
+            names.push(c.rest_of_line());
         } else if t.eq_ignore_ascii_case(b"endsolid") {
             c.rest_of_line();
             current = None;
@@ -228,7 +228,7 @@ fn read_ascii(r: &[u8]) -> Result<Data> {
             let before = w.tris.len();
             w.polygon(&corners);
             let id = *current.get_or_insert_with(|| {
-                names.push(String::new());
+                names.push(b"");
                 names.len() as u32 - 1
             });
             solid_of_face.extend(std::iter::repeat_n(id, w.tris.len() - before));
@@ -248,17 +248,22 @@ fn read_ascii(r: &[u8]) -> Result<Data> {
             .push(format!("skipped {short} facets with fewer than 3 vertices"));
     }
     let mut mesh = Mesh::new(w.verts, w.tris)?;
-    let first = solid_of_face.first().map(|&i| names[i as usize].as_str());
-    let one_default = matches!(first, Some("" | "drusa"))
+    let first = solid_of_face.first().map(|&i| names[i as usize]);
+    let one_default = matches!(first, Some(b"" | DEFAULT_SOLID))
         && solid_of_face
             .iter()
-            .all(|&i| names[i as usize] == first.unwrap_or_default());
+            .all(|&i| Some(names[i as usize]) == first);
     if !solid_of_face.is_empty() && !one_default {
+        let decoded: Vec<Option<String>> = names.iter().map(|n| decode_name(n)).collect();
+        let valid: Vec<bool> = solid_of_face
+            .iter()
+            .map(|&i| decoded[i as usize].is_some())
+            .collect();
         let col = solid_of_face
             .iter()
-            .map(|&i| names[i as usize].clone())
+            .map(|&i| decoded[i as usize].clone().unwrap_or_default())
             .collect();
-        mesh = mesh.with_face_column("solid", Column::utf8(col))?;
+        mesh = mesh.with_face_column("solid", Column::utf8(col).with_valid(valid)?)?;
     }
     data.mesh = Some(mesh);
     Ok(data)
@@ -280,10 +285,17 @@ fn normal(c: [[f64; 3]; 3]) -> [f64; 3] {
     }
 }
 
-fn clean_name(s: &str) -> String {
-    s.chars()
-        .map(|ch| if ch == '\n' || ch == '\r' { ' ' } else { ch })
-        .collect()
+/// The name a mesh without a `solid` column is written under; a column value
+/// equal to it is written escaped so the reader keeps the column.
+const DEFAULT_SOLID: &[u8] = b"drusa";
+
+fn solid_name(name: Option<&str>) -> String {
+    let mut out = Vec::new();
+    match name {
+        Some(n) if n.as_bytes() == DEFAULT_SOLID => out.extend_from_slice(b"%64rusa"),
+        _ => encode_name(name, false, &mut out),
+    }
+    String::from_utf8_lossy(&out).into_owned()
 }
 
 pub fn write(data: &Data, opts: &WriteOptions) -> Result<Vec<u8>> {
@@ -313,8 +325,7 @@ fn write_ascii(m: &Mesh, solids: Option<(&[String], &Column)>) -> Result<Vec<u8>
     let mut out = Vec::with_capacity(m.n_faces() * 260 + 32);
     let name_of = |f: usize| -> String {
         match solids {
-            Some((v, c)) if c.is_valid(f) => clean_name(&v[f]),
-            Some(_) => String::new(),
+            Some((v, c)) => solid_name(c.is_valid(f).then(|| v[f].as_str())),
             None => "drusa".into(),
         }
     };

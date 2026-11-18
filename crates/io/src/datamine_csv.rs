@@ -11,30 +11,74 @@ use crate::{Data, WriteOptions};
 const NULL: f64 = -1.0e30;
 const TRIANGLE_IDS: [&str; 4] = ["TRIANGLE", "TRIANG", "TRI", "TRISOL"];
 
-fn split(line: &str, d: char) -> Vec<String> {
-    let mut raw = Vec::new();
+fn unquote(f: &str) -> String {
+    let f = f.trim();
+    match f.strip_prefix('"').and_then(|s| s.strip_suffix('"')) {
+        Some(inner) => inner.replace("\"\"", "\""),
+        None => f.to_string(),
+    }
+}
+
+/// `;` when the header record has a `;` outside quotes, else `,`.
+fn sniff(text: &str) -> char {
+    let mut quoted = false;
+    for c in text.chars() {
+        match c {
+            '"' => quoted = !quoted,
+            ';' if !quoted => return ';',
+            '\n' if !quoted => break,
+            _ => {}
+        }
+    }
+    ','
+}
+
+/// Records with their first line number; delimiters and line breaks inside
+/// quotes are field data. Blank records are skipped.
+fn records(text: &str, d: char, file: &str) -> Result<Vec<(u64, Vec<String>)>> {
+    let mut out = Vec::new();
+    let mut fields = Vec::new();
     let mut cur = String::new();
     let mut quoted = false;
-    for c in line.chars() {
+    let mut line = 1u64;
+    let mut start = 1u64;
+    let mut end_record = |fields: &mut Vec<String>, cur: &mut String, start: u64| {
+        if cur.ends_with('\r') {
+            cur.pop();
+        }
+        fields.push(unquote(&std::mem::take(cur)));
+        let fields = std::mem::take(fields);
+        if !(fields.len() == 1 && fields[0].is_empty()) {
+            out.push((start, fields));
+        }
+    };
+    for c in text.chars() {
         match c {
             '"' => {
                 quoted = !quoted;
                 cur.push(c);
             }
-            c if c == d && !quoted => raw.push(std::mem::take(&mut cur)),
+            '\n' if !quoted => {
+                end_record(&mut fields, &mut cur, start);
+                line += 1;
+                start = line;
+            }
+            '\n' => {
+                line += 1;
+                cur.push(c);
+            }
+            c if c == d && !quoted => fields.push(unquote(&std::mem::take(&mut cur))),
             c => cur.push(c),
         }
     }
-    raw.push(cur);
-    raw.iter()
-        .map(|f| {
-            let f = f.trim();
-            match f.strip_prefix('"').and_then(|s| s.strip_suffix('"')) {
-                Some(inner) => inner.replace("\"\"", "\""),
-                None => f.to_string(),
-            }
-        })
-        .collect()
+    if quoted {
+        return Err(Error::format_at(
+            start,
+            format!("{file} has a quote that is never closed"),
+        ));
+    }
+    end_record(&mut fields, &mut cur, start);
+    Ok(out)
 }
 
 struct Csv {
@@ -48,19 +92,13 @@ impl Csv {
     fn parse(b: &[u8], file: &'static str) -> Result<Csv> {
         let text = decode_text(b);
         let text = text.strip_prefix('\u{feff}').unwrap_or(&text);
-        let mut lines = text
-            .lines()
-            .enumerate()
-            .map(|(i, l)| (i as u64 + 1, l))
-            .filter(|(_, l)| !l.trim().is_empty());
-        let (_, head) = lines
+        let delim = sniff(text);
+        let mut lines = records(text, delim, file)?.into_iter();
+        let (_, header) = lines
             .next()
             .ok_or_else(|| Error::format(format!("{file} is empty")))?;
-        let delim = if head.contains(';') { ';' } else { ',' };
-        let header: Vec<String> = split(head, delim);
         let mut rows = Vec::new();
-        for (n, l) in lines {
-            let mut f = split(l, delim);
+        for (n, mut f) in lines {
             while f.len() > header.len() && f.last().is_some_and(String::is_empty) {
                 f.pop();
             }

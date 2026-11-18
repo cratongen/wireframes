@@ -54,7 +54,7 @@ proptest! {
     /// Mixed files drop columns that are null on every row of one kind, and a
     /// mesh without faces is not told apart from loose points there.
     #[test]
-    fn mixed_round_trips(m in attributed_mesh(), pl in polylines(true), ps in points(), ascii_mode in any::<bool>()) {
+    fn mixed_round_trips(m in attributed_mesh(), pl in polylines(true, true), ps in points(), ascii_mode in any::<bool>()) {
         prop_assume!(m.n_faces() > 0);
         prop_assume!(m.vertex_attributes().columns().iter().all(|c| c.null_count() < c.len()));
         let ps = ps.clone().with_column("w", Column::f64(vec![2.0; ps.len()])).unwrap();
@@ -281,4 +281,91 @@ fn damaged_files_never_panic() {
     never_panics(LEGACY_42.as_bytes(), |b| {
         let _ = vtk::read(b);
     });
+}
+
+fn tri() -> Mesh {
+    Mesh::new(
+        vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+        vec![[0, 1, 2]],
+    )
+    .unwrap()
+}
+
+#[test]
+fn repeated_point_data_errors_not_panics() {
+    let b = b"# vtk DataFile Version 3.0\nx\nASCII\nDATASET POLYDATA\nPOINTS 2 double\n0 0 0 1 1 1\nPOINT_DATA 0\nSCALARS a double 9223372036854775808\nPOINT_DATA 2\n";
+    assert!(vtk::read(b).is_err());
+}
+
+#[test]
+fn user_column_named_valid_round_trips() {
+    let m = tri()
+        .with_vertex_column("a", Column::f64(vec![1.0, 2.0, 3.0]))
+        .unwrap()
+        .with_vertex_column("a_valid", Column::i64(vec![1, 0, 1]))
+        .unwrap();
+    for opts in [ascii(), WriteOptions::default()] {
+        assert_eq!(round(&mesh_data(m.clone()), &opts).mesh, Some(m.clone()));
+    }
+}
+
+#[test]
+fn columns_that_clash_with_null_companions_are_refused() {
+    let nulls = Column::f64(vec![1.0, 2.0, 3.0])
+        .with_valid(vec![true, false, true])
+        .unwrap();
+    let bool_companion = tri()
+        .with_vertex_column("a", Column::f64(vec![1.0, 2.0, 3.0]))
+        .unwrap()
+        .with_vertex_column("a_valid", Column::bool(vec![true, false, true]))
+        .unwrap();
+    let taken_name = tri()
+        .with_vertex_column("a", nulls)
+        .unwrap()
+        .with_vertex_column("a_valid", Column::i64(vec![1, 1, 1]))
+        .unwrap();
+    for m in [bool_companion, taken_name] {
+        assert!(matches!(
+            vtk::write(&mesh_data(m), &ascii()),
+            Err(Error::Unsupported(_))
+        ));
+    }
+}
+
+#[test]
+fn polylines_keep_empty_features() {
+    let attrs = Table::new(2)
+        .with_column("id", Column::i64(vec![10, 20]))
+        .unwrap();
+    let pl = Polylines::new(
+        vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [1.0, 1.0, 0.0]],
+        vec![0, 3],
+        vec![0, 0, 1],
+        vec![false],
+        attrs,
+    )
+    .unwrap();
+    let data = Data {
+        polylines: Some(pl.clone()),
+        ..Data::default()
+    };
+    for opts in [ascii(), WriteOptions::default()] {
+        assert_eq!(round(&data, &opts).polylines, Some(pl.clone()));
+    }
+}
+
+#[test]
+fn reserved_feature_column_is_refused() {
+    let pl = Polylines::from_parts(vec![vec![[0.0; 3], [1.0; 3]]], vec![false], None)
+        .unwrap()
+        .with_column("drusa_feature", Column::i64(vec![7]))
+        .unwrap();
+    let data = Data {
+        polylines: Some(pl),
+        ..Data::default()
+    };
+    assert!(matches!(
+        vtk::write(&data, &ascii()),
+        Err(Error::Unsupported(_))
+    ));
 }

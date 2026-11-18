@@ -145,3 +145,46 @@ fn damaged_pairs_never_panic() {
         let _ = datamine_csv::read(&pt, b);
     });
 }
+
+fn tri() -> Mesh {
+    Mesh::new(
+        vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+        vec![[0, 1, 2]],
+    )
+    .unwrap()
+}
+
+fn round(m: &Mesh) -> Mesh {
+    let data = Data {
+        mesh: Some(m.clone()),
+        ..Data::default()
+    };
+    let (pt, tr) = datamine_csv::write(&data, &WriteOptions::default()).unwrap();
+    datamine_csv::read(&pt, &tr).unwrap().mesh.unwrap()
+}
+
+#[test]
+fn text_with_line_breaks_and_quotes_round_trips() {
+    let m = tri()
+        .with_face_column("note", utf8(&["a\nb\r\n\"c\", d;"]))
+        .unwrap();
+    assert_eq!(round(&m), m);
+}
+
+#[test]
+fn column_name_with_semicolon_round_trips() {
+    let m = tri()
+        .with_vertex_column("a;b", Column::f64(vec![1.5, 2.5, 3.5]))
+        .unwrap();
+    assert_eq!(round(&m), m);
+}
+
+#[test]
+fn unclosed_quote_errors() {
+    let pt = b"XP,YP,ZP,PID,N\n0,0,0,1,\"x\n1,0,0,2,y\n0,1,0,3,z\n";
+    let tr = b"TRIANGLE,PID1,PID2,PID3\n1,1,2,3\n";
+    assert!(matches!(
+        datamine_csv::read(pt, tr),
+        Err(Error::Format { .. })
+    ));
+}

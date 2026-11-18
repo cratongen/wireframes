@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 3dac37b49154927646c2fe4b45d70395410656263fd8a948d11e46eb95bf784f # shrinks to m = Mesh { vertices: [[2.2250738585072014e-308, 5342929.07963067, 0.0], [-531.0, -0.0, 0.0], [5e-324, -9110856.565241065, -0.0]], triangles: [[1, 0, 0], [1, 0, 2], [1, 2, 1], [1, 1, 0]], vertex_attributes: Table { names: [], columns: [], rows: 3 }, face_attributes: Table { names: ["polygon", "rock", "solid", "stl_attribute"], columns: [Column { data: Int64([0, 0, 0, 0]), valid: None, unit: None }, Column { data: Int64([0, -161417747, 4, -5]), valid: None, unit: None }, Column { data: Utf8([" pit ", "", "a", " pit "]), valid: Some([true, false, true, true]), unit: None }, Column { data: Int64([0, -9223372036854775808, 35653, -9223372036854775808]), valid: Some([false, true, true, true]), unit: None }], rows: 4 }, crs: Some("EPSG:31983"), length_unit: None }

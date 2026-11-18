@@ -238,3 +238,136 @@ proptest! {
         let _ = ply::read(&bytes);
     }
 }
+
+fn tri() -> drusa_core::Mesh {
+    drusa_core::Mesh::new(
+        vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+        vec![[0, 1, 2]],
+    )
+    .unwrap()
+}
+
+#[test]
+fn face_property_named_polygon_survives_read_write_read() {
+    let src = b"ply\nformat ascii 1.0\nelement vertex 4\nproperty float x\nproperty float y\nproperty float z\nelement face 2\nproperty list uchar int vertex_indices\nproperty int polygon\nend_header\n0 0 0\n1 0 0\n1 1 0\n0 1 0\n3 0 1 2 7\n3 0 2 3 7\n";
+    let d = ply::read(src).unwrap();
+    for opts in [ascii(), binary()] {
+        let again = ply::read(&ply::write(&d, &opts).unwrap()).unwrap();
+        assert_eq!(again, d);
+    }
+}
+
+#[test]
+fn face_property_named_polygon_is_not_overwritten() {
+    let src = b"ply\nformat ascii 1.0\nelement vertex 4\nproperty float x\nproperty float y\nproperty float z\nelement face 1\nproperty list uchar int vertex_indices\nproperty int polygon\nend_header\n0 0 0\n1 0 0\n1 1 0\n0 1 0\n4 0 1 2 3 9\n";
+    let d = ply::read(src).unwrap();
+    let c = d
+        .mesh
+        .unwrap()
+        .face_attributes()
+        .column("polygon")
+        .cloned()
+        .unwrap();
+    assert_eq!(c, Column::i64(vec![9, 9]));
+}
+
+#[test]
+fn polygon_ids_with_nulls_and_gaps_round_trip() {
+    let m = drusa_core::Mesh::new(
+        vec![
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [1.0, 1.0, 0.0],
+            [0.0, 1.0, 0.0],
+        ],
+        vec![[0, 1, 2], [0, 2, 3], [0, 1, 3]],
+    )
+    .unwrap()
+    .with_face_column(
+        "polygon",
+        Column::i64(vec![40, 40, 0])
+            .with_valid(vec![true, true, false])
+            .unwrap(),
+    )
+    .unwrap();
+    let d = mesh_data(m);
+    for opts in [ascii(), binary()] {
+        assert_eq!(ply::read(&ply::write(&d, &opts).unwrap()).unwrap(), d);
+    }
+}
+
+#[test]
+fn int64_beyond_f64_precision_is_refused_not_rounded() {
+    let big = (1i64 << 53) + 1;
+    let m = tri()
+        .with_face_column("id", Column::i64(vec![big]))
+        .unwrap();
+    assert!(matches!(
+        ply::write(&mesh_data(m.clone()), &binary()),
+        Err(Error::Unsupported(_))
+    ));
+    let back = ply::read(&ply::write(&mesh_data(m), &skipping(false)).unwrap()).unwrap();
+    assert_eq!(back, mesh_data(tri()));
+    let exact = tri()
+        .with_face_column("id", Column::i64(vec![1i64 << 53]))
+        .unwrap();
+    let back = ply::read(&ply::write(&mesh_data(exact), &binary()).unwrap()).unwrap();
+    assert_eq!(
+        back.mesh.unwrap().face_attributes().column("id").unwrap(),
+        &Column::f64(vec![(1i64 << 53) as f64])
+    );
+}
+
+proptest! {
+    #[test]
+    fn polygon_ids_anywhere_round_trip(
+        m in attr_mesh(),
+        off in -1000i64..1000,
+        first in any::<bool>(),
+        asc in any::<bool>(),
+    ) {
+        let mut m = m;
+        let fa = m.face_attributes().clone();
+        if let Some(ColumnData::Int64(v)) = fa.column("polygon").map(|c| &c.data) {
+            let shifted = Column::i64(v.iter().map(|x| x + off).collect());
+            let rest = fa.clone().without_column("polygon");
+            let mut ft = Table::new(m.n_faces());
+            if first {
+                ft = ft.with_column("polygon", shifted.clone()).unwrap();
+            }
+            for (name, col) in rest.names().iter().zip(rest.columns()) {
+                ft = ft.with_column(name, col.clone()).unwrap();
+            }
+            if !first {
+                ft = ft.with_column("polygon", shifted).unwrap();
+            }
+            let vt = m.vertex_attributes().clone();
+            m = m.with_attributes(vt, ft).unwrap();
+        }
+        let d = mesh_data(m);
+        let opts = if asc { ascii() } else { binary() };
+        prop_assert_eq!(ply::read(&ply::write(&d, &opts).unwrap()).unwrap(), d);
+    }
+
+    #[test]
+    fn int64_columns_are_exact_or_refused(v in prop::collection::vec(any::<i64>(), 1), null in any::<bool>()) {
+        let c = Column::i64(v.clone()).with_valid(vec![!null]).unwrap();
+        let d = mesh_data(tri().with_face_column("id", c).unwrap());
+        match ply::write(&d, &binary()) {
+            Err(e) => prop_assert!(matches!(e, Error::Unsupported(_)) && v[0].unsigned_abs() > 1 << 53),
+            Ok(bytes) => {
+                let back = ply::read(&bytes).unwrap().mesh.unwrap();
+                let c = back.face_attributes().column("id").unwrap();
+                prop_assert_eq!(c.is_valid(0), !null);
+                if !null {
+                    let got = match &c.data {
+                        ColumnData::Int64(w) => i128::from(w[0]),
+                        ColumnData::Float64(w) => w[0] as i128,
+                        _ => unreachable!(),
+                    };
+                    prop_assert_eq!(got, i128::from(v[0]));
+                }
+            }
+        }
+    }
+}

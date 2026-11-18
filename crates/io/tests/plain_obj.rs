@@ -127,8 +127,34 @@ fn unsupported_parts_and_columns() {
     ));
 }
 
-fn names() -> impl Strategy<Value = String> {
-    prop::sample::select(vec!["a", "rock type", "ore_2", "x y z"]).prop_map(String::from)
+fn names() -> impl Strategy<Value = Option<String>> {
+    let s = prop::sample::select(vec![
+        "a",
+        "rock type",
+        "ore_2",
+        "x y z",
+        "",
+        "zone#2",
+        " pit ",
+        "a  b",
+        "%null",
+        "%empty",
+        "50%",
+        "%41",
+        "C:\\x\\",
+        "default",
+        "tab\there",
+        "line\nbreak",
+        "ção",
+    ]);
+    prop::option::weighted(0.9, s.prop_map(String::from))
+}
+
+fn name_column(v: Vec<Option<String>>) -> Column {
+    let valid = v.iter().map(Option::is_some).collect();
+    Column::utf8(v.into_iter().map(Option::unwrap_or_default).collect())
+        .with_valid(valid)
+        .unwrap()
 }
 
 proptest! {
@@ -145,10 +171,10 @@ proptest! {
         let mut m = m.with_attributes(vt, ft).unwrap();
         if m.n_faces() > 0 {
             if let Some(o) = objects {
-                m = m.with_face_column("object", Column::utf8(per_polygon(&sizes, &o))).unwrap();
+                m = m.with_face_column("object", name_column(per_polygon(&sizes, &o))).unwrap();
             }
             if let Some(g) = groups {
-                m = m.with_face_column("group", Column::utf8(per_polygon(&sizes, &g))).unwrap();
+                m = m.with_face_column("group", name_column(per_polygon(&sizes, &g))).unwrap();
             }
         }
         if let Some(c) = poly {
@@ -186,4 +212,46 @@ fn points_only_file_has_no_mesh() {
     );
     let empty = obj::read(b"# nothing\n").unwrap();
     assert_eq!(empty, Data::default());
+}
+
+fn tri() -> drusa_core::Mesh {
+    drusa_core::Mesh::new(
+        vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+        vec![[0, 1, 2]],
+    )
+    .unwrap()
+}
+
+fn group_round_trip(col: Column) {
+    let d = mesh_data(tri().with_face_column("group", col).unwrap());
+    let back = obj::read(&obj::write(&d, &ascii()).unwrap()).unwrap();
+    assert_eq!(back, d);
+}
+
+#[test]
+fn group_name_with_hash_round_trips() {
+    group_round_trip(Column::utf8(vec!["zone#2".into()]));
+}
+
+#[test]
+fn empty_group_name_round_trips() {
+    group_round_trip(Column::utf8(vec![String::new()]));
+}
+
+#[test]
+fn null_group_name_round_trips() {
+    group_round_trip(
+        Column::utf8(vec!["a".into()])
+            .with_valid(vec![false])
+            .unwrap(),
+    );
+}
+
+#[test]
+fn comment_ending_in_backslash_does_not_swallow_next_line() {
+    let src = b"# exported from C:\\models\\\nv 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n";
+    let d = obj::read(src).unwrap();
+    assert_eq!(d.mesh.unwrap().n_vertices(), 3);
+    let d = obj::read(b"v 0 0 \\\n0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n").unwrap();
+    assert_eq!(d.mesh.unwrap().n_vertices(), 3);
 }

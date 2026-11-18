@@ -576,11 +576,41 @@ pub fn read(r: &[u8]) -> Result<Data> {
         ft = ft.take_or_null(&face_rows);
     }
     let mut mesh = Mesh::new(verts, tris)?.with_attributes(vt, ft)?;
-    if let Some(c) = polygon {
-        mesh = mesh.with_face_column("polygon", c)?;
+    match mesh.face_attributes().column("polygon") {
+        Some(c) => {
+            if let Some(ids) = integral(c) {
+                mesh = mesh.with_face_column("polygon", ids)?;
+            }
+        }
+        None => {
+            if let Some(c) = polygon {
+                mesh = mesh.with_face_column("polygon", c)?;
+            }
+        }
     }
     data.mesh = Some(mesh);
     Ok(data)
+}
+
+pub(crate) const F64_EXACT_INT: i64 = 1 << 53;
+
+/// A float column whose valid values are all integers that `f64` holds exactly,
+/// as Int64; the writer stores an Int64 `polygon` column with nulls as double.
+fn integral(c: &Column) -> Option<Column> {
+    let ColumnData::Float64(v) = &c.data else {
+        return None;
+    };
+    let ok = (0..v.len())
+        .all(|i| !c.is_valid(i) || (v[i].fract() == 0.0 && v[i].abs() <= F64_EXACT_INT as f64));
+    if !ok {
+        return None;
+    }
+    let ids = v
+        .iter()
+        .map(|&x| if x.is_nan() { 0 } else { x as i64 })
+        .collect();
+    let valid = (0..v.len()).map(|i| c.is_valid(i)).collect();
+    Column::i64(ids).with_valid(valid).ok()
 }
 
 enum Out<'a> {
@@ -602,15 +632,11 @@ impl Out<'_> {
 fn plan<'a>(
     t: &'a Table,
     reserved: &[&str],
-    structural: &[&str],
     kind: &str,
     opts: &WriteOptions,
 ) -> Result<Vec<(&'a str, Out<'a>)>> {
     let mut out = Vec::new();
     for (name, c) in t.names().iter().zip(t.columns()) {
-        if structural.contains(&name.as_str()) {
-            continue;
-        }
         let bad_name = name.is_empty()
             || name
                 .bytes()
@@ -623,11 +649,17 @@ fn plan<'a>(
         let o = match &c.data {
             ColumnData::Float64(_) => Out::Double(c),
             ColumnData::Int64(v) => {
-                let fits = v.iter().all(|&x| i32::try_from(x).is_ok());
-                if c.valid.is_none() && fits {
+                if c.valid.is_none() && v.iter().all(|&x| i32::try_from(x).is_ok()) {
                     Out::Int(v)
-                } else {
+                } else if v.iter().all(|&x| x.unsigned_abs() <= F64_EXACT_INT as u64) {
                     Out::Double(c)
+                } else {
+                    if !opts.skip_unsupported_columns {
+                        return Err(Error::Unsupported(format!(
+                            "ply cannot store {kind} column {name:?}: it has nulls or values outside int32, and values beyond 2^53 do not fit a double exactly; set skip_unsupported_columns to drop it"
+                        )));
+                    }
+                    continue;
                 }
             }
             ColumnData::Bool(_) => Out::UChar(c),
@@ -682,6 +714,28 @@ fn put_value(out: &mut Vec<u8>, o: &Out, row: usize, ascii: bool) -> Result<()> 
     Ok(())
 }
 
+/// The reader numbers polygons 0, 1, ... and records them only when some polygon
+/// has more than 3 corners; a `polygon` column of exactly that form is left out
+/// of the file, any other is written as a face property the reader keeps.
+pub(crate) fn regenerated_by_reader(m: &Mesh, groups: &[std::ops::Range<usize>]) -> bool {
+    let Some(c) = m.face_attributes().column("polygon") else {
+        return false;
+    };
+    let ColumnData::Int64(v) = &c.data else {
+        return false;
+    };
+    c.valid.is_none()
+        && m.face_attributes()
+            .names()
+            .last()
+            .is_some_and(|n| n == "polygon")
+        && groups.iter().any(|g| g.len() > 1)
+        && groups
+            .iter()
+            .enumerate()
+            .all(|(k, g)| v[g.clone()].iter().all(|&id| id == k as i64))
+}
+
 pub fn write(data: &Data, opts: &WriteOptions) -> Result<Vec<u8>> {
     if data.polylines.is_some() || data.points.is_some() || data.grid.is_some() {
         return Err(Error::Unsupported(
@@ -697,15 +751,17 @@ pub fn write(data: &Data, opts: &WriteOptions) -> Result<Vec<u8>> {
             i32::MAX
         )));
     }
-    let vcols = plan(m.vertex_attributes(), &["x", "y", "z"], &[], "vertex", opts)?;
-    let fcols = plan(
+    let vcols = plan(m.vertex_attributes(), &["x", "y", "z"], "vertex", opts)?;
+    let groups = polygon_groups(m)?;
+    let mut fcols = plan(
         m.face_attributes(),
         &["vertex_indices", "vertex_index"],
-        &["polygon"],
         "face",
         opts,
     )?;
-    let groups = polygon_groups(m)?;
+    if regenerated_by_reader(m, &groups) {
+        fcols.retain(|(name, _)| *name != "polygon");
+    }
     let tris = m.triangles();
     let wide = groups.iter().any(|g| g.len() + 2 > 255);
     let ascii = opts.ascii;
