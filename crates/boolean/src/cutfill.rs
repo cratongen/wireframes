@@ -233,6 +233,17 @@ fn z_at(c: [[f64; 3]; 3], p: P2) -> f64 {
     c[0][2] + l1 * (c[1][2] - c[0][2]) + l2 * (c[2][2] - c[0][2])
 }
 
+/// Where `d` reaches 0 between two ends whose exact signs differ. Their f64
+/// values can both round to 0, so an equal pair gives the midpoint.
+fn crossing(di: f64, dj: f64) -> f64 {
+    let den = di - dj;
+    if den == 0.0 {
+        0.5
+    } else {
+        (di / den).clamp(0.0, 1.0)
+    }
+}
+
 /// `[cut, fill, cut_area, fill_area, area]` over one plan cell.
 fn cell(
     poly: &[Vert],
@@ -283,7 +294,7 @@ fn cell(
                 pd.push(d[i]);
             }
             if s[i].times(s[j]) == Sign::Negative {
-                let t = (d[i] / (d[i] - d[j])).clamp(0.0, 1.0);
+                let t = crossing(d[i], d[j]);
                 pxy.push([
                     xy[i][0] + t * (xy[j][0] - xy[i][0]),
                     xy[i][1] + t * (xy[j][1] - xy[i][1]),
@@ -399,4 +410,18 @@ pub fn cut_fill(base: &Mesh, design: &Mesh, boundary: Option<&Polylines>) -> Res
         fill_area,
         area,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::crossing;
+
+    #[test]
+    fn crossing_is_finite_when_both_ends_round_to_zero() {
+        assert_eq!(crossing(0.0, 0.0), 0.5);
+        assert_eq!(crossing(-0.0, 0.0), 0.5);
+        assert_eq!(crossing(1.0, -3.0), 0.25);
+        assert_eq!(crossing(0.0, -1.0), 0.0);
+        assert_eq!(crossing(1e-300, 1e-300), 0.5);
+    }
 }
