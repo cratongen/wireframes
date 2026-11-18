@@ -618,12 +618,12 @@ impl PyMesh {
 
     fn __repr__(&self) -> String {
         format!(
-            "Mesh({} vertices, {} triangles, columns {:?}, crs {:?}, length_unit {:?})",
+            "Mesh({} vertices, {} triangles, columns {:?}, crs {}, length_unit {})",
             self.inner.n_vertices(),
             self.inner.n_faces(),
             self.column_names(),
-            self.inner.crs,
-            self.inner.length_unit
+            self.inner.crs.as_deref().unwrap_or("None"),
+            self.inner.length_unit.as_deref().unwrap_or("None")
         )
     }
 
