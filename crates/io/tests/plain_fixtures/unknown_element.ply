@@ -1,0 +1,24 @@
+ply
+format ascii 1.0
+comment unknown element between vertex and face
+element vertex 4
+property float x
+property float y
+property float z
+property uchar red
+property float quality
+element material 2
+property list uchar float rgb
+property int id
+element face 2
+property list uchar int vertex_indices
+property int label
+end_header
+0 0 0 255 0.5
+1 0 0 0 nan
+1 1 0 10 1.5
+0 1 0 20 2.5
+3 1 0 0 7
+3 0.5 0.5 0.5 8
+4 0 1 2 3 -3
+3 0 1 3 9

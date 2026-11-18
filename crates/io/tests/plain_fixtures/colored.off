@@ -1,0 +1,11 @@
+# coloured square plus a triangle
+COFF
+# counts on their own line
+5 2 0
+0 0 0 255 0 0 255
+1 0 0 0 255 0 255
+1 1 0 0 0 255 255
+0 1 0 9 9 9 255
+0 0 1 9 9 9 255
+4 0 1 2 3  255 0 0
+3 0 4 1

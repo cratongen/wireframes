@@ -1,13 +1,980 @@
-#![allow(unused_variables)]
+//! AutoCAD DXF: group-code reader for ASCII and binary files, hand-written
+//! ASCII R2000 writer.
 
-use drusa_core::Result;
+use std::collections::{BTreeMap, HashMap};
+use std::fmt::Write as _;
 
-use crate::{Data, WriteOptions};
+use drusa_core::{Column, ColumnData, Error, PointSet, Polylines, Result, Table};
 
-pub fn read(r: &[u8]) -> Result<Data> {
-    todo!()
+use crate::common::polygons;
+use crate::vtk::{Fan, fmt_f64};
+use crate::{Data, DxfEntity, WriteOptions};
+
+const CP1252_HIGH: [char; 32] = [
+    '\u{20AC}', '\u{81}', '\u{201A}', '\u{192}', '\u{201E}', '\u{2026}', '\u{2020}', '\u{2021}',
+    '\u{2C6}', '\u{2030}', '\u{160}', '\u{2039}', '\u{152}', '\u{8D}', '\u{17D}', '\u{8F}',
+    '\u{90}', '\u{2018}', '\u{2019}', '\u{201C}', '\u{201D}', '\u{2022}', '\u{2013}', '\u{2014}',
+    '\u{2DC}', '\u{2122}', '\u{161}', '\u{203A}', '\u{153}', '\u{9D}', '\u{17E}', '\u{178}',
+];
+
+/// UTF-8 when valid, else Windows-1252.
+pub(crate) fn decode_text(b: &[u8]) -> String {
+    match std::str::from_utf8(b) {
+        Ok(s) => s.to_string(),
+        Err(_) => b
+            .iter()
+            .map(|&c| match c {
+                0x80..=0x9F => CP1252_HIGH[(c - 0x80) as usize],
+                _ => c as char,
+            })
+            .collect(),
+    }
 }
 
+/// Replaces AutoCAD `\U+XXXX` escapes.
+fn unescape_unicode(s: &str) -> String {
+    if !s.contains("\\U+") && !s.contains("\\u+") {
+        return s.to_string();
+    }
+    let mut out = String::with_capacity(s.len());
+    let mut rest = s;
+    while let Some(i) = rest.find("\\U+").or_else(|| rest.find("\\u+")) {
+        out.push_str(&rest[..i]);
+        let hex = rest.get(i + 3..i + 7);
+        match hex
+            .and_then(|h| u32::from_str_radix(h, 16).ok())
+            .and_then(char::from_u32)
+        {
+            Some(c) => {
+                out.push(c);
+                rest = &rest[i + 7..];
+            }
+            None => {
+                out.push_str(&rest[i..i + 3]);
+                rest = &rest[i + 3..];
+            }
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
+struct Group {
+    code: i32,
+    value: String,
+    line: Option<u64>,
+}
+
+fn group_err(g: &Group, m: String) -> Error {
+    match g.line {
+        Some(l) => Error::format_at(l, m),
+        None => Error::format(m),
+    }
+}
+
+impl Group {
+    fn f64(&self) -> Result<f64> {
+        self.value.trim().parse::<f64>().map_err(|_| {
+            group_err(
+                self,
+                format!("group {} value {:?} is not a number", self.code, self.value),
+            )
+        })
+    }
+
+    fn i64(&self) -> Result<i64> {
+        let v = self.value.trim();
+        v.parse::<i64>()
+            .or_else(|_| match v.parse::<f64>() {
+                Ok(x) if x.fract() == 0.0 && x.abs() < 9.0e15 => Ok(x as i64),
+                _ => Err(()),
+            })
+            .map_err(|_| {
+                group_err(
+                    self,
+                    format!(
+                        "group {} value {:?} is not an integer",
+                        self.code, self.value
+                    ),
+                )
+            })
+    }
+}
+
+fn ascii_groups(b: &[u8]) -> Result<Vec<Group>> {
+    let text = decode_text(b);
+    let lines: Vec<&str> = text.lines().collect();
+    let mut out = Vec::with_capacity(lines.len() / 2);
+    let mut i = 0;
+    while i < lines.len() {
+        let c = lines[i].trim();
+        if c.is_empty() && lines[i..].iter().all(|l| l.trim().is_empty()) {
+            break;
+        }
+        let code = c.parse::<i32>().map_err(|_| {
+            Error::format_at(i as u64 + 1, format!("expected a group code, found {c:?}"))
+        })?;
+        let value = lines
+            .get(i + 1)
+            .ok_or_else(|| Error::format_at(i as u64 + 1, "group code without a value"))?;
+        out.push(Group {
+            code,
+            value: unescape_unicode(value.trim()),
+            line: Some(i as u64 + 2),
+        });
+        if code == 0 && value.trim() == "EOF" {
+            break;
+        }
+        i += 2;
+    }
+    Ok(out)
+}
+
+const BINARY_SENTINEL: &[u8] = b"AutoCAD Binary DXF\r\n\x1a\0";
+
+fn binary_groups(b: &[u8]) -> Result<Vec<Group>> {
+    let short = || Error::format("binary dxf ends inside a group");
+    let two_byte = b.get(1) == Some(&0);
+    let mut pos = 0;
+    let mut out = Vec::new();
+    let take = |pos: &mut usize, n: usize| -> Result<&[u8]> {
+        let s = b
+            .get(*pos..pos.checked_add(n).ok_or_else(short)?)
+            .ok_or_else(short)?;
+        *pos += n;
+        Ok(s)
+    };
+    while pos < b.len() {
+        let code = if two_byte {
+            i16::from_le_bytes(take(&mut pos, 2)?.try_into().expect("2 bytes")) as i32
+        } else {
+            match take(&mut pos, 1)?[0] {
+                255 => i16::from_le_bytes(take(&mut pos, 2)?.try_into().expect("2 bytes")) as i32,
+                c => c as i32,
+            }
+        };
+        let value = match code {
+            10..=59 | 110..=149 | 210..=239 | 460..=469 | 1010..=1059 => fmt_f64(
+                f64::from_le_bytes(take(&mut pos, 8)?.try_into().expect("8 bytes")),
+            ),
+            60..=79 | 170..=179 | 270..=289 | 370..=389 | 400..=409 | 1060..=1070 => {
+                i16::from_le_bytes(take(&mut pos, 2)?.try_into().expect("2 bytes")).to_string()
+            }
+            90..=99 | 420..=429 | 440..=459 | 1071 => {
+                i32::from_le_bytes(take(&mut pos, 4)?.try_into().expect("4 bytes")).to_string()
+            }
+            160..=169 => {
+                i64::from_le_bytes(take(&mut pos, 8)?.try_into().expect("8 bytes")).to_string()
+            }
+            290..=299 => take(&mut pos, 1)?[0].to_string(),
+            310..=319 | 1004 => {
+                let n = take(&mut pos, 1)?[0] as usize;
+                take(&mut pos, n)?
+                    .iter()
+                    .map(|x| format!("{x:02X}"))
+                    .collect()
+            }
+            0..=9
+            | 100..=105
+            | 300..=309
+            | 320..=369
+            | 390..=399
+            | 410..=419
+            | 430..=439
+            | 470..=481
+            | 999
+            | 1000..=1003
+            | 1005..=1009 => {
+                let n = b[pos..].iter().position(|&c| c == 0).ok_or_else(short)?;
+                let s = unescape_unicode(&decode_text(&b[pos..pos + n]));
+                pos += n + 1;
+                s
+            }
+            _ => {
+                return Err(Error::format(format!(
+                    "unknown binary dxf group code {code}"
+                )));
+            }
+        };
+        let eof = code == 0 && value == "EOF";
+        out.push(Group {
+            code,
+            value,
+            line: None,
+        });
+        if eof {
+            break;
+        }
+    }
+    Ok(out)
+}
+
+fn first(body: &[Group], code: i32) -> Option<&Group> {
+    body.iter().find(|g| g.code == code)
+}
+
+fn f_or(body: &[Group], code: i32, default: f64) -> Result<f64> {
+    first(body, code).map_or(Ok(default), Group::f64)
+}
+
+fn i_or(body: &[Group], code: i32, default: i64) -> Result<i64> {
+    first(body, code).map_or(Ok(default), Group::i64)
+}
+
+fn point(body: &[Group], code: i32) -> Result<[f64; 3]> {
+    Ok([
+        f_or(body, code, 0.0)?,
+        f_or(body, code + 10, 0.0)?,
+        f_or(body, code + 20, 0.0)?,
+    ])
+}
+
+fn layer(body: &[Group]) -> String {
+    first(body, 8).map_or_else(|| "0".to_string(), |g| g.value.clone())
+}
+
+const BYLAYER: i64 = 256;
+
+fn color(body: &[Group]) -> Result<i64> {
+    i_or(body, 62, BYLAYER)
+}
+
+/// OCS to WCS by the arbitrary axis algorithm; the default extrusion is exact identity.
+fn ocs(n: [f64; 3]) -> Option<[[f64; 3]; 3]> {
+    if n == [0.0, 0.0, 1.0] {
+        return None;
+    }
+    let len = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt();
+    if len == 0.0 || !len.is_finite() {
+        return None;
+    }
+    let n = n.map(|x| x / len);
+    let cross = |a: [f64; 3], b: [f64; 3]| {
+        [
+            a[1] * b[2] - a[2] * b[1],
+            a[2] * b[0] - a[0] * b[2],
+            a[0] * b[1] - a[1] * b[0],
+        ]
+    };
+    let unit = |v: [f64; 3]| {
+        let l = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt();
+        v.map(|x| x / l)
+    };
+    let ax = if n[0].abs() < 1.0 / 64.0 && n[1].abs() < 1.0 / 64.0 {
+        unit(cross([0.0, 1.0, 0.0], n))
+    } else {
+        unit(cross([0.0, 0.0, 1.0], n))
+    };
+    let ay = unit(cross(n, ax));
+    Some([ax, ay, n])
+}
+
+fn to_wcs(m: Option<[[f64; 3]; 3]>, p: [f64; 3]) -> [f64; 3] {
+    match m {
+        None => p,
+        Some([ax, ay, n]) => std::array::from_fn(|k| p[0] * ax[k] + p[1] * ay[k] + p[2] * n[k]),
+    }
+}
+
+#[derive(Default)]
+struct Out {
+    weld: HashMap<[u64; 3], u32>,
+    vertices: Vec<[f64; 3]>,
+    fan: Fan,
+    face_layer: Vec<String>,
+    face_color: Vec<i64>,
+    parts: Vec<Vec<[f64; 3]>>,
+    closed: Vec<bool>,
+    part_layer: Vec<String>,
+    part_color: Vec<i64>,
+    points: Vec<[f64; 3]>,
+    point_layer: Vec<String>,
+    point_color: Vec<i64>,
+    skipped: BTreeMap<String, usize>,
+    bulges: usize,
+    short_parts: usize,
+    short_faces: usize,
+}
+
+impl Out {
+    fn vid(&mut self, p: [f64; 3]) -> u32 {
+        let key = p.map(|x| if x == 0.0 { 0 } else { x.to_bits() });
+        let n = self.vertices.len() as u32;
+        *self.weld.entry(key).or_insert_with(|| {
+            self.vertices.push(p);
+            n
+        })
+    }
+
+    fn face(&mut self, corners: &[u32], layer: &str, color: i64) {
+        let before = self.fan.tris.len();
+        self.fan.polygon(corners, 0);
+        for _ in before..self.fan.tris.len() {
+            self.face_layer.push(layer.to_string());
+            self.face_color.push(color);
+        }
+    }
+
+    fn part(&mut self, mut v: Vec<[f64; 3]>, mut closed: bool, layer: String, color: i64) {
+        if closed && v.len() >= 2 && v[0].map(f64::to_bits) == v[v.len() - 1].map(f64::to_bits) {
+            v.pop();
+        }
+        if closed && v.len() < 3 {
+            closed = false;
+        }
+        if v.len() < 2 {
+            self.short_parts += 1;
+            return;
+        }
+        self.parts.push(v);
+        self.closed.push(closed);
+        self.part_layer.push(layer);
+        self.part_color.push(color);
+    }
+}
+
+fn polyline(out: &mut Out, head: &[Group], verts: &[&[Group]]) -> Result<()> {
+    let flags = i_or(head, 70, 0)?;
+    let lay = layer(head);
+    let col = color(head)?;
+    let vflag = |v: &[Group]| i_or(v, 70, 0);
+    if flags & 64 != 0 {
+        let mut local = Vec::new();
+        for v in verts {
+            let f = vflag(v)?;
+            if f & 128 != 0 && f & 64 != 0 {
+                let p = point(v, 10)?;
+                local.push(out.vid(p));
+            }
+        }
+        for v in verts {
+            let f = vflag(v)?;
+            if f & 128 == 0 || f & 64 != 0 {
+                continue;
+            }
+            let mut ids = Vec::with_capacity(4);
+            for code in 71..=74 {
+                let k = i_or(v, code, 0)?.unsigned_abs() as usize;
+                if k == 0 {
+                    continue;
+                }
+                let id = *local.get(k - 1).ok_or_else(|| {
+                    Error::format(format!("polyface face uses vertex {k} of {}", local.len()))
+                })?;
+                ids.push(id);
+            }
+            if ids.len() == 4 && ids[3] == ids[2] {
+                ids.pop();
+            }
+            if ids.len() < 3 {
+                out.short_faces += 1;
+                continue;
+            }
+            let c = match first(v, 62) {
+                Some(g) => g.i64()?,
+                None => col,
+            };
+            out.face(&ids, &lay, c);
+        }
+        return Ok(());
+    }
+    if flags & 16 != 0 {
+        let fitted = i_or(head, 75, 0)? != 0 && flags & 4 != 0;
+        let (m, n) = if fitted {
+            (i_or(head, 73, 0)?, i_or(head, 74, 0)?)
+        } else {
+            (i_or(head, 71, 0)?, i_or(head, 72, 0)?)
+        };
+        let mut grid = Vec::new();
+        for v in verts {
+            if fitted && vflag(v)? & 16 != 0 {
+                continue;
+            }
+            let p = point(v, 10)?;
+            grid.push(out.vid(p));
+        }
+        let (m, n) = (m.max(0) as usize, n.max(0) as usize);
+        if m.checked_mul(n) != Some(grid.len()) {
+            return Err(Error::format(format!(
+                "polygon mesh declares {m} x {n} vertices but has {}",
+                grid.len()
+            )));
+        }
+        let (wrap_m, wrap_n) = (flags & 1 != 0, flags & 32 != 0);
+        let rows = if wrap_m { m } else { m.saturating_sub(1) };
+        let cols = if wrap_n { n } else { n.saturating_sub(1) };
+        for i in 0..rows {
+            for j in 0..cols {
+                let (i1, j1) = ((i + 1) % m, (j + 1) % n);
+                let q = [
+                    grid[i * n + j],
+                    grid[i * n + j1],
+                    grid[i1 * n + j1],
+                    grid[i1 * n + j],
+                ];
+                out.face(&q, &lay, col);
+            }
+        }
+        return Ok(());
+    }
+    let mut pts = Vec::with_capacity(verts.len());
+    if flags & 8 != 0 {
+        for v in verts {
+            if vflag(v)? & 16 == 0 {
+                pts.push(point(v, 10)?);
+            }
+        }
+    } else {
+        let elevation = f_or(head, 30, 0.0)?;
+        let m = ocs(extrusion(head)?);
+        for v in verts {
+            if vflag(v)? & 16 != 0 {
+                continue;
+            }
+            if f_or(v, 42, 0.0)? != 0.0 {
+                out.bulges += 1;
+            }
+            pts.push(to_wcs(m, [f_or(v, 10, 0.0)?, f_or(v, 20, 0.0)?, elevation]));
+        }
+    }
+    out.part(pts, flags & 1 != 0, lay, col);
+    Ok(())
+}
+
+fn extrusion(body: &[Group]) -> Result<[f64; 3]> {
+    Ok([
+        f_or(body, 210, 0.0)?,
+        f_or(body, 220, 0.0)?,
+        f_or(body, 230, 1.0)?,
+    ])
+}
+
+fn lwpolyline(out: &mut Out, body: &[Group]) -> Result<()> {
+    let elevation = f_or(body, 38, 0.0)?;
+    let m = ocs(extrusion(body)?);
+    let mut xy: Vec<[f64; 2]> = Vec::new();
+    for g in body {
+        match g.code {
+            10 => xy.push([g.f64()?, 0.0]),
+            20 => {
+                if let Some(p) = xy.last_mut() {
+                    p[1] = g.f64()?;
+                }
+            }
+            42 if g.f64()? != 0.0 => out.bulges += 1,
+            _ => {}
+        }
+    }
+    let pts = xy
+        .iter()
+        .map(|p| to_wcs(m, [p[0], p[1], elevation]))
+        .collect();
+    out.part(pts, i_or(body, 70, 0)? & 1 != 0, layer(body), color(body)?);
+    Ok(())
+}
+
+fn mesh_entity(out: &mut Out, body: &[Group]) -> Result<()> {
+    let bad = |m: &str| Error::format(format!("MESH entity: {m}"));
+    let mut verts: Option<Vec<u32>> = None;
+    let mut list: Option<Vec<i64>> = None;
+    let mut j = 0;
+    while j < body.len() {
+        match body[j].code {
+            92 if verts.is_none() => {
+                let n =
+                    usize::try_from(body[j].i64()?).map_err(|_| bad("negative vertex count"))?;
+                j += 1;
+                if n.checked_mul(3).is_none_or(|k| j + k > body.len()) {
+                    return Err(bad("vertex list ends early"));
+                }
+                let mut v = Vec::with_capacity(n);
+                for _ in 0..n {
+                    if body[j].code != 10 || body[j + 1].code != 20 || body[j + 2].code != 30 {
+                        return Err(bad("expected vertex groups 10, 20, 30"));
+                    }
+                    let p = [body[j].f64()?, body[j + 1].f64()?, body[j + 2].f64()?];
+                    v.push(out.vid(p));
+                    j += 3;
+                }
+                verts = Some(v);
+            }
+            93 if list.is_none() => {
+                let n =
+                    usize::try_from(body[j].i64()?).map_err(|_| bad("negative face list size"))?;
+                j += 1;
+                if j + n > body.len() {
+                    return Err(bad("face list ends early"));
+                }
+                let mut l = Vec::with_capacity(n);
+                for g in &body[j..j + n] {
+                    if g.code != 90 {
+                        return Err(bad("expected face list group 90"));
+                    }
+                    l.push(g.i64()?);
+                }
+                j += n;
+                list = Some(l);
+            }
+            _ => j += 1,
+        }
+    }
+    let verts = verts.unwrap_or_default();
+    let list = list.unwrap_or_default();
+    let (lay, col) = (layer(body), color(body)?);
+    let mut i = 0;
+    while i < list.len() {
+        let n = usize::try_from(list[i]).map_err(|_| bad("negative face size"))?;
+        let ids = list
+            .get(i + 1..i + 1 + n)
+            .ok_or_else(|| bad("face list ends inside a face"))?
+            .iter()
+            .map(|&k| {
+                usize::try_from(k)
+                    .ok()
+                    .and_then(|k| verts.get(k).copied())
+                    .ok_or_else(|| bad(&format!("face uses vertex {k} of {}", verts.len())))
+            })
+            .collect::<Result<Vec<u32>>>()?;
+        if ids.len() < 3 {
+            out.short_faces += 1;
+        } else {
+            out.face(&ids, &lay, col);
+        }
+        i += 1 + n;
+    }
+    Ok(())
+}
+
+fn unit_name(code: i64) -> Option<&'static str> {
+    Some(match code {
+        1 => "in",
+        2 => "ft",
+        4 => "mm",
+        5 => "cm",
+        6 => "m",
+        7 => "km",
+        _ => return None,
+    })
+}
+
+fn unit_code(name: &str) -> i64 {
+    match name.trim().to_ascii_lowercase().as_str() {
+        "in" => 1,
+        "ft" | "foot" | "feet" => 2,
+        "mm" => 4,
+        "cm" => 5,
+        "m" | "metre" | "meter" | "metres" | "meters" => 6,
+        "km" => 7,
+        _ => 0,
+    }
+}
+
+fn attr_table(layers: Vec<String>, colors: Vec<i64>) -> Result<Table> {
+    let mut t = Table::new(layers.len()).with_column("layer", Column::utf8(layers))?;
+    if colors.iter().any(|&c| c != BYLAYER) {
+        t = t.with_column("color", Column::i64(colors))?;
+    }
+    Ok(t)
+}
+
+pub fn read(r: &[u8]) -> Result<Data> {
+    let groups = match r.strip_prefix(BINARY_SENTINEL) {
+        Some(rest) => binary_groups(rest)?,
+        None => ascii_groups(r)?,
+    };
+    let mut entities: Vec<(&str, &[Group])> = Vec::new();
+    let mut section = String::new();
+    let mut length_unit = None;
+    let mut i = 0;
+    while i < groups.len() {
+        if groups[i].code != 0 {
+            i += 1;
+            continue;
+        }
+        let kind = groups[i].value.as_str();
+        let start = i + 1;
+        let mut end = start;
+        while end < groups.len() && groups[end].code != 0 {
+            end += 1;
+        }
+        let body = &groups[start..end];
+        match kind {
+            "SECTION" => {
+                section = first(body, 2).map(|g| g.value.clone()).unwrap_or_default();
+                if section == "HEADER" {
+                    for (k, g) in body.iter().enumerate() {
+                        if g.code == 9
+                            && g.value == "$INSUNITS"
+                            && let Some(v) = body.get(k + 1).filter(|v| v.code == 70)
+                        {
+                            length_unit = unit_name(v.i64()?).map(String::from);
+                        }
+                    }
+                }
+            }
+            "ENDSEC" => section.clear(),
+            "EOF" => break,
+            _ if section == "ENTITIES" => entities.push((kind, body)),
+            _ => {}
+        }
+        i = end;
+    }
+    let mut out = Out::default();
+    let mut k = 0;
+    while k < entities.len() {
+        let (kind, body) = entities[k];
+        k += 1;
+        match kind {
+            "3DFACE" => {
+                let c = [point(body, 10)?, point(body, 11)?, point(body, 12)?];
+                let mut ids = vec![out.vid(c[0]), out.vid(c[1]), out.vid(c[2])];
+                if first(body, 13).is_some()
+                    || first(body, 23).is_some()
+                    || first(body, 33).is_some()
+                {
+                    let d = out.vid(point(body, 13)?);
+                    if d != ids[2] {
+                        ids.push(d);
+                    }
+                }
+                out.face(&ids, &layer(body), color(body)?);
+            }
+            "POLYLINE" => {
+                let mut verts = Vec::new();
+                while k < entities.len() && entities[k].0 == "VERTEX" {
+                    verts.push(entities[k].1);
+                    k += 1;
+                }
+                if k < entities.len() && entities[k].0 == "SEQEND" {
+                    k += 1;
+                }
+                polyline(&mut out, body, &verts)?;
+            }
+            "LWPOLYLINE" => lwpolyline(&mut out, body)?,
+            "LINE" => {
+                let v = vec![point(body, 10)?, point(body, 11)?];
+                out.part(v, false, layer(body), color(body)?);
+            }
+            "POINT" => {
+                out.points.push(point(body, 10)?);
+                out.point_layer.push(layer(body));
+                out.point_color.push(color(body)?);
+            }
+            "MESH" => mesh_entity(&mut out, body)?,
+            "VERTEX" | "SEQEND" => {}
+            other => *out.skipped.entry(other.to_string()).or_default() += 1,
+        }
+    }
+    let mut warnings: Vec<String> = out
+        .skipped
+        .iter()
+        .map(|(kind, n)| format!("skipped {n} {kind} entities"))
+        .collect();
+    if out.bulges > 0 {
+        warnings.push(format!(
+            "ignored nonzero bulge on {} polyline vertices; arcs read as straight segments",
+            out.bulges
+        ));
+    }
+    if out.short_parts > 0 {
+        warnings.push(format!(
+            "skipped {} polylines with fewer than 2 vertices",
+            out.short_parts
+        ));
+    }
+    if out.short_faces > 0 {
+        warnings.push(format!(
+            "skipped {} faces with fewer than 3 corners",
+            out.short_faces
+        ));
+    }
+    let mut data = Data {
+        length_unit: length_unit.clone(),
+        warnings,
+        ..Data::default()
+    };
+    if !out.fan.tris.is_empty() || !out.vertices.is_empty() {
+        let n = out.vertices.len();
+        let faces = attr_table(out.face_layer, out.face_color)?;
+        let mesh = out.fan.mesh(out.vertices, Table::new(n), faces)?;
+        data.mesh = Some(mesh.with_length_unit(length_unit.clone()));
+    }
+    if !out.parts.is_empty() {
+        let pl = Polylines::from_parts(out.parts, out.closed, None)?
+            .with_attributes(attr_table(out.part_layer, out.part_color)?)?;
+        data.polylines = Some(pl.with_length_unit(length_unit.clone()));
+    }
+    if !out.points.is_empty() {
+        let ps = PointSet::new(out.points)?
+            .with_attributes(attr_table(out.point_layer, out.point_color)?)?;
+        data.points = Some(ps.with_length_unit(length_unit));
+    }
+    Ok(data)
+}
+
+/// Per-row layer and color (`None` means BYLAYER) from a table holding at most
+/// `layer`, `color` and the names in `extra`.
+fn layer_color(
+    table: &Table,
+    extra: &[&str],
+    what: &str,
+    opts: &WriteOptions,
+) -> Result<(Vec<String>, Vec<Option<i64>>)> {
+    let rows = table.rows();
+    let mut layers = vec!["0".to_string(); rows];
+    let mut colors = vec![None; rows];
+    for (name, col) in table.names().iter().zip(table.columns()) {
+        match (name.as_str(), &col.data) {
+            ("layer", ColumnData::Utf8(v)) => {
+                for i in 0..rows {
+                    if col.is_valid(i) {
+                        let l = &v[i];
+                        if l.is_empty() || l.contains(['\n', '\r']) {
+                            return Err(Error::invalid(format!(
+                                "{what} layer {l:?} is not a valid dxf layer name"
+                            )));
+                        }
+                        layers[i] = l.clone();
+                    }
+                }
+            }
+            ("color", ColumnData::Int64(v)) => {
+                for i in 0..rows {
+                    if col.is_valid(i) && v[i] != BYLAYER {
+                        colors[i] = Some(v[i]);
+                    }
+                }
+            }
+            (n, _) if extra.contains(&n) => {}
+            _ if opts.skip_unsupported_columns => {}
+            _ => {
+                return Err(Error::Unsupported(format!(
+                    "dxf cannot store {what} column {name:?} ({}); it stores layer (utf8) and color (int64)",
+                    col.type_name()
+                )));
+            }
+        }
+    }
+    Ok((layers, colors))
+}
+
+fn no_columns(table: &Table, what: &str, opts: &WriteOptions) -> Result<()> {
+    match table.names().first() {
+        Some(n) if !opts.skip_unsupported_columns => Err(Error::Unsupported(format!(
+            "dxf cannot store {what} column {n:?}"
+        ))),
+        _ => Ok(()),
+    }
+}
+
+struct W(String);
+
+impl W {
+    fn g(&mut self, code: i32, value: impl std::fmt::Display) {
+        let _ = write!(self.0, "{code:>3}\n{value}\n");
+    }
+
+    fn f(&mut self, code: i32, x: f64) {
+        self.g(code, fmt_f64(x));
+    }
+
+    fn p(&mut self, code: i32, p: [f64; 3]) {
+        self.f(code, p[0]);
+        self.f(code + 10, p[1]);
+        self.f(code + 20, p[2]);
+    }
+
+    fn entity(&mut self, kind: &str, layer: &str, color: Option<i64>) {
+        self.g(0, kind);
+        self.g(8, layer);
+        if let Some(c) = color {
+            self.g(62, c);
+        }
+    }
+}
+
+const POLYFACE_MAX: usize = 32767;
+
 pub fn write(data: &Data, opts: &WriteOptions) -> Result<Vec<u8>> {
-    todo!()
+    if data.grid.is_some() {
+        return Err(Error::Unsupported(
+            "dxf cannot store an unstructured grid; write .vtu".into(),
+        ));
+    }
+    let mut ents = W(String::new());
+    let mut used: Vec<String> = vec!["0".to_string()];
+    let mut note = |l: &str| {
+        if !used.iter().any(|u| u == l) {
+            used.push(l.to_string());
+        }
+    };
+    if let Some(m) = &data.mesh {
+        no_columns(m.vertex_attributes(), "vertex", opts)?;
+        let (polys, table) = polygons(m)?;
+        let (layers, colors) = layer_color(&table, &[], "face", opts)?;
+        let mut faces: Vec<(Vec<u32>, usize)> = Vec::with_capacity(polys.len());
+        for (k, p) in polys.into_iter().enumerate() {
+            if p.len() <= 4 {
+                faces.push((p, k));
+            } else {
+                for i in 1..p.len() - 1 {
+                    faces.push((vec![p[0], p[i], p[i + 1]], k));
+                }
+            }
+        }
+        let v = m.vertices();
+        match opts.dxf_entity {
+            DxfEntity::Face3d => {
+                for (f, k) in &faces {
+                    note(&layers[*k]);
+                    ents.entity("3DFACE", &layers[*k], colors[*k]);
+                    for (c, &id) in f.iter().enumerate() {
+                        ents.p(10 + c as i32, v[id as usize]);
+                    }
+                    if f.len() == 3 {
+                        ents.p(13, v[f[2] as usize]);
+                    }
+                }
+            }
+            DxfEntity::Polyface => {
+                let mut s = 0;
+                while s < faces.len() {
+                    let lay = &layers[faces[s].1];
+                    note(lay);
+                    let mut local: HashMap<u32, usize> = HashMap::new();
+                    let mut order: Vec<u32> = Vec::new();
+                    let mut e = s;
+                    while e < faces.len() && layers[faces[e].1] == *lay && e - s < POLYFACE_MAX {
+                        let new = faces[e]
+                            .0
+                            .iter()
+                            .filter(|id| !local.contains_key(id))
+                            .count();
+                        if order.len() + new > POLYFACE_MAX {
+                            break;
+                        }
+                        for &id in &faces[e].0 {
+                            local.entry(id).or_insert_with(|| {
+                                order.push(id);
+                                order.len()
+                            });
+                        }
+                        e += 1;
+                    }
+                    ents.entity("POLYLINE", lay, None);
+                    ents.g(66, 1);
+                    ents.p(10, [0.0; 3]);
+                    ents.g(70, 64);
+                    ents.g(71, order.len());
+                    ents.g(72, e - s);
+                    for &id in &order {
+                        ents.entity("VERTEX", lay, None);
+                        ents.p(10, v[id as usize]);
+                        ents.g(70, 192);
+                    }
+                    for (f, k) in &faces[s..e] {
+                        ents.entity("VERTEX", lay, colors[*k]);
+                        ents.p(10, [0.0; 3]);
+                        ents.g(70, 128);
+                        for (c, id) in f.iter().enumerate() {
+                            ents.g(71 + c as i32, local[id]);
+                        }
+                    }
+                    ents.entity("SEQEND", lay, None);
+                    s = e;
+                }
+            }
+        }
+    }
+    if let Some(pl) = &data.polylines {
+        no_columns(pl.vertex_attributes(), "polyline vertex", opts)?;
+        let (layers, colors) = layer_color(pl.attributes(), &[], "polyline", opts)?;
+        for f in 0..pl.len() {
+            note(&layers[f]);
+            for p in pl.feature_parts(f) {
+                ents.entity("POLYLINE", &layers[f], colors[f]);
+                ents.g(66, 1);
+                ents.p(10, [0.0; 3]);
+                ents.g(70, 8 | pl.closed()[p] as i32);
+                for &q in pl.part(p) {
+                    ents.entity("VERTEX", &layers[f], None);
+                    ents.p(10, q);
+                    ents.g(70, 32);
+                }
+                ents.entity("SEQEND", &layers[f], None);
+            }
+        }
+    }
+    if let Some(ps) = &data.points {
+        let (layers, colors) = layer_color(ps.attributes(), &[], "point", opts)?;
+        for (i, &q) in ps.coords().iter().enumerate() {
+            note(&layers[i]);
+            ents.entity("POINT", &layers[i], colors[i]);
+            ents.p(10, q);
+        }
+    }
+    let unit = data
+        .length_unit
+        .as_deref()
+        .or_else(|| data.mesh.as_ref().and_then(|m| m.length_unit.as_deref()))
+        .or_else(|| {
+            data.polylines
+                .as_ref()
+                .and_then(|m| m.length_unit.as_deref())
+        })
+        .or_else(|| data.points.as_ref().and_then(|m| m.length_unit.as_deref()))
+        .map_or(0, unit_code);
+    let mut w = W(String::new());
+    w.g(0, "SECTION");
+    w.g(2, "HEADER");
+    w.g(9, "$ACADVER");
+    w.g(1, "AC1015");
+    w.g(9, "$INSUNITS");
+    w.g(70, unit);
+    w.g(0, "ENDSEC");
+    w.g(0, "SECTION");
+    w.g(2, "TABLES");
+    w.g(0, "TABLE");
+    w.g(2, "LAYER");
+    w.g(70, used.len());
+    for l in &used {
+        w.g(0, "LAYER");
+        w.g(2, l);
+        w.g(70, 0);
+        w.g(62, 7);
+        w.g(6, "CONTINUOUS");
+    }
+    w.g(0, "ENDTAB");
+    w.g(0, "ENDSEC");
+    w.g(0, "SECTION");
+    w.g(2, "ENTITIES");
+    w.0.push_str(&ents.0);
+    w.g(0, "ENDSEC");
+    w.g(0, "EOF");
+    Ok(w.0.into_bytes())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cp1252_fallback_decodes_high_bytes() {
+        assert_eq!(decode_text(b"caf\xe9 \x80"), "caf\u{e9} \u{20AC}");
+        assert_eq!(decode_text("caf\u{e9}".as_bytes()), "caf\u{e9}");
+    }
+
+    #[test]
+    fn unicode_escapes_are_replaced() {
+        assert_eq!(unescape_unicode("A\\U+00E9B"), "A\u{e9}B");
+        assert_eq!(unescape_unicode("bad\\U+zz"), "bad\\U+zz");
+    }
+
+    #[test]
+    fn arbitrary_axis_matches_identity_and_flip() {
+        assert!(ocs([0.0, 0.0, 1.0]).is_none());
+        let m = ocs([0.0, 0.0, -1.0]);
+        let p = to_wcs(m, [1.0, 2.0, 3.0]);
+        assert_eq!(p, [-1.0, 2.0, -3.0]);
+    }
 }
