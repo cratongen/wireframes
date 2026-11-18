@@ -9,12 +9,16 @@ publish.workspace = true
 
 [dependencies]
 drusa-core.workspace = true
-dxf.workspace = true
 flate2.workspace = true
-regex.workspace = true
 
 [dev-dependencies]
+criterion.workspace = true
 proptest.workspace = true
+rayon.workspace = true
+
+[[bench]]
+name = "io"
+harness = false
 
 [lints]
 workspace = true

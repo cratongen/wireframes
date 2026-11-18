@@ -188,3 +188,19 @@ fn unclosed_quote_errors() {
         Err(Error::Format { .. })
     ));
 }
+
+#[test]
+fn every_triangle_id_alias_reads_and_none_becomes_a_column() {
+    let pt = "XP,YP,ZP,PID\n0,0,0,1\n1,0,0,2\n0,1,0,3\n";
+    for id in ["TRIANGLE", "TRIANG", "TRI", "TRISOL", "trisol"] {
+        let tr = format!("{id},PID1,PID2,PID3\n7,1,2,3\n");
+        let m = datamine_csv::read(pt.as_bytes(), tr.as_bytes())
+            .unwrap()
+            .mesh
+            .unwrap();
+        assert_eq!(m.triangles(), &[[0, 1, 2]], "{id}");
+        assert!(m.face_attributes().names().is_empty(), "{id}");
+        let (_, back) = datamine_csv::write(&mesh_data(m), &Default::default()).unwrap();
+        assert!(back.starts_with(b"TRIANGLE,PID1,PID2,PID3\n"), "{id}");
+    }
+}
