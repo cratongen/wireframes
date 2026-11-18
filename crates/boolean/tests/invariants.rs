@@ -346,6 +346,7 @@ proptest! {
             (Op::Union, (|x: bool, y: bool| x || y) as fn(bool, bool) -> bool),
             (Op::Intersection, |x, y| x && y),
             (Op::Difference, |x, y| x && !y),
+            (Op::SymmetricDifference, |x, y| x != y),
         ] {
             let m = run(&a, &b, op);
             for &p in &pts {
@@ -355,6 +356,28 @@ proptest! {
                     continue;
                 }
                 prop_assert_eq!(lm == -1, f(la == -1, lb == -1), "{:?} at {:?}", op, p);
+            }
+        }
+    }
+
+    #[test]
+    fn union_and_intersection_commute_in_location(
+        angles in proptest::array::uniform3(-3.2..3.2f64),
+        d in proptest::array::uniform3(-0.6..0.6f64),
+        seed in 0u64..1000,
+    ) {
+        let a = fixtures::sphere(1);
+        let b = moved(&fixtures::cube(), angles, d);
+        let pts = fixtures::random_points(seed, 40, [-1.8; 3], [1.8; 3]);
+        let loc = |m: &Mesh, p| if m.is_empty() { 1 } else { locate_point(m.vertices(), m.triangles(), p) };
+        for op in [Op::Union, Op::Intersection] {
+            let (ab, ba) = (run(&a, &b, op), run(&b, &a, op));
+            for &p in &pts {
+                let (l1, l2) = (loc(&ab, p), loc(&ba, p));
+                if l1 == 0 || l2 == 0 {
+                    continue;
+                }
+                prop_assert_eq!(l1, l2, "{:?} at {:?}", op, p);
             }
         }
     }

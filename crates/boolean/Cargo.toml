@@ -13,9 +13,14 @@ drusa-ops.workspace = true
 rayon.workspace = true
 
 [dev-dependencies]
+criterion.workspace = true
 num-bigint.workspace = true
 num-rational.workspace = true
 proptest.workspace = true
+
+[[bench]]
+name = "booleans"
+harness = false
 
 [lints]
 workspace = true
