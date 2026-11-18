@@ -1,0 +1,35 @@
+[workspace]
+members = ["crates/*"]
+resolver = "3"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.97"
+license = "MIT"
+publish = false
+
+[workspace.dependencies]
+criterion = "0.8"
+dxf = "0.6"
+flate2 = "1"
+num-bigint = "0.4"
+num-rational = { version = "0.4", features = ["num-bigint"] }
+numpy = "0.29"
+proptest = "1"
+pyo3 = { version = "0.29", features = ["abi3-py311", "multiple-pymethods"] }
+rayon = "1"
+regex = "1"
+robust = "1.2"
+spade = "2"
+thiserror = "2"
+drusa-core = { path = "crates/core" }
+drusa-io = { path = "crates/io" }
+drusa-ops = { path = "crates/ops" }
+drusa-boolean = { path = "crates/boolean" }
+drusa-query = { path = "crates/query" }
+drusa-build = { path = "crates/build" }
+
+[workspace.lints.clippy]
+needless_range_loop = "allow"
+type_complexity = "allow"

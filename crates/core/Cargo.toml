@@ -1,0 +1,21 @@
+[package]
+name = "drusa-core"
+description = "Mesh, polyline and point containers, exact predicates and validation"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+rayon.workspace = true
+robust.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+num-bigint.workspace = true
+num-rational.workspace = true
+proptest.workspace = true
+
+[lints]
+workspace = true

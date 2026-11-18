@@ -1,0 +1,50 @@
+[env]
+_.path = ["~/.cargo/bin"]
+UV_PYTHON = "3.13"
+
+[tools]
+python = "3.13"
+uv = "0.12"
+
+[tasks.build]
+run = "cargo build --workspace"
+
+[tasks.test]
+depends = ["py:build"]
+run = ["cargo test --workspace --exclude drusa-py", "uv run --no-sync pytest -q"]
+
+[tasks.lint]
+depends = ["py:sync"]
+run = [
+  "cargo fmt --all --check",
+  "cargo clippy --workspace --all-targets -- -D warnings",
+  "uv run --no-sync ruff check python examples",
+  "uv run --no-sync ruff format --check python examples",
+]
+
+[tasks.verify]
+depends = ["lint", "test"]
+
+[tasks."py:sync"]
+run = "uv sync -q --inexact"
+
+[tasks."py:build"]
+depends = ["py:sync"]
+run = "uv run --no-sync maturin develop -q --uv --release"
+
+[tasks.bench]
+description = "Criterion benches. Pass a filter to run a subset."
+usage = 'arg "[filter]" default="" help="Criterion filter"'
+run = "cargo bench --workspace --exclude drusa-py -- '{{usage.filter}}'"
+
+[tasks.examples]
+depends = ["py:build"]
+run = "uv run --no-sync python examples/run.py"
+
+[tasks.docs]
+depends = ["py:build"]
+run = "uv run --no-sync mkdocs serve"
+
+[tasks.docs-build]
+depends = ["py:build"]
+run = "uv run --no-sync mkdocs build --strict"

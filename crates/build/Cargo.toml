@@ -1,0 +1,21 @@
+[package]
+name = "drusa-build"
+description = "Surface and solid construction and mesh editing"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+drusa-boolean.workspace = true
+drusa-core.workspace = true
+drusa-ops.workspace = true
+drusa-query.workspace = true
+spade.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+
+[lints]
+workspace = true

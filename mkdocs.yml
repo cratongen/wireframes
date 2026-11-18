@@ -1,0 +1,8 @@
+site_name: drusa
+docs_dir: docs
+exclude_docs: |
+  design/
+theme:
+  name: material
+nav:
+  - Home: index.md

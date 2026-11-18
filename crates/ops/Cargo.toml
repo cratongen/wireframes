@@ -1,0 +1,18 @@
+[package]
+name = "drusa-ops"
+description = "Measures, repair, components and transforms"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+drusa-core.workspace = true
+rayon.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+
+[lints]
+workspace = true

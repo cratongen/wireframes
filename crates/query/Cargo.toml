@@ -1,0 +1,19 @@
+[package]
+name = "drusa-query"
+description = "Point-in-solid, distance, ray, drillhole and block fraction queries"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+drusa-core.workspace = true
+drusa-ops.workspace = true
+rayon.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+
+[lints]
+workspace = true

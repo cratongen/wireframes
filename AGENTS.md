@@ -11,19 +11,18 @@ source under the MIT license.
 
 ## Commands
 
-Pinned via `mise.toml` (Python, uv, pixi, micromamba) and `rust-toolchain.toml`
-(Rust). All commands below are planned and arrive in Milestone 1:
+Pinned via `mise.toml` (Python, uv) and `rust-toolchain.toml` (Rust):
 
 ```sh
-mise install        # (planned) one-time toolchain setup
-mise run build      # (planned) cargo build --workspace
-mise run test       # (planned) rust tests, build python module with maturin, run pytest
-mise run lint       # (planned) rustfmt --check, clippy -D warnings, ruff check + format --check
-mise run verify     # (planned) lint + test; must pass before finishing any task
-mise run bench      # (planned) criterion benchmarks with interleaved rounds
-mise run examples   # (planned) rerun examples/* and update figures
-mise run docs       # (planned) mkdocs serve
-mise run docs-build # (planned) mkdocs build --strict
+mise install        # one-time toolchain setup
+mise run build      # cargo build --workspace
+mise run test       # rust tests, build python module with maturin, run pytest
+mise run lint       # rustfmt --check, clippy -D warnings, ruff check + format --check
+mise run verify     # lint + test; must pass before finishing any task
+mise run bench      # criterion benchmarks; pass a filter to run a subset
+mise run examples   # rerun examples/NN-*/*.py
+mise run docs       # mkdocs serve
+mise run docs-build # mkdocs build --strict
 mise run compat     # (planned) install check across pip, uv, pixi, and conda
 ```
 

@@ -70,7 +70,7 @@ Each line: the decision, then why.
 
 ```
 drusa/
-  Cargo.toml                  workspace, members = ["crates/*"], resolver = "2"
+  Cargo.toml                  workspace, members = ["crates/*"], resolver = "3", edition 2024
   rust-toolchain.toml         stable, pinned
   mise.toml                   tools and tasks (section 11)
   pyproject.toml              maturin, module-name = "drusa._drusa", python-source = "python"
@@ -112,7 +112,7 @@ in `Cargo.lock`):
 | `regex = "1"` | io | VTU XML attribute scan (boitata port) |
 | `spade = "2"` | build | constrained Delaunay |
 | `pyo3` (feature `abi3-py311`, `multiple-pymethods`), `numpy` | py | bindings, matching minor pair |
-| dev: `proptest = "1"`, `num-bigint = "0.4"`, `num-rational = "0.4"`, `criterion = "0.5"` | all | property tests, exact oracle, benchmarks |
+| dev: `proptest = "1"`, `num-bigint = "0.4"`, `num-rational = "0.4"`, `criterion = "0.8"` | all | property tests, exact oracle, benchmarks |
 
 No other dependency without a line in this table.
 
@@ -1343,8 +1343,8 @@ triangulate, loft, extrude, plot` (lazy attribute), `__version__`.
 | task | runs |
 |---|---|
 | `build` | `cargo build --workspace` |
-| `develop` | `maturin develop --release` inside the uv venv |
-| `test` | `cargo test --workspace`, then `develop`, then `pytest python/tests` |
+| `py:sync`, `py:build` | `uv sync`; `maturin develop --release` inside the uv venv |
+| `test` | `py:build` first, then `cargo test --workspace --exclude drusa-py`, then `pytest python/tests` |
 | `lint` | `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `ruff check`, `ruff format --check` |
 | `verify` | `lint` then `test` |
 | `bench` | `cargo bench` (criterion), interleaved rounds, medians |
@@ -1497,7 +1497,56 @@ Rules for cross-area work:
 - Order of landing: L skeleton, then A (core) and B (io) and G in parallel, then C,
   then D and E in parallel, then F.
 
-## 14. Deferred (not in this contract)
+## 14. Skeleton notes (lead, after the skeleton landed)
+
+These refine the sections above; where they differ, this section wins.
+
+- Bindings: each `crates/py/src/<area>.rs` has `pub(crate) fn register(m)`, which
+  `lib.rs` calls; an area adds its functions and classes there, so `lib.rs` stays
+  untouched. `lib.rs` carries `#![allow(dead_code)]` until G lands the containers;
+  G removes it. `errors::to_py` maps `Error` to the Python classes (done).
+- `drusa.read` is `_containers.read` (G), which wraps `_drusa._read` (B) returning
+  `(mesh, polylines, points, grid, length_unit, warnings)` in a `Dataset`.
+- Unimplemented Rust bodies are `todo!()`; unimplemented Python functions raise
+  `NotImplementedError`. Stub crates carry `#![allow(unused_variables)]` in
+  `lib.rs`, which the owner removes when the crate is complete.
+- `mkdocs.yml` lives at the repository root (mkdocs refuses a config inside
+  `docs_dir`); `docs/design/` is excluded from the site.
+- Core additions beyond section 3, all public: `Error::{invalid, format,
+  format_at, with_path}`; `Column::with_valid`, `Column::with_unit`,
+  `Table::columns`; `ColumnData` equality compares floats by bits with every NaN
+  equal (so null rows compare equal after a round trip); `predicates::{Sign::of,
+  to_i8, flip, times}`, `kept_axes(drop)` (cyclic axes, so `orient2d_axis` has the
+  sign of normal component `drop`), `projection_axis(t)`;
+  `exact::{Expansion::zero, diff_f64, neg, components}`,
+  `ImplicitPoint::homogeneous`, `cmp_lex`; `Polylines::{part_offsets,
+  feature_offsets}`; `Bvh::{is_empty, item_box}`; `validate::{degenerate_mask,
+  earliest_within}`; `topology::{locate_point, ray_crosses}` (the section 7.1
+  ray rule, brute force over a face list: core needs it for `InwardShell`, ops for
+  orientation in `repair`; query adds the BVH).
+- `orient3d_i(a, b, c, d)` has the sign of `det[a - d; b - d; c - d]`, the
+  convention of `predicates::orient3d`.
+- `tri_tri`: `Touch` means the intersection lies in both boundaries; `Cross`
+  means some common point is in the relative interior of either triangle (a
+  corner resting on the other's interior is `Cross`). Both triangles must be
+  non-degenerate. `seg_tri` with `Coplanar` returns no point.
+- Validation pairs: two corners count as shared when they have the same index or
+  bitwise equal coordinates, so a triangle soup reports duplicate vertices and
+  boundary edges but no self-intersections. Coplanar overlaps are reported for
+  any pair except two faces with the same corner indices (`DuplicateFace`
+  covers those), so coincident faces of touching solids are caught.
+- `drusa_core::fixtures` (public, used by every crate's tests): `Rng`
+  (SplitMix64), `box_mesh`, `cube`, `tetrahedron`, `sphere(subdivisions)`,
+  `torus(major, minor)`, `flipped`, `translated`, `nested_shells`, `soup`,
+  `open_cube`, `pit_surface(n, seed)`, `random_points`, `coplanar_pairs` (the
+  four section 12 boolean cases), and `broken::{degenerate_face, duplicate_face,
+  duplicate_vertex, unused_vertex, non_manifold_fin, touching_tetrahedra,
+  flipped_face, inward_cube, overlapping_cubes, touching_cubes, folded_face}`.
+- Not done in core: the semi-static floating filter in front of the `exact`
+  predicates (they always evaluate with expansions; results are exact, speed
+  not measured).
+
+## 15. Deferred (not in this contract)
 
 Gmsh `.msh` and Medit `.mesh` I/O (needed before M7, see decision 17); loft
 branching; true Minkowski offset; self-intersection repair; mesh-mesh intersection
