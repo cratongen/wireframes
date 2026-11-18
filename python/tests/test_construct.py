@@ -1,3 +1,5 @@
+import itertools
+
 import drusa as dr
 import numpy as np
 import pytest
@@ -9,6 +11,12 @@ def grid_points(n=6, size=10.0, f=lambda x, y: 0 * x):
     gx, gy = np.meshgrid(g, g)
     x, y = gx.ravel(), gy.ravel()
     return np.column_stack([x, y, f(x, y)])
+
+
+def sampled_hausdorff(a, b):
+    c = a.coords[a.triangles]
+    samples = np.vstack([a.coords, c.mean(axis=1), ((c + np.roll(c, -1, axis=1)) / 2).reshape(-1, 3)])
+    return b.distance(samples).max()
 
 
 def test_dtm_keeps_points_and_winds_up(rng):
@@ -30,9 +38,17 @@ def test_dtm_breaklines_and_boundary():
     brk = dr.Polylines([[[0.5, 0.3, 4.0], [9.5, 9.1, 4.0]]])
     s = dr.dtm(p, breaklines=brk)
     edges = {tuple(sorted(e)) for t in s.triangles for e in ((t[0], t[1]), (t[1], t[2]), (t[2], t[0]))}
-    ends = [int(np.flatnonzero((s.coords == v).all(axis=1))[0]) for v in brk.coords]
-    assert all(np.isin(ends, s.triangles.ravel()))
-    assert len(edges) > 0
+    a, b = brk.coords
+    d = b[:2] - a[:2]
+    rel = s.coords[:, :2] - a[:2]
+    t = rel @ d / (d @ d)
+    on = np.flatnonzero(
+        np.isclose(rel[:, 0] * d[1] - rel[:, 1] * d[0], 0, atol=1e-9) & (t >= -1e-12) & (t <= 1 + 1e-12)
+    )
+    chain = on[np.argsort(t[on])]
+    assert np.array_equal(s.coords[chain[[0, -1]]], brk.coords)
+    assert np.allclose(s.coords[chain, 2], 4.0)
+    assert all(tuple(sorted((int(p), int(q)))) in edges for p, q in itertools.pairwise(chain))
     ring = dr.Polylines([[[2, 2], [8, 2], [8, 8], [2, 8]]], closed=True)
     clipped = dr.dtm(p, boundary=ring)
     assert clipped.area == pytest.approx(36.0)
@@ -91,7 +107,9 @@ def test_decimate_smooth_offset_remesh(orebody):
     d = flat.decimate(target_faces=20)
     assert d.n_faces <= 20 and d.area == pytest.approx(flat.area)
     sd = orebody.decimate(target_faces=200)
+    summary = sd.validate().summary
     assert sd.is_closed and sd.n_faces <= 200
+    assert summary["non_manifold_edges"] == 0 and summary["non_manifold_vertices"] == 0
     smooth = orebody.smooth(iterations=3)
     assert smooth.n_faces == orebody.n_faces and smooth.is_closed
     bumpy = dr.dtm(grid_points(7, f=lambda x, y: np.sin(x) * np.cos(y)))
@@ -99,8 +117,11 @@ def test_decimate_smooth_offset_remesh(orebody):
     boundary = (bumpy.x == 0) | (bumpy.x == 10) | (bumpy.y == 0) | (bumpy.y == 10)
     assert np.array_equal(sm.coords[boundary], bumpy.coords[boundary])
     grown = orebody.offset(1.0)
-    assert grown.volume > orebody.volume
-    re = dr.datasets.box([0, 0, 0], [4, 4, 4]).remesh(1.0, iterations=2)
+    assert grown.is_solid and grown.volume > orebody.volume
+    assert np.allclose(np.linalg.norm(grown.coords - orebody.coords, axis=1), 1.0)
+    box = dr.datasets.box([0, 0, 0], [4, 4, 4])
+    re = box.remesh(1.0, iterations=2)
     assert re.is_closed and re.n_faces > 12
+    assert max(sampled_hausdorff(box, re), sampled_hausdorff(re, box)) < 1.0
     with pytest.raises(dr.InvalidInput):
         orebody.smooth(lambda_=-1.0)

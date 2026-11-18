@@ -2,7 +2,7 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 
 use drusa_build::{
     DecimateOptions, DtmOptions, LoftOptions, close_to_elevation, contours, decimate, dtm, loft,
-    remesh,
+    offset, remesh,
 };
 use drusa_core::fixtures::{box_mesh, cube, pit_surface, sphere, torus};
 use drusa_core::{Error, Mesh, Polylines};
@@ -320,4 +320,32 @@ fn remesh_thin_slab_keeps_its_corners_within_edge_length() {
         "input corner lies {in_to_out} from the remeshed slab ({} faces, volume {v0} -> {v1})",
         r.n_faces()
     );
+}
+
+#[test]
+fn results_do_not_depend_on_thread_count() {
+    let solid = sphere(2);
+    let top = pit_surface(12, 3);
+    let run = |n: usize| {
+        rayon::ThreadPoolBuilder::new()
+            .num_threads(n)
+            .build()
+            .unwrap()
+            .install(|| {
+                (
+                    remesh(&solid, 0.3, 3).unwrap(),
+                    decimate(
+                        &solid,
+                        &DecimateOptions {
+                            target_faces: Some(solid.n_faces() / 3),
+                            ..Default::default()
+                        },
+                    )
+                    .unwrap(),
+                    offset(&solid, 0.05).unwrap(),
+                    close_to_elevation(&top, 0.0).unwrap(),
+                )
+            })
+    };
+    assert_eq!(run(1), run(4));
 }
