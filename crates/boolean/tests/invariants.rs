@@ -87,7 +87,7 @@ fn check_identities(a: &Mesh, b: &Mesh, tol: f64) {
 fn validate_failure_rate_is_reported() {
     let mut rng = fixtures::Rng::new(7);
     let (mut runs, mut bad) = (0, 0);
-    let (mut sym_runs, mut sym_dup, mut sym_bad) = (0, 0, 0);
+    let (mut sym_runs, mut sym_touch, mut sym_bad) = (0, 0, 0);
     for _ in 0..40 {
         let a = fixtures::sphere(1);
         let ang = [0, 1, 2].map(|_| rng.uniform(-3.2, 3.2));
@@ -102,18 +102,14 @@ fn validate_failure_rate_is_reported() {
         let x = run(&a, &b, Op::SymmetricDifference);
         assert!(closed_manifold(&x));
         let s = x.validate(0.0).unwrap().summary;
-        let only_touching = s.is_closed
-            && s.degenerate_faces + s.duplicate_faces + s.non_manifold_edges == 0
-            && s.non_manifold_vertices + s.inconsistent_edges + s.inward_shells == 0
-            && s.self_intersections + s.coplanar_overlaps == 0;
         sym_runs += 1;
-        sym_dup += usize::from(s.duplicate_vertices > 0);
-        sym_bad += usize::from(!x.is_empty() && !only_touching);
+        sym_touch += usize::from(s.touching_shell_edges > 0);
+        sym_bad += usize::from(!x.is_empty() && !s.is_solid());
     }
     println!("validate(0.0) failed on {bad} of {runs} rounded boolean outputs");
     println!(
-        "symmetric difference: {sym_dup} of {sym_runs} have duplicate vertices where the pieces \
-         touch; {sym_bad} of {sym_runs} fail validate(0.0) for any other reason"
+        "symmetric difference: {sym_touch} of {sym_runs} have shells touching along the \
+         intersection curve; {sym_bad} of {sym_runs} fail validate(0.0)"
     );
 }
 
@@ -195,13 +191,21 @@ fn many_components() {
 }
 
 #[test]
-fn touching_along_an_edge_is_refused_for_union() {
+fn touching_along_an_edge_gives_separate_shells() {
     let a = fixtures::cube();
     let b = fixtures::translated(&a, [1.0, 1.0, 0.0]);
-    let e = boolean(&a, &b, Op::Union, &BooleanOptions::default()).unwrap_err();
-    assert!(e.to_string().contains("not manifold"), "{e}");
+    let u = run(&a, &b, Op::Union);
+    let s = u.validate(0.0).unwrap().summary;
+    assert!(closed_manifold(&u) && s.is_solid(), "{s:?}");
+    assert_eq!(
+        (s.shells, s.touching_shell_edges, s.touching_shell_vertices),
+        (2, 1, 2)
+    );
+    assert!(close(volume(&u), 2.0, 1e-12));
     assert!(run(&a, &b, Op::Intersection).is_empty());
     assert!(close(volume(&run(&a, &b, Op::Difference)), 1.0, 1e-12));
+    let x = run(&a, &b, Op::SymmetricDifference);
+    assert!(close(volume(&x), 2.0, 1e-12) && validates(&x));
 }
 
 #[test]
@@ -290,7 +294,7 @@ proptest! {
             .iter()
             .map(|&op| boolean(&a, &b, op, &BooleanOptions::default()))
             .collect();
-        if res.iter().any(|r| matches!(r, Err(e) if e.to_string().contains("not manifold"))) {
+        if res.iter().any(|r| matches!(r, Err(e) if e.to_string().contains("touches itself"))) {
             return Ok(());
         }
         let v: Vec<Mesh> = res.into_iter().map(|r| r.unwrap().mesh).collect();
@@ -320,7 +324,7 @@ proptest! {
                 prop_assert!(closed_manifold(&r.mesh));
                 prop_assert!(close(volume(&r.mesh), ov, 1e-12));
             }
-            Err(e) => prop_assert!(e.to_string().contains("not manifold"), "{}", e),
+            Err(e) => prop_assert!(e.to_string().contains("touches itself"), "{}", e),
         }
         if let Ok(r) = boolean(&a, &b, Op::Union, &BooleanOptions::default()) {
             prop_assert!(closed_manifold(&r.mesh));
@@ -402,7 +406,7 @@ proptest! {
             .collect();
         for r in &res {
             if let Err(e) = r {
-                prop_assert!(e.to_string().contains("not manifold"), "{}", e);
+                prop_assert!(e.to_string().contains("touches itself"), "{}", e);
             }
         }
         let vols: Vec<Option<f64>> = res.iter().map(|r| r.as_ref().ok().map(|r| {
@@ -501,13 +505,12 @@ fn symmetric_difference_pieces_touch_only_along_the_curve() {
         .filter(|p| d[1].vertices().contains(p))
         .map(|p| p.map(f64::to_bits))
         .collect();
-    assert_eq!(s.duplicate_vertices, curve.len(), "{s:?}");
+    assert_eq!(s.duplicate_vertices, 0, "{s:?}");
+    assert_eq!(s.touching_shell_vertices, curve.len(), "{s:?}");
+    assert!(s.touching_shell_edges > 0 && s.is_solid(), "{s:?}");
 }
 
 #[test]
-#[ignore = "unsatisfiable as written: the closures of a - b and b - a always meet along the \
-            intersection curve, so no output without duplicate or shared vertices there exists; \
-            spec 6.2 item 8 needs a decision from the lead"]
 fn symmetric_difference_of_overlapping_cubes_is_a_valid_solid() {
     let a = fixtures::cube();
     let b = fixtures::translated(&a, [0.5, 0.25, 0.125]);

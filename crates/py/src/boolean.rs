@@ -40,14 +40,17 @@ macro_rules! boolean_fn {
         /// -------
         /// Mesh or tuple of (Mesh, (RepairReport, RepairReport))
         ///     A solid; face attributes follow the faces they came from.
+        ///     Parts that touch along an edge or at a vertex are separate
+        ///     shells with their own vertices, so the result is valid input
+        ///     to another boolean.
         ///
         /// Raises
         /// ------
         /// InvalidMesh
         ///     When an input is not a solid; ``report`` holds its validation.
         /// InvalidInput
-        ///     When the solids touch along an edge or vertex only, so the
-        ///     result would not be manifold.
+        ///     When one shell of the result would touch itself along an
+        ///     edge or at a vertex, which no valid solid represents.
         #[pyfunction]
         #[pyo3(signature = (a, b, *, repair=false))]
         fn $name(

@@ -58,13 +58,14 @@ class MeshReport:
 
     @property
     def summary(self) -> dict[str, int | bool]:
-        """Problem counts by kind, plus ``shells``, ``is_closed`` and ``is_solid``."""
+        """Problem counts by kind, plus ``shells``, the contact counts ``touching_shell_edges`` and
+        ``touching_shell_vertices`` (information, not defects), ``is_closed`` and ``is_solid``."""
     @property
     def problems(self) -> Table:
         """One row per problem: ``kind``, ``face``, ``vertex``, ``edge``, ``other``."""
     @property
     def is_solid(self) -> bool:
-        """Closed, manifold, outward and without self-intersections."""
+        """Closed, manifold, outward and without self-intersections; shells may touch along edges or at vertices."""
     def __len__(self) -> int: ...
 
 class RepairReport:

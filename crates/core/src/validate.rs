@@ -4,7 +4,7 @@ use rayon::prelude::*;
 
 use crate::intersect::{SegTri, TriTri, seg_tri, tri_tri};
 use crate::predicates::collinear3;
-use crate::topology::locate_point;
+use crate::topology::{Radial, Shells, locate_point, radial_pairs_at};
 use crate::{Aabb, Bvh, EdgeMap, Mesh, Result, tolerance};
 
 /// Declaration order is the sort order of problems.
@@ -78,11 +78,19 @@ pub struct MeshSummary {
     pub self_intersections: usize,
     pub coplanar_overlaps: usize,
     pub unused_vertices: usize,
+    /// Edge locations where closed shells touch: exactly coincident edges of
+    /// different shells whose interiors do not overlap there. Information,
+    /// not a defect.
+    pub touching_shell_edges: usize,
+    /// Point locations where vertices of different closed shells coincide,
+    /// ends of touching edges included. Information, not a defect.
+    pub touching_shell_vertices: usize,
     pub is_closed: bool,
 }
 
 impl MeshSummary {
-    /// Closed, and every count except `shells` and `unused_vertices` is zero.
+    /// Closed, and every count except `shells`, `unused_vertices` and the
+    /// touching counts is zero.
     pub fn is_solid(&self) -> bool {
         self.is_closed
             && self.degenerate_faces == 0
@@ -112,6 +120,11 @@ impl MeshSummary {
             ("self_intersections", self.self_intersections as i64),
             ("coplanar_overlaps", self.coplanar_overlaps as i64),
             ("unused_vertices", self.unused_vertices as i64),
+            ("touching_shell_edges", self.touching_shell_edges as i64),
+            (
+                "touching_shell_vertices",
+                self.touching_shell_vertices as i64,
+            ),
             ("is_closed", self.is_closed as i64),
         ]
     }
@@ -157,12 +170,31 @@ fn key(p: [f64; 3]) -> [u64; 3] {
 
 /// For each vertex, the earliest vertex within `tolerance` of it (itself if none).
 pub fn earliest_within(vertices: &[[f64; 3]], tolerance: f64) -> Vec<u32> {
+    earliest_within_by(vertices, tolerance, |_, _| true)
+}
+
+/// For each vertex `i`, the earliest vertex `j` within `tolerance` of it with
+/// `keep(i, j)` (itself if none).
+fn earliest_within_by(
+    vertices: &[[f64; 3]],
+    tolerance: f64,
+    keep: impl Fn(u32, u32) -> bool,
+) -> Vec<u32> {
     if tolerance == 0.0 {
-        let mut first: HashMap<[u64; 3], u32> = HashMap::with_capacity(vertices.len());
+        let mut seen: HashMap<[u64; 3], Vec<u32>> = HashMap::with_capacity(vertices.len());
         return vertices
             .iter()
             .enumerate()
-            .map(|(i, &p)| *first.entry(key(p)).or_insert(i as u32))
+            .map(|(i, &p)| {
+                let group = seen.entry(key(p)).or_default();
+                let w = group
+                    .iter()
+                    .copied()
+                    .find(|&j| keep(i as u32, j))
+                    .unwrap_or(i as u32);
+                group.push(i as u32);
+                w
+            })
             .collect();
     }
     let cell = |x: f64| (x / tolerance).floor() as i64;
@@ -183,7 +215,7 @@ pub fn earliest_within(vertices: &[[f64; 3]], tolerance: f64) -> Vec<u32> {
                     for &j in grid.get(&k).into_iter().flatten() {
                         let q = vertices[j as usize];
                         let d2: f64 = (0..3).map(|a| (p[a] - q[a]) * (p[a] - q[a])).sum();
-                        if d2 <= t2 && j < best {
+                        if d2 <= t2 && j < best && keep(i as u32, j) {
                             best = j;
                         }
                     }
@@ -222,8 +254,14 @@ fn volume6(v: &[[f64; 3]], faces: &[[u32; 3]], o: [f64; 3]) -> f64 {
         .sum()
 }
 
-/// Degenerate, duplicate, edge, vertex, orientation and intersection problems.
-/// `tolerance` is the distance within which a vertex duplicates an earlier one.
+/// Degenerate, duplicate, edge, vertex, orientation and intersection problems,
+/// and the contacts between closed shells. `tolerance` is the distance within
+/// which a vertex duplicates an earlier one of its own shell.
+///
+/// Closed shells may touch each other at exactly coincident vertices and
+/// edges, by shared or by separate vertex indices, when their interiors do not
+/// overlap there; such contacts are counted in `touching_shell_vertices` and
+/// `touching_shell_edges` and are not problems.
 pub fn validate(mesh: &Mesh, tolerance: f64) -> Result<MeshReport> {
     use MeshProblemKind::*;
     let tolerance = tolerance::check("tolerance", tolerance)?;
@@ -251,15 +289,6 @@ pub fn validate(mesh: &Mesh, tolerance: f64) -> Result<MeshReport> {
             });
         }
     }
-    for (i, &w) in earliest_within(v, tolerance).iter().enumerate() {
-        if w != i as u32 {
-            problems.push(MeshProblem {
-                vertex: Some(i as u32),
-                other: Some(w),
-                ..problem(DuplicateVertex)
-            });
-        }
-    }
     let mut used = vec![false; v.len()];
     for t in tris {
         for &i in t {
@@ -274,20 +303,17 @@ pub fn validate(mesh: &Mesh, tolerance: f64) -> Result<MeshReport> {
     }
 
     let edges = EdgeMap::new(mesh, Some(&degenerate));
+    let shells = Shells::new(mesh, &edges);
     let local = |f: u32, id: u32| {
         edges.face_edges[f as usize]
             .iter()
             .position(|&e| e == id)
             .expect("face holds edge") as u8
     };
-    let mut shell_of: Vec<u32> = (0..tris.len() as u32).collect();
     let mut inconsistent = vec![false; tris.len()];
     let mut open_or_pinched = vec![false; tris.len()];
     for id in 0..edges.edges.len() as u32 {
         let fs = edges.faces_of_edge(id);
-        for &g in &fs[1..] {
-            join(&mut shell_of, fs[0], g);
-        }
         let at = |f: u32| {
             let e = local(f, id);
             MeshProblem {
@@ -315,7 +341,7 @@ pub fn validate(mesh: &Mesh, tolerance: f64) -> Result<MeshReport> {
                     });
                 }
             }
-            _ => {
+            _ if shells.non_manifold.binary_search(&id).is_ok() => {
                 for &f in fs {
                     open_or_pinched[f as usize] = true;
                 }
@@ -324,6 +350,13 @@ pub fn validate(mesh: &Mesh, tolerance: f64) -> Result<MeshReport> {
                     ..at(fs[0])
                 });
             }
+            _ => {}
+        }
+    }
+    let mut closed_shell = vec![true; shells.count];
+    for f in valid() {
+        if inconsistent[f] || open_or_pinched[f] {
+            closed_shell[shells.of[f] as usize] = false;
         }
     }
 
@@ -332,24 +365,36 @@ pub fn validate(mesh: &Mesh, tolerance: f64) -> Result<MeshReport> {
         if fan.len() < 2 {
             continue;
         }
-        let mut parent: Vec<u32> = (0..fan.len() as u32).collect();
-        for (i, &f) in fan.iter().enumerate() {
-            for (e, &id) in edges.face_edges[f as usize].iter().enumerate() {
+        let mut ids: Vec<u32> = fan
+            .iter()
+            .flat_map(|&f| {
                 let t = tris[f as usize];
-                if t[e] != vert && t[(e + 1) % 3] != vert {
-                    continue;
-                }
-                for g in edges.faces_of_edge(id) {
-                    let j = fan.binary_search(g).expect("g holds the vertex");
-                    join(&mut parent, i as u32, j as u32);
-                }
+                let ids = edges.face_edges[f as usize];
+                (0..3)
+                    .filter(move |&e| t[e] == vert || t[(e + 1) % 3] == vert)
+                    .map(move |e| ids[e])
+            })
+            .collect();
+        ids.sort_unstable();
+        ids.dedup();
+        let mut parent: Vec<u32> = (0..fan.len() as u32).collect();
+        for id in ids {
+            for [a, b] in shells.links(&edges, id) {
+                let [i, j] =
+                    [a, b].map(|g| fan.binary_search(&g).expect("g holds the vertex") as u32);
+                join(&mut parent, i, j);
             }
         }
-        if (0..fan.len() as u32)
+        let mut fans: Vec<u32> = (0..fan.len() as u32)
             .filter(|&i| root(&mut parent, i) == i)
-            .count()
-            > 1
-        {
+            .map(|i| shells.of[fan[i as usize] as usize])
+            .collect();
+        if fans.len() < 2 {
+            continue;
+        }
+        fans.sort_unstable();
+        let apart = fans.windows(2).all(|w| w[0] != w[1]);
+        if !apart || fans.iter().any(|&s| !closed_shell[s as usize]) {
             problems.push(MeshProblem {
                 vertex: Some(vert),
                 ..problem(NonManifoldVertex)
@@ -357,37 +402,120 @@ pub fn validate(mesh: &Mesh, tolerance: f64) -> Result<MeshReport> {
         }
     }
 
-    let mut shells: Vec<(u32, Vec<u32>)> = vec![];
-    let mut index_of: HashMap<u32, usize> = HashMap::new();
-    for f in valid() {
-        let r = root(&mut shell_of, f as u32);
-        let k = *index_of.entry(r).or_insert_with(|| {
-            shells.push((r, vec![]));
-            shells.len() - 1
-        });
-        shells[k].1.push(f as u32);
-    }
-    let origin = mesh.bounds().map_or([0.0; 3], |b| b.min);
-    let closed: Vec<(Vec<[u32; 3]>, Aabb, f64)> = shells
+    let shells_of = |i: usize| -> Vec<u32> {
+        let mut s: Vec<u32> = edges
+            .faces_of_vertex(i as u32)
+            .iter()
+            .map(|&f| shells.of[f as usize])
+            .collect();
+        s.sort_unstable();
+        s.dedup();
+        s
+    };
+    let vertex_shells: Vec<Vec<u32>> = (0..v.len()).map(shells_of).collect();
+    let all_closed = |s: &[u32]| !s.is_empty() && s.iter().all(|&k| closed_shell[k as usize]);
+    let apart = |i: u32, j: u32| {
+        let (a, b) = (&vertex_shells[i as usize], &vertex_shells[j as usize]);
+        key(v[i as usize]) == key(v[j as usize])
+            && all_closed(a)
+            && all_closed(b)
+            && a.iter().all(|s| b.binary_search(s).is_err())
+    };
+    for (i, &w) in earliest_within_by(v, tolerance, |i, j| !apart(i, j))
         .iter()
-        .filter(|(_, fs)| {
-            fs.iter()
-                .all(|&f| !inconsistent[f as usize] && !open_or_pinched[f as usize])
+        .enumerate()
+    {
+        if w != i as u32 {
+            problems.push(MeshProblem {
+                vertex: Some(i as u32),
+                other: Some(w),
+                ..problem(DuplicateVertex)
+            });
+        }
+    }
+
+    let canon = earliest_within(v, 0.0);
+    let mut at_point: HashMap<u32, Vec<u32>> = HashMap::new();
+    for i in 0..v.len() {
+        at_point
+            .entry(canon[i])
+            .or_default()
+            .extend_from_slice(&vertex_shells[i]);
+    }
+    let mut contact_points: Vec<u32> = at_point
+        .into_iter()
+        .filter_map(|(c, mut s)| {
+            s.sort_unstable();
+            s.dedup();
+            (s.len() > 1 && all_closed(&s)).then_some(c)
         })
-        .map(|(_, fs)| {
-            let faces: Vec<[u32; 3]> = fs.iter().map(|&f| tris[f as usize]).collect();
+        .collect();
+    contact_points.sort_unstable();
+    let is_contact = |i: u32| contact_points.binary_search(&canon[i as usize]).is_ok();
+    let mut at_edge: HashMap<[u32; 2], Vec<u32>> = HashMap::new();
+    for f in valid() {
+        let t = tris[f];
+        for e in 0..3 {
+            let (a, b) = (t[e], t[(e + 1) % 3]);
+            if is_contact(a) && is_contact(b) {
+                let (a, b) = (canon[a as usize], canon[b as usize]);
+                at_edge
+                    .entry([a.min(b), a.max(b)])
+                    .or_default()
+                    .push(f as u32);
+            }
+        }
+    }
+    let mut contact_edges: Vec<([u32; 2], Vec<u32>)> = at_edge
+        .into_iter()
+        .filter(|(_, fs)| {
+            let mut s: Vec<u32> = fs.iter().map(|&f| shells.of[f as usize]).collect();
+            s.sort_unstable();
+            s.dedup();
+            s.len() > 1 && all_closed(&s)
+        })
+        .collect();
+    contact_edges.sort_unstable();
+    let mut touching_shell_edges = 0;
+    for ([a, b], fs) in &contact_edges {
+        let shell = |f: u32| shells.of[f as usize];
+        let mixed = |x: u32, y: u32| MeshProblem {
+            face: Some(x.max(y)),
+            other: Some(x.min(y)),
+            ..problem(SelfIntersection)
+        };
+        match radial_pairs_at(mesh, fs, v[*a as usize], v[*b as usize]) {
+            Radial::Paired(pairs) => {
+                match pairs.iter().find(|p| shell(fs[p[0]]) != shell(fs[p[1]])) {
+                    Some(p) => problems.push(mixed(fs[p[0]], fs[p[1]])),
+                    None => touching_shell_edges += 1,
+                }
+            }
+            Radial::Coincident => {}
+            Radial::Unbalanced => {
+                let g = *fs
+                    .iter()
+                    .find(|&&g| shell(g) != shell(fs[0]))
+                    .expect("two shells");
+                problems.push(mixed(fs[0], g));
+            }
+        }
+    }
+
+    let origin = mesh.bounds().map_or([0.0; 3], |b| b.min);
+    let mut members: Vec<Vec<u32>> = vec![vec![]; shells.count];
+    for f in valid() {
+        members[shells.of[f] as usize].push(f as u32);
+    }
+    let closed_ids: Vec<usize> = (0..shells.count).filter(|&s| closed_shell[s]).collect();
+    let closed: Vec<(Vec<[u32; 3]>, Aabb, f64)> = closed_ids
+        .iter()
+        .map(|&s| {
+            let faces: Vec<[u32; 3]> = members[s].iter().map(|&f| tris[f as usize]).collect();
             let pts: Vec<[f64; 3]> = faces.iter().flatten().map(|&i| v[i as usize]).collect();
             let vol = volume6(v, &faces, origin);
             (faces, Aabb::from_points(&pts), vol)
         })
-        .collect();
-    let closed_first: Vec<u32> = shells
-        .iter()
-        .filter(|(_, fs)| {
-            fs.iter()
-                .all(|&f| !inconsistent[f as usize] && !open_or_pinched[f as usize])
-        })
-        .map(|(_, fs)| fs[0])
         .collect();
     let wrong: Vec<bool> = (0..closed.len())
         .into_par_iter()
@@ -413,7 +541,7 @@ pub fn validate(mesh: &Mesh, tolerance: f64) -> Result<MeshReport> {
     for (s, w) in wrong.into_iter().enumerate() {
         if w {
             problems.push(MeshProblem {
-                face: Some(closed_first[s]),
+                face: Some(members[closed_ids[s]][0]),
                 ..problem(InwardShell)
             });
         }
@@ -444,6 +572,7 @@ pub fn validate(mesh: &Mesh, tolerance: f64) -> Result<MeshReport> {
     problems.extend(found.into_iter().flatten());
 
     problems.sort_by_key(|p| (p.kind, p.face, p.vertex, p.other, p.edge));
+    problems.dedup();
     let count = |kind| problems.iter().filter(|p| p.kind == kind).count();
     let summary = MeshSummary {
         degenerate_faces: count(DegenerateFace),
@@ -453,11 +582,13 @@ pub fn validate(mesh: &Mesh, tolerance: f64) -> Result<MeshReport> {
         non_manifold_edges: count(NonManifoldEdge),
         non_manifold_vertices: count(NonManifoldVertex),
         inconsistent_edges: count(InconsistentWinding),
-        shells: shells.len(),
+        shells: shells.count,
         inward_shells: count(InwardShell),
         self_intersections: count(SelfIntersection),
         coplanar_overlaps: count(CoplanarOverlap),
         unused_vertices: count(UnusedVertex),
+        touching_shell_edges,
+        touching_shell_vertices: contact_points.len(),
         is_closed: degenerate.contains(&false)
             && count(BoundaryEdge) == 0
             && count(NonManifoldEdge) == 0,
@@ -541,7 +672,7 @@ mod tests {
             (broken::duplicate_vertex(), DuplicateVertex),
             (fixtures::open_cube(), BoundaryEdge),
             (broken::non_manifold_fin(), NonManifoldEdge),
-            (broken::touching_tetrahedra(), NonManifoldVertex),
+            (broken::bowtie(), NonManifoldVertex),
             (broken::flipped_face(), InconsistentWinding),
             (broken::inward_cube(), InwardShell),
             (broken::overlapping_cubes(), SelfIntersection),
@@ -564,11 +695,8 @@ mod tests {
     fn counts_of_the_broken_cases() {
         let s = summary(&broken::flipped_face());
         assert_eq!(s.inconsistent_edges, 3);
-        let s = summary(&broken::touching_tetrahedra());
-        assert_eq!(
-            (s.non_manifold_vertices, s.self_intersections, s.shells),
-            (1, 0, 2)
-        );
+        let s = summary(&broken::bowtie());
+        assert_eq!((s.non_manifold_vertices, s.shells), (1, 2), "{s:?}");
         let s = summary(&broken::overlapping_cubes());
         assert!(s.self_intersections > 0 && s.is_closed);
         let s = summary(&broken::touching_cubes());
@@ -585,6 +713,103 @@ mod tests {
         }
         let s = summary(&broken::non_manifold_fin());
         assert_eq!(s.non_manifold_edges, 1);
+    }
+
+    #[test]
+    fn closed_shells_touching_at_edges_and_vertices_are_solid() {
+        for (name, m, edges, points) in [
+            ("tetrahedra by index", fixtures::touching_tetrahedra(), 0, 1),
+            ("cubes at a vertex", fixtures::vertex_touching_cubes(), 0, 1),
+            (
+                "cubes at an edge",
+                fixtures::edge_touching_cubes(false),
+                1,
+                2,
+            ),
+            (
+                "welded cubes at an edge",
+                fixtures::edge_touching_cubes(true),
+                1,
+                2,
+            ),
+        ] {
+            let r = validate(&m, 0.0).unwrap();
+            let s = &r.summary;
+            assert!(s.is_solid(), "{name}: {:?}", r.problems);
+            assert!(r.problems.is_empty(), "{name}: {:?}", r.problems);
+            assert_eq!(s.shells, 2, "{name}");
+            assert_eq!(
+                (s.touching_shell_edges, s.touching_shell_vertices),
+                (edges, points),
+                "{name}"
+            );
+        }
+        let s = summary(&fixtures::cube());
+        assert_eq!((s.touching_shell_edges, s.touching_shell_vertices), (0, 0));
+    }
+
+    #[test]
+    fn contacts_with_overlapping_interiors_stay_defects() {
+        let r = validate(&broken::edge_overlapping_shells(), 0.0).unwrap();
+        assert!(!r.summary.is_solid(), "{:?}", r.summary);
+        assert!(r.summary.self_intersections > 0, "{:?}", r.summary);
+        assert_eq!(r.summary.touching_shell_edges, 0);
+        let s = summary(&broken::touching_cubes());
+        assert!(s.coplanar_overlaps > 0 && !s.is_solid(), "{s:?}");
+        let shared = Mesh::concat(&[
+            &fixtures::cube(),
+            &fixtures::translated(&fixtures::cube(), [1.0, 0.0, 0.0]),
+        ])
+        .unwrap();
+        let s = summary(&shared);
+        assert!(s.coplanar_overlaps > 0 && !s.is_solid(), "{s:?}");
+    }
+
+    #[test]
+    fn duplicates_inside_one_shell_stay_defects() {
+        let m = fixtures::edge_touching_cubes(false);
+        let mut v = m.vertices().to_vec();
+        v.push(v[0]);
+        let mut t = m.triangles().to_vec();
+        let k = t.iter().position(|t| t.contains(&0)).unwrap();
+        t[k] = t[k].map(|i| if i == 0 { v.len() as u32 - 1 } else { i });
+        let s = summary(&Mesh::new(v, t).unwrap());
+        assert!(s.duplicate_vertices > 0 && !s.is_solid(), "{s:?}");
+    }
+
+    #[test]
+    fn radial_pairs_follow_the_wedges() {
+        use crate::topology::{Radial, radial_pairs_at};
+        let m = fixtures::edge_touching_cubes(false);
+        let (p, q) = ([1.0, 1.0, 0.0], [1.0, 1.0, 1.0]);
+        let on: Vec<u32> = (0..m.n_faces() as u32)
+            .filter(|&f| {
+                let c = m.corners(f);
+                c.contains(&p) && c.contains(&q)
+            })
+            .collect();
+        assert_eq!(on.len(), 4);
+        let Radial::Paired(pairs) = radial_pairs_at(&m, &on, p, q) else {
+            panic!("not paired")
+        };
+        for [a, b] in pairs {
+            assert_eq!(on[a] < 12, on[b] < 12, "{pairs:?}", pairs = (on[a], on[b]));
+        }
+        let flipped = fixtures::flipped(&m);
+        let Radial::Paired(again) = radial_pairs_at(&flipped, &on, p, q) else {
+            panic!("not paired")
+        };
+        assert!(
+            again.iter().all(|&[a, b]| (on[a] < 12) != (on[b] < 12)),
+            "{again:?}"
+        );
+        let one: Vec<u32> = on
+            .iter()
+            .copied()
+            .filter(|&f| f < 12)
+            .chain([on[3]])
+            .collect();
+        assert_eq!(radial_pairs_at(&m, &one, p, q), Radial::Unbalanced);
     }
 
     #[test]
@@ -617,7 +842,7 @@ mod tests {
     #[test]
     fn pairs_and_names_are_stable() {
         let p = MeshSummary::default().to_pairs();
-        assert_eq!(p.len(), 13);
+        assert_eq!(p.len(), 15);
         assert_eq!(p.last().unwrap().0, "is_closed");
         assert_eq!(MeshProblemKind::CoplanarOverlap.name(), "coplanar_overlap");
     }

@@ -66,6 +66,11 @@ Each line: the decision, then why.
 17. Gmsh `.msh` and Medit `.mesh` are not in this contract. The README says boitata
     will delete those readers in M7, so M7 must either keep them in boitata or add
     them here. Deferred, listed in section 12.
+18. A valid solid may consist of several closed, outward-oriented, manifold shells
+    that touch each other along edges or at vertices, as long as their interiors do
+    not overlap (owner decision, 2026-11-19). Contact between shells is information,
+    not a defect: `validate` counts it, booleans accept it and return it. A single
+    shell that touches itself stays a defect.
 
 ## 1. Workspace
 
@@ -121,7 +126,9 @@ No other dependency without a line in this table.
   Constructors reject anything else with `Error::InvalidInput`.
 - Orientation: a solid's triangles wind counter-clockwise seen from outside; face
   normal is `(b - a) x (c - a)`; signed volume is positive for an outward solid.
-- **Solid**: a mesh whose `MeshSummary::is_solid()` is true (section 2.3 of core).
+- **Solid**: a mesh whose `MeshSummary::is_solid()` is true (section 3.12): one or
+  more closed, outward, manifold shells whose interiors do not overlap; shells may
+  touch each other at exactly coincident edges and vertices.
 - Determinism: results never depend on thread count. Parallel maps collect in input
   order. Parallel sums split work into fixed chunks of 4096 items (independent of
   thread count), sum each chunk with Neumaier compensated summation, then sum the
@@ -480,7 +487,27 @@ impl HalfEdges {
     pub fn boundary_loops(&self, mesh: &Mesh) -> Vec<Vec<u32>>; // vertex loops, deterministic start at smallest half-edge
     pub fn components(&self, mesh: &Mesh) -> Vec<u32>;          // edge-connected component label per face, labels by first face
 }
+
+pub enum Radial { Paired(Vec<[usize; 2]>), Coincident, Unbalanced }
+pub fn radial_pairs(forward: &[bool], turn: impl Fn(usize, usize) -> Sign, same: impl Fn(usize, usize) -> bool) -> Radial;
+pub fn radial_pairs_at(mesh: &Mesh, faces: &[u32], p: [f64; 3], q: [f64; 3]) -> Radial;
+
+pub struct Shells { pub of: Vec<u32>, pub count: usize, pub non_manifold: Vec<u32>, pub contacts: Vec<u32>, /* private pairs */ }
+impl Shells {
+    pub fn new(mesh: &Mesh, edges: &EdgeMap) -> Shells;
+    pub fn links(&self, edges: &EdgeMap, id: u32) -> Vec<[u32; 2]>; // face pairs joined across edge id
+}
 ```
+
+Radial pairing: the faces around one edge `p -> q` sort by exact angle about the
+edge direction (`turn(a, b)` is the sign of `det[q - p, r_a - p, r_b - p]` for third
+corners `r`, `same` decides coplanar half-planes by `orient2d_axis`). A face running
+`q -> p` bounds a wedge of solid with the next face counter-clockwise, which must run
+`p -> q`. Two faces in one half-plane give `Coincident`; directions that do not
+alternate give `Unbalanced`. `Shells` joins faces across two-face edges and across
+radial pairs at edges with more faces; an edge whose faces do not pair, or whose
+pairs meet one shell twice, is in `non_manifold`, the rest of the multi-face edges
+are `contacts`. Shell labels are numbered by first face.
 
 ### 3.12 validate.rs
 
@@ -511,10 +538,11 @@ pub struct MeshSummary {
     pub boundary_edges: usize, pub non_manifold_edges: usize, pub non_manifold_vertices: usize,
     pub inconsistent_edges: usize, pub shells: usize, pub inward_shells: usize,
     pub self_intersections: usize, pub coplanar_overlaps: usize, pub unused_vertices: usize,
+    pub touching_shell_edges: usize, pub touching_shell_vertices: usize, // information, not defects
     pub is_closed: bool,
 }
 impl MeshSummary {
-    pub fn is_solid(&self) -> bool; // is_closed and every count except shells and unused_vertices is 0
+    pub fn is_solid(&self) -> bool; // is_closed and every count except shells, unused_vertices and the touching counts is 0
     pub fn to_pairs(&self) -> Vec<(&'static str, i64)>; // stable order, used by Python dict
 }
 
@@ -529,12 +557,28 @@ Semantics:
 - DuplicateFace: same corner set as an earlier face, any order; `other` = earlier.
 - DuplicateVertex: within `tolerance` (Euclidean) of an earlier vertex; at
   `tolerance = 0` exact equality. Grid hash with cell `max(tolerance, tiny)` and
-  neighbour cells; `other` = the earliest such vertex.
+  neighbour cells; `other` = the earliest such vertex. Exempt: an earlier vertex
+  with exactly equal coordinates whose shells are all closed and all different from
+  the vertex's own closed shells (a contact between shells).
 - UnusedVertex: no face uses the vertex.
-- BoundaryEdge (1 face), NonManifoldEdge (3 or more faces), NonManifoldVertex
-  (faces around the vertex form more than one edge-connected fan),
+- BoundaryEdge (1 face), NonManifoldEdge (3 or more faces, except a contact in
+  `Shells::contacts`), NonManifoldVertex (faces around the vertex form more than one
+  fan, joined through `Shells::links`, unless each fan lies in a different closed
+  shell),
   InconsistentWinding (two faces run the shared edge in the same direction).
-- Shells: edge-connected components of non-degenerate faces.
+- Shells: `Shells::new` on the non-degenerate faces. A shell is closed when none of
+  its faces has a boundary, non-manifold or inconsistent edge.
+- Contacts between closed shells: `touching_shell_vertices` counts the exact
+  coordinates where vertices of two or more closed shells meet (shared index or
+  coincident copies). At every edge whose exact endpoints are such points and whose
+  faces come from two or more closed shells, `radial_pairs_at` on all those faces
+  must pair each face with a face of its own shell; then the edge counts once in
+  `touching_shell_edges`, else the first mixed pair (or, when `Unbalanced`, the first
+  two faces of different shells) is a `SelfIntersection` (the interiors overlap
+  there). `Coincident` adds nothing: the coplanar overlap or duplicate face is
+  reported already. Contacts are only at exactly coincident vertices and edges; a
+  vertex of one shell on the interior of another shell's edge or face stays a
+  `SelfIntersection`.
 - InwardShell: per closed, consistently wound shell, nesting depth = number of other
   closed shells containing one of its vertices (exact point-in-shell, section 7.1
   rule). Even depth must have positive signed volume, odd depth negative.
@@ -837,23 +881,32 @@ Arrangement (`arrangement.rs`):
 6. Keep rules (B faces flipped when kept by `Difference`):
    - Union: A outside B, B outside A. Intersection: A inside B, B inside A.
    - Difference: A outside B, B inside A (flipped).
-   - SymmetricDifference: union of `difference(a, b)` and `difference(b, a)` in one
-     arrangement.
+   - SymmetricDifference: A outside B and B outside A as they are, A inside B and
+     B inside A flipped; every coplanar patch dropped.
    - Coplanar same-facing patches: keep A's once for Union and Intersection, drop
-     both for Difference. Coplanar opposite-facing: drop both for Union and
-     Intersection, keep A's once for Difference.
+     both for Difference and SymmetricDifference. Coplanar opposite-facing: drop both
+     for Union, Intersection and SymmetricDifference, keep A's once for Difference.
+   - Shells (`ops::shells`): kept sub-triangles join across edges with two of them;
+     at an edge with more, `radial_pairs` orders them exactly about the edge
+     (`turn` is the sign of `det[d, m_a, m_b]` and `same` the sign of `m_a . m_b`,
+     with `d = q - p` from the implicit endpoints and `m` the exact input-face normal,
+     negated when the face is flipped or runs `q -> p`) and joins the pairs. Each
+     shell gets its own vertex copies, so shells in contact share coordinates and no
+     indices.
 7. Output vertices: input vertices keep their `f64`; implicit points round with
    `to_f64`; output vertices that round to the same coordinates are not merged
    (topology comes from the exact arrangement).
 8. Attributes: output face attributes are `Table::concat` of A's and B's face
    tables taken by `face_source`; vertex attributes keep input rows, null for new
    vertices. An empty result (nothing kept) is `Mesh::empty()` with the merged
-   schema. Result is a solid when inputs are solids (exact topology), except for
-   `SymmetricDifference` of inputs whose surfaces cross: its `a - b` and `b - a`
-   pieces keep separate vertices along the intersection curve, which `validate`
-   reports as duplicate vertices, so it is not reusable as a boolean input. Touching along
-   an edge or vertex yields a non-manifold result, which errors with
-   `InvalidInput("result is not manifold: solids touch along an edge or vertex")`.
+   schema. Inputs may be solids with touching shells. Result is a solid when inputs
+   are solids (exact topology), and a valid input to further booleans: parts that
+   touch along an edge or at a vertex, including the `a - b` and `b - a` parts of
+   `SymmetricDifference` along the intersection curve, are separate shells. A result
+   shell that touches itself along an edge or at a vertex is no valid solid and errors
+   with `InvalidInput("result is not manifold: a shell touches itself along an edge or
+   vertex")`; `clip_by_surface` uses the same split per piece and the message
+   `"clip result is not manifold: a shell touches itself along an edge or vertex"`.
 
 `clip_by_surface`: `above` is the part of the solid on the side the surface normals
 point to, `below` the other; both are closed and outward, capped by the pieces of
@@ -1454,7 +1507,12 @@ wireframes-core
 - P `tri_tri` is symmetric in its arguments and invariant under corner rotation.
 - P `Bvh::query` returns exactly the boxes a brute-force scan returns.
 - `validate` on boitata's fixture set gives boitata's counts (ported fixtures), plus
-  new fixtures for touching faces and coplanar overlaps.
+  new fixtures for touching faces and coplanar overlaps. Exception by section 0
+  item 18: tetrahedra sharing one vertex are a solid with one shell contact, where
+  boitata reports a non-manifold vertex.
+- Closed shells touching at a vertex or along an edge, by shared index or by
+  coincident copies, are solids with the expected contact counts; a contact whose
+  interiors overlap is a `SelfIntersection`.
 - P `validate` is invariant under face order permutation (counts), vertex index
   relabelling (counts), and rigid translation by integers (counts).
 - A unit cube and an icosphere report `is_solid`; removing one face gives exactly 3
@@ -1491,6 +1549,13 @@ wireframes-boolean
 - P `vol(A union B) + vol(A intersection B) == vol(A) + vol(B)`.
 - P `vol(A difference B) == vol(A) - vol(A intersection B)`.
 - P `vol(A symmetric_difference B) == vol(A union B) - vol(A intersection B)`.
+- `vol(A xor B) == vol(A) + vol(B) - 2 vol(A and B)` and `vol(A or B) + vol(A and B)
+  == vol(A) + vol(B)` on 160 seeded random grid-box pairs, with inputs of touching
+  shells (edge and vertex contact) and nested pairs; every result validates as a
+  solid (`tests/touching.rs`).
+- Edge, vertex and face contact pairs, a difference that leaves bodies joined at
+  edges and vertices, and a chain of ten mixed booleans each fed its previous result,
+  checked against an exact voxel count.
 - P closed manifold in gives closed manifold out (`is_closed`, no non-manifold edges
   or vertices, consistent winding) for every op.
 - P `A union A` and `A intersection A` have the volume of A; `A difference A` is empty.
@@ -1626,8 +1691,10 @@ These refine the sections above; where they differ, this section wins.
   `torus(major, minor)`, `flipped`, `translated`, `nested_shells`, `soup`,
   `open_cube`, `pit_surface(n, seed)`, `random_points`, `coplanar_pairs` (the
   four section 12 boolean cases), and `broken::{degenerate_face, duplicate_face,
-  duplicate_vertex, unused_vertex, non_manifold_fin, touching_tetrahedra,
+  duplicate_vertex, unused_vertex, non_manifold_fin, bowtie, edge_overlapping_shells,
   flipped_face, inward_cube, overlapping_cubes, touching_cubes, folded_face}`.
+  Valid solids with shell contacts: `touching_tetrahedra` (one shared vertex index),
+  `edge_touching_cubes(welded)` and `vertex_touching_cubes`.
 - Not done in core: the semi-static floating filter in front of the `exact`
   predicates (they always evaluate with expansions; results are exact, speed
   not measured).

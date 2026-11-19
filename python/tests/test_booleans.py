@@ -12,13 +12,10 @@ def pairs(box, rng, n=6):
 
 
 def pieces_touch_only_along_curves(m):
-    """``a ^ b`` is ``a - b`` and ``b - a`` in one mesh; the two pieces meet along the intersection curve,
-    so validation finds duplicate vertices there and nothing else."""
+    """``a ^ b`` holds ``a - b`` and ``b - a`` as separate shells that touch along the
+    intersection curve: a valid solid whose report counts the contact."""
     s = m.validate().summary
-    others = {
-        k: v for k, v in s.items() if k not in ("duplicate_vertices", "shells", "is_closed", "is_solid")
-    }
-    return s["is_closed"] and not any(others.values())
+    return s["is_solid"] and s["shells"] >= 2 and s["touching_shell_edges"] > 0
 
 
 def vol(m):
@@ -31,10 +28,11 @@ def test_volume_identity_and_closed_output(box, rng):
         u, i, d, x = a | b, a & b, a - b, a ^ b
         for m in (u, i, d):
             assert m.n_faces == 0 or m.is_solid
-        assert x.n_faces == 0 or pieces_touch_only_along_curves(x)
+        assert x.n_faces == 0 or x.is_solid
         assert close(vol(u) + vol(i), vol(a) + b.volume)
         assert close(vol(d), vol(a) - vol(i))
         assert close(vol(x), vol(u) - vol(i))
+        assert close(vol(x), vol(a) + vol(b) - 2 * vol(i))
         assert close(vol(b | a), vol(u)) and close(vol(b & a), vol(i))
 
 
@@ -80,6 +78,33 @@ def test_locate_agrees_with_boolean_of_locates(box, rng):
     x = a ^ b
     assert pieces_touch_only_along_curves(x)
     assert x.volume == pytest.approx((a - b).volume + (b - a).volume)
+
+
+def test_touching_shells_are_valid_and_chain(box):
+    a = box([0, 0, 0], [1, 1, 1])
+    edge, corner, face = box([1, 1, 0], [2, 2, 1]), box([1, 1, 1], [2, 2, 2]), box([1, 0, 0], [2, 1, 1])
+    for b, shells, edges, points in [(edge, 2, 1, 2), (corner, 2, 0, 1), (face, 1, 0, 0)]:
+        for m in (a | b, a ^ b):
+            s = m.validate().summary
+            assert s["is_solid"] and m.volume == pytest.approx(2.0)
+            assert (s["shells"], s["touching_shell_edges"], s["touching_shell_vertices"]) == (
+                shells,
+                edges,
+                points,
+            )
+        assert (a & b).n_faces == 0 and (a - b).volume == pytest.approx(1.0)
+    two = a | edge
+    joined = two | box([0.5, 0.5, 0], [1.5, 1.5, 1])
+    assert joined.is_solid and joined.validate().summary["shells"] == 1
+    assert joined.volume == pytest.approx(2.0 + 1.0 - 0.5)
+    p = np.array([[0.5, 0.5, 0.5], [1.5, 1.5, 0.5], [1.5, 0.5, 0.5], [1.0, 1.0, 0.5]])
+    assert two.locate(p).tolist() == [-1, -1, 1, 0]
+    d = two.signed_distance(p)
+    assert d[0] == pytest.approx(-0.5) and d[1] == pytest.approx(-0.5)
+    assert d[2] == pytest.approx(0.5) and d[3] == pytest.approx(0.0)
+    l_shape = box([0, 0, 0], [2, 2, 2]) - box([1, 1, 1], [3, 3, 3])
+    with pytest.raises(wf.InvalidInput, match="touches itself"):
+        l_shape - box([-1, -1, -1], [1, 1, 3])
 
 
 def test_coplanar_cases(box):

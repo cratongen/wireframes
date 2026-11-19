@@ -271,6 +271,43 @@ pub fn coplanar_pairs() -> Vec<(&'static str, Mesh, Mesh)> {
     ]
 }
 
+/// Two tetrahedra sharing only vertex 0, by index: closed shells touching
+/// at a vertex.
+pub fn touching_tetrahedra() -> Mesh {
+    let a = tetrahedron();
+    let mut v = a.vertices().to_vec();
+    v.extend([[-1.0, 0.0, 0.0], [0.0, -1.0, 0.0], [0.0, 0.0, -1.0]]);
+    let mut t = a.triangles().to_vec();
+    t.extend([[0, 4, 5], [0, 6, 4], [0, 5, 6], [4, 6, 5]]);
+    mesh(v, t)
+}
+
+/// The unit cube and its copy moved by `(1, 1, 0)`: closed shells touching
+/// along the edge from `(1, 1, 0)` to `(1, 1, 1)`. `welded`: the two shells
+/// share the contact vertices by index, else they hold coincident copies.
+pub fn edge_touching_cubes(welded: bool) -> Mesh {
+    let m = Mesh::concat(&[&cube(), &translated(&cube(), [1.0, 1.0, 0.0])]).expect("no labels");
+    if !welded {
+        return m;
+    }
+    let first = crate::validate::earliest_within(m.vertices(), 0.0);
+    let t = m
+        .triangles()
+        .iter()
+        .map(|t| t.map(|i| first[i as usize]))
+        .collect();
+    let welded = mesh(m.vertices().to_vec(), t);
+    welded
+        .filter_faces(&vec![true; welded.n_faces()])
+        .expect("same faces")
+}
+
+/// The unit cube and its copy moved by `(1, 1, 1)`: closed shells touching
+/// at the vertex `(1, 1, 1)`, with coincident copies of it.
+pub fn vertex_touching_cubes() -> Mesh {
+    Mesh::concat(&[&cube(), &translated(&cube(), [1.0, 1.0, 1.0])]).expect("no labels")
+}
+
 /// Meshes with one deliberate defect each.
 pub mod broken {
     use super::*;
@@ -307,14 +344,39 @@ pub mod broken {
         cube_plus(&[[0.5, -1.0, -1.0]], &[[0, 1, 8]])
     }
 
-    /// Two tetrahedra sharing only vertex 0.
-    pub fn touching_tetrahedra() -> Mesh {
-        let a = tetrahedron();
-        let mut v = a.vertices().to_vec();
-        v.extend([[-1.0, 0.0, 0.0], [0.0, -1.0, 0.0], [0.0, 0.0, -1.0]]);
-        let mut t = a.triangles().to_vec();
-        t.extend([[0, 4, 5], [0, 6, 4], [0, 5, 6], [4, 6, 5]]);
-        mesh(v, t)
+    /// Two triangles sharing only vertex 0: an open surface pinched there.
+    pub fn bowtie() -> Mesh {
+        mesh(
+            vec![
+                [0.0; 3],
+                [1.0, 0.0, 0.0],
+                [1.0, 1.0, 0.0],
+                [-1.0, 0.0, 0.0],
+                [-1.0, -1.0, 0.0],
+            ],
+            vec![[0, 1, 2], [0, 3, 4]],
+        )
+    }
+
+    /// The unit cube and a tetrahedron inside it that shares the cube's
+    /// edge from `(1, 1, 0)` to `(1, 1, 1)`: closed shells in contact along
+    /// an edge with overlapping interiors.
+    pub fn edge_overlapping_shells() -> Mesh {
+        let t = mesh(
+            vec![
+                [1.0, 1.0, 0.0],
+                [1.0, 1.0, 1.0],
+                [0.5, 0.75, 0.5],
+                [0.75, 0.5, 0.5],
+            ],
+            vec![[0, 2, 1], [0, 1, 3], [0, 3, 2], [1, 2, 3]],
+        );
+        let t = if t.validate(0.0).expect("valid").summary.inward_shells > 0 {
+            flipped(&t)
+        } else {
+            t
+        };
+        Mesh::concat(&[&cube(), &t]).expect("no labels")
     }
 
     /// A cube with face 0 reversed (3 inconsistent edges).

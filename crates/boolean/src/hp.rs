@@ -234,6 +234,28 @@ pub(crate) fn side(p: &Pt, plane: &Plane) -> Sign {
     }
 }
 
+/// `q - p` scaled by the positive weights of both points.
+pub(crate) fn direction(p: &Pt, q: &Pt) -> [Expansion; 3] {
+    [0, 1, 2].map(|k| q.num(k).product(&p.den()).diff(&p.num(k).product(&q.den())))
+}
+
+/// Sign of the determinant of the rows `d, a, b`.
+pub(crate) fn det3(d: &[Expansion; 3], a: &[Expansion; 3], b: &[Expansion; 3]) -> Sign {
+    (0..3)
+        .fold(Expansion::zero(), |acc, k| {
+            let (i, j) = kept_axes(k);
+            acc.sum(&d[k].product(&a[i].product(&b[j]).diff(&a[j].product(&b[i]))))
+        })
+        .sign()
+}
+
+/// Sign of `a . b`.
+pub(crate) fn dot3(a: &[Expansion; 3], b: &[Expansion; 3]) -> Sign {
+    (0..3)
+        .fold(Expansion::zero(), |acc, k| acc.sum(&a[k].product(&b[k])))
+        .sign()
+}
+
 /// Sign of `z_top(x, y) - z_bottom(x, y)` at the plan position of `p`, for
 /// two non-vertical planes.
 pub(crate) fn height_diff_sign(p: &Pt, top: &Plane, bottom: &Plane) -> Sign {

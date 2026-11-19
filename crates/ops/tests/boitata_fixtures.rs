@@ -208,7 +208,7 @@ fn each_kind_with_boitata_faces_and_vertices() {
 }
 
 #[test]
-fn tetrahedra_touching_at_a_vertex_have_one_non_manifold_vertex() {
+fn tetrahedra_touching_at_a_vertex_are_a_solid_with_one_contact() {
     let tet: [[u32; 3]; 4] = [[0, 2, 1], [0, 1, 3], [1, 2, 3], [0, 3, 2]];
     let mut v = vec![[0., 0., 0.], [1., 0., 0.], [0., 1., 0.], [0., 0., 1.]];
     v.extend([[-1., 0., 0.], [0., -1., 0.], [0., 0., -1.]]);
@@ -220,8 +220,10 @@ fn tetrahedra_touching_at_a_vertex_have_one_non_manifold_vertex() {
             .iter()
             .map(|p| (p.kind, p.vertex))
             .collect::<Vec<_>>(),
-        vec![(NonManifoldVertex, Some(0))]
+        vec![]
     );
+    assert_eq!(r.summary.touching_shell_vertices, 1);
+    assert!(r.summary.is_solid(), "{:?}", r.summary);
     assert_eq!(r.summary.shells, 2);
     assert!(r.summary.is_closed);
 }

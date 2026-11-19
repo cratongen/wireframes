@@ -5,7 +5,7 @@ use wireframes_ops::{RepairOptions, RepairReport, repair};
 use crate::BooleanOptions;
 use crate::arrangement;
 use crate::classify::{self, Sample, Target};
-use crate::ops::{Piece, assemble, build_mesh, is_closed_manifold, prepare};
+use crate::ops::{Piece, assemble, build_mesh, is_closed_manifold, prepare, shells};
 
 pub struct ClipResult {
     pub below: Mesh,
@@ -125,10 +125,10 @@ pub fn clip_by_surface(solid: &Mesh, surface: &Mesh, opts: &BooleanOptions) -> R
     }
     let mut out = vec![];
     for piece in [below, above] {
-        let asm = assemble(&arr, &[piece]);
+        let asm = assemble(&arr, &shells(&arr, &piece)?);
         if !asm.triangles.is_empty() && !is_closed_manifold(&asm.triangles) {
             return Err(Error::invalid(
-                "clip result is not manifold: the surface touches the solid along an edge or vertex",
+                "clip result is not manifold: a shell touches itself along an edge or vertex",
             ));
         }
         out.push(build_mesh(

@@ -69,7 +69,7 @@ pub fn components(mesh: &Mesh) -> Result<Vec<Mesh>> {
 mod tests {
     use super::*;
     use crate::measure::volume;
-    use wireframes_core::fixtures::{self, broken};
+    use wireframes_core::fixtures;
 
     #[test]
     fn components_split_shells_and_keep_volume() {
@@ -87,7 +87,7 @@ mod tests {
 
     #[test]
     fn a_shared_vertex_does_not_connect() {
-        let parts = components(&broken::touching_tetrahedra()).unwrap();
+        let parts = components(&fixtures::touching_tetrahedra()).unwrap();
         assert_eq!(parts.len(), 2);
         assert_eq!(parts[1].n_vertices(), 4);
         assert!(components(&Mesh::empty()).unwrap().is_empty());

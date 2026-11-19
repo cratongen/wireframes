@@ -195,8 +195,14 @@ fn many_cubes_coplanar_with_a_slab() {
 fn cubes_touching_at_a_vertex() {
     let a = fixtures::cube();
     let b = fixtures::translated(&a, [1.0, 1.0, 1.0]);
-    let e = boolean(&a, &b, Op::Union, &BooleanOptions::default()).unwrap_err();
-    assert!(e.to_string().contains("not manifold"), "{e}");
+    let u = run(&a, &b, Op::Union);
+    let s = u.validate(0.0).unwrap().summary;
+    assert!(ok(&u) && s.is_solid(), "{s:?}");
+    assert_eq!(
+        (s.shells, s.touching_shell_vertices, s.touching_shell_edges),
+        (2, 1, 0)
+    );
+    assert!(close(volume(&u), 2.0, 1e-12));
     assert!(run(&a, &b, Op::Intersection).is_empty());
     assert!(close(volume(&run(&a, &b, Op::Difference)), 1.0, 1e-12));
     let x = run(&a, &b, Op::SymmetricDifference);
@@ -349,7 +355,7 @@ proptest! {
                     prop_assert!(close(volume(&r.mesh), want, 1e-12),
                         "{:?}: {} != {}", op, volume(&r.mesh), want);
                 }
-                Err(e) => prop_assert!(e.to_string().contains("not manifold"), "{:?}: {}", op, e),
+                Err(e) => prop_assert!(e.to_string().contains("touches itself"), "{:?}: {}", op, e),
             }
         }
     }
@@ -382,7 +388,7 @@ proptest! {
                     prop_assert!(ok(&r.mesh));
                     prop_assert!(volume(&r.mesh).abs() < 1e-12, "{:?}: {}", op, volume(&r.mesh));
                 }
-                Err(e) => prop_assert!(e.to_string().contains("not manifold"), "{:?}: {}", op, e),
+                Err(e) => prop_assert!(e.to_string().contains("touches itself"), "{:?}: {}", op, e),
             }
         }
     }
@@ -428,7 +434,7 @@ proptest! {
                     prop_assert!(close(volume(&r.mesh), want, 1e-12),
                         "{:?}: {} != {}", op, volume(&r.mesh), want);
                 }
-                Err(e) => prop_assert!(e.to_string().contains("not manifold"), "{:?}: {}", op, e),
+                Err(e) => prop_assert!(e.to_string().contains("touches itself"), "{:?}: {}", op, e),
             }
         }
     }
@@ -639,7 +645,7 @@ proptest! {
                     vols.push(Some(volume(&r.mesh)));
                 }
                 Err(e) => {
-                    prop_assert!(e.to_string().contains("not manifold"), "op {}: {}", k, e);
+                    prop_assert!(e.to_string().contains("touches itself"), "op {}: {}", k, e);
                     vols.push(None);
                 }
             }

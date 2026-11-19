@@ -50,7 +50,10 @@ pub(crate) struct PyMeshReport {
 
 #[pymethods]
 impl PyMeshReport {
-    /// Problem counts by kind, plus ``shells``, ``is_closed`` and ``is_solid``.
+    /// Problem counts by kind, plus ``shells``, the contact counts
+    /// ``touching_shell_edges`` and ``touching_shell_vertices`` (closed shells
+    /// that touch along coincident edges or at coincident vertices without
+    /// overlapping; information, not defects), ``is_closed`` and ``is_solid``.
     #[getter]
     fn summary<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
         summary_dict(py, &self.inner.summary)
@@ -80,7 +83,8 @@ impl PyMeshReport {
     }
 
     /// Closed, manifold, consistently and outward wound, without
-    /// self-intersections.
+    /// self-intersections. Shells may touch each other along edges or at
+    /// vertices.
     #[getter]
     fn is_solid(&self) -> bool {
         self.inner.summary.is_solid()
@@ -141,7 +145,8 @@ impl PyMesh {
     }
 
     /// Whether ``validate()`` finds a solid: closed, manifold, outward and
-    /// without self-intersections.
+    /// without self-intersections; its shells may touch each other along
+    /// edges or at vertices.
     #[getter]
     fn is_solid(&self, py: Python) -> PyResult<bool> {
         Ok(py

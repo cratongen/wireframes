@@ -664,7 +664,8 @@ mod tests {
     fn unrepairable_defects_stay_reported() {
         for m in [
             broken::non_manifold_fin(),
-            broken::touching_tetrahedra(),
+            broken::bowtie(),
+            broken::edge_overlapping_shells(),
             broken::overlapping_cubes(),
             broken::touching_cubes(),
         ] {

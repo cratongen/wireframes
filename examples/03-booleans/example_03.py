@@ -52,13 +52,18 @@ assert abs(union + inter - a - b) <= 1e-9 * (a + b)
 
 # %% [markdown]
 # Each operator has a method and a function form that give the same mesh. Where the two surfaces cross, the
-# symmetric difference keeps the `a - b` and `b - a` pieces apart along the intersection curve, so `validate`
-# reports duplicate vertices there; compute `a - b` and `b - a` separately when you need solids.
+# symmetric difference holds `a - b` and `b - a` as separate shells that touch along the intersection curve.
+# Contact between shells is information, not a defect: the result is a valid solid, and it chains into further
+# booleans.
 
 # %%
 same = [orebody.symmetric_difference(block), wf.symmetric_difference(orebody, block)]
 assert all(np.array_equal(m.triangles, parts["a ^ b"].triangles) for m in same)
-print(parts["a ^ b"].validate().summary["duplicate_vertices"], "duplicate vertices along the curve")
+s = parts["a ^ b"].validate().summary
+print(f"{s['shells']} shells, {s['touching_shell_edges']} touching edges, solid: {s['is_solid']}")
+assert s["is_solid"] and abs(sym - (a + b - 2 * inter)) <= 1e-9 * (a + b)
+again = parts["a ^ b"] | block
+assert again.is_solid and abs(again.volume - union) <= 1e-9 * union
 
 # %% [markdown]
 # A section along strike shows where each part of the outline came from.

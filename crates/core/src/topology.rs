@@ -225,6 +225,204 @@ impl HalfEdges {
     }
 }
 
+/// How the oriented faces around one edge bound solid wedges.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Radial {
+    /// `[i, j]` per wedge of solid: face `i` runs against the edge and `j`,
+    /// the next face counter-clockwise about the edge direction, runs along it.
+    Paired(Vec<[usize; 2]>),
+    /// Two faces lie in the same half-plane.
+    Coincident,
+    /// Directions do not alternate around the edge.
+    Unbalanced,
+}
+
+/// Pairs oriented faces around one edge into the wedges of solid they bound.
+/// `forward[i]`: face `i` runs the edge along its direction. `turn(a, b)`:
+/// sign of the rotation from face `a`'s half-plane to face `b`'s about the
+/// edge direction, positive when `b` lies less than a half turn
+/// counter-clockwise. `same(a, b)`: whether two half-planes of one plane
+/// coincide; asked only when `turn` is zero. Both must be exact.
+pub fn radial_pairs(
+    forward: &[bool],
+    turn: impl Fn(usize, usize) -> Sign,
+    same: impl Fn(usize, usize) -> bool,
+) -> Radial {
+    let n = forward.len();
+    if n == 0 || n % 2 == 1 {
+        return Radial::Unbalanced;
+    }
+    let half: Vec<u8> = (0..n)
+        .map(|i| match (i, turn(0, i)) {
+            (0, _) => 0,
+            (_, Sign::Positive) => 1,
+            (_, Sign::Negative) => 3,
+            (_, Sign::Zero) if same(0, i) => 0,
+            _ => 2,
+        })
+        .collect();
+    if half[1..].contains(&0) || half.iter().filter(|&&h| h == 2).count() > 1 {
+        return Radial::Coincident;
+    }
+    let mut order: Vec<usize> = (0..n).collect();
+    order.sort_by(|&a, &b| {
+        half[a].cmp(&half[b]).then_with(|| match turn(a, b) {
+            Sign::Positive => std::cmp::Ordering::Less,
+            Sign::Negative => std::cmp::Ordering::Greater,
+            Sign::Zero => a.cmp(&b),
+        })
+    });
+    if order
+        .windows(2)
+        .any(|w| half[w[0]] == half[w[1]] && turn(w[0], w[1]) != Sign::Positive)
+    {
+        return Radial::Coincident;
+    }
+    if (0..n).any(|k| forward[order[k]] == forward[order[(k + 1) % n]]) {
+        return Radial::Unbalanced;
+    }
+    Radial::Paired(
+        (0..n)
+            .filter(|&k| !forward[order[k]])
+            .map(|k| [order[k], order[(k + 1) % n]])
+            .collect(),
+    )
+}
+
+/// [`radial_pairs`] for faces of `mesh` around the edge whose endpoints have
+/// the coordinates `p` and `q`, its direction `q - p`. Every face must have
+/// one corner exactly at `p`, one at `q` and a third one off their line.
+pub fn radial_pairs_at(mesh: &Mesh, faces: &[u32], p: [f64; 3], q: [f64; 3]) -> Radial {
+    let key = |x: [f64; 3]| x.map(|c| crate::tolerance::canonical(c).to_bits());
+    let (kp, kq) = (key(p), key(q));
+    let mut forward = vec![];
+    let mut third = vec![];
+    for &f in faces {
+        let c = mesh.corners(f);
+        let at = |k: [u64; 3]| {
+            (0..3)
+                .find(|&i| key(c[i]) == k)
+                .expect("corner on the edge")
+        };
+        let (i, j) = (at(kp), at(kq));
+        forward.push((i + 1) % 3 == j);
+        third.push(c[3 - i - j]);
+    }
+    let turn = |a: usize, b: usize| side_of_plane(third[b], p, q, third[a]);
+    let same = |a: usize, b: usize| {
+        let o = |r: [f64; 3], k: usize| Sign::of(crate::predicates::orient2d_axis(p, q, r, k));
+        let k = (0..3)
+            .find(|&k| o(third[a], k) != Sign::Zero)
+            .expect("third corner off the edge");
+        o(third[a], k) == o(third[b], k)
+    };
+    radial_pairs(&forward, turn, same)
+}
+
+/// Shells of a mesh: faces joined across edges with two faces, and across
+/// edges with more faces in the pairs [`radial_pairs_at`] finds there.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Shells {
+    /// Shell per face, numbered by first face; `u32::MAX` for faces `edges` skips.
+    pub of: Vec<u32>,
+    pub count: usize,
+    /// Edges with more than two faces that do not pair, or whose pairs put
+    /// one shell on the edge more than once.
+    pub non_manifold: Vec<u32>,
+    /// Edges with more than two faces whose pairs each bound a different shell.
+    pub contacts: Vec<u32>,
+    paired: std::collections::HashMap<u32, Vec<[u32; 2]>>,
+}
+
+impl Shells {
+    pub fn new(mesh: &Mesh, edges: &EdgeMap) -> Shells {
+        let n = mesh.n_faces();
+        let mut parent: Vec<u32> = (0..n as u32).collect();
+        fn root(parent: &mut [u32], mut i: u32) -> u32 {
+            while parent[i as usize] != i {
+                parent[i as usize] = parent[parent[i as usize] as usize];
+                i = parent[i as usize];
+            }
+            i
+        }
+        let join = |parent: &mut [u32], a: u32, b: u32| {
+            let (a, b) = (root(parent, a), root(parent, b));
+            parent[a.max(b) as usize] = a.min(b);
+        };
+        let mut paired = std::collections::HashMap::new();
+        let mut non_manifold = vec![];
+        for id in 0..edges.edges.len() as u32 {
+            let fs = edges.faces_of_edge(id);
+            if fs.len() <= 2 {
+                for &g in &fs[1..] {
+                    join(&mut parent, fs[0], g);
+                }
+                continue;
+            }
+            let [a, b] = edges.edges[id as usize].map(|i| mesh.vertices()[i as usize]);
+            match radial_pairs_at(mesh, fs, a, b) {
+                Radial::Paired(pairs) => {
+                    let pairs: Vec<[u32; 2]> = pairs.iter().map(|p| p.map(|k| fs[k])).collect();
+                    for p in &pairs {
+                        join(&mut parent, p[0], p[1]);
+                    }
+                    paired.insert(id, pairs);
+                }
+                _ => {
+                    for &g in &fs[1..] {
+                        join(&mut parent, fs[0], g);
+                    }
+                    non_manifold.push(id);
+                }
+            }
+        }
+        let mut contacts = vec![];
+        let mut ids: Vec<u32> = paired.keys().copied().collect();
+        ids.sort_unstable();
+        for id in ids {
+            let mut roots: Vec<u32> = paired[&id]
+                .iter()
+                .map(|p| root(&mut parent, p[0]))
+                .collect();
+            roots.sort_unstable();
+            if roots.windows(2).any(|w| w[0] == w[1]) {
+                paired.remove(&id);
+                non_manifold.push(id);
+            } else {
+                contacts.push(id);
+            }
+        }
+        non_manifold.sort_unstable();
+        let mut of = vec![u32::MAX; n];
+        let mut label: std::collections::HashMap<u32, u32> = std::collections::HashMap::new();
+        for f in 0..n {
+            if edges.face_edges[f][0] == u32::MAX {
+                continue;
+            }
+            let r = root(&mut parent, f as u32);
+            let next = label.len() as u32;
+            of[f] = *label.entry(r).or_insert(next);
+        }
+        Shells {
+            of,
+            count: label.len(),
+            non_manifold,
+            contacts,
+            paired,
+        }
+    }
+
+    /// Face pairs joined across edge `id`: both faces of a two-face edge, the
+    /// radial pairs of a contact, and every face with the first otherwise.
+    pub fn links(&self, edges: &EdgeMap, id: u32) -> Vec<[u32; 2]> {
+        if let Some(p) = self.paired.get(&id) {
+            return p.clone();
+        }
+        let fs = edges.faces_of_edge(id);
+        fs[1.min(fs.len())..].iter().map(|&g| [fs[0], g]).collect()
+    }
+}
+
 /// Sign of `orient2d(a, b, p)` with `p` moved to `p + (e, e^2)` for an
 /// infinitesimal `e > 0`, so it is never zero when `a != b`.
 fn perturbed_orient(a: [f64; 2], b: [f64; 2], p: [f64; 2]) -> Sign {
