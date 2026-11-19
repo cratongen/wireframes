@@ -376,7 +376,6 @@ def test_dxf_cp1252_layer_names_before_2007_and_utf8_after(tmp_path):
         assert wf.read_mesh(tmp_path / f"{version}.dxf")["layer"].tolist() == ["MINÉRIO"] * 4
 
 
-@pytest.mark.skip(reason="acceptance: dxf reads paper space entities into the model mesh")
 def test_dxf_paper_space_entities_stay_out_of_the_model(tmp_path):
     paper = "".join(face3d(TET + 100, t, layer="TITLE", extra=g(67, 1)) for t in TET_FACES)
     (tmp_path / "p.dxf").write_bytes(dxf(tet_dxf() + paper).encode())
@@ -384,20 +383,17 @@ def test_dxf_paper_space_entities_stay_out_of_the_model(tmp_path):
     assert m.n_faces == 4 and m["layer"].tolist() == ["ORE"] * 4
 
 
-@pytest.mark.skip(reason="acceptance: dxf with a utf-8 byte order mark is refused")
 def test_dxf_with_a_byte_order_mark_reads(tmp_path):
     (tmp_path / "bom.dxf").write_bytes(("﻿" + dxf(tet_dxf())).encode("utf-8"))
     assert wf.read_mesh(tmp_path / "bom.dxf").volume == pytest.approx(TET_VOLUME, rel=1e-15)
 
 
-@pytest.mark.skip(reason="acceptance: dxf mesh with smoothing levels reads its cage without a warning")
 def test_dxf_smoothed_mesh_warns_that_only_the_cage_is_read(tmp_path):
     (tmp_path / "s.dxf").write_bytes(dxf(subd_mesh(TET, TET_FACES, level=2)).encode())
     data = wf.read(tmp_path / "s.dxf")
     assert any("MESH" in w or "smooth" in w or "subdivision" in w for w in data.warnings)
 
 
-@pytest.mark.skip(reason="acceptance: dxf entity errors do not name the line")
 @pytest.mark.parametrize(
     "text",
     [

@@ -123,12 +123,17 @@ fn group_err(g: &Group, m: String) -> Error {
 
 impl Group {
     fn f64(&self) -> Result<f64> {
-        self.value.trim().parse::<f64>().map_err(|_| {
-            group_err(
+        match self.value.trim().parse::<f64>() {
+            Ok(x) if x.is_finite() => Ok(x),
+            Ok(_) => Err(group_err(
+                self,
+                format!("group {} value {:?} is not finite", self.code, self.value),
+            )),
+            Err(_) => Err(group_err(
                 self,
                 format!("group {} value {:?} is not a number", self.code, self.value),
-            )
-        })
+            )),
+        }
     }
 
     fn i64(&self) -> Result<i64> {
@@ -354,6 +359,8 @@ struct Out {
     point_color: Vec<i64>,
     skipped: BTreeMap<String, usize>,
     bulges: usize,
+    paper: usize,
+    smoothed: usize,
     short_parts: usize,
     short_faces: usize,
 }
@@ -414,7 +421,7 @@ fn xdata_feature(body: &[Group]) -> Result<Option<i64>> {
         .transpose()
 }
 
-fn polyline(out: &mut Out, head: &[Group], verts: &[&[Group]]) -> Result<()> {
+fn polyline(out: &mut Out, start: &Group, head: &[Group], verts: &[&[Group]]) -> Result<()> {
     let flags = i_or(head, 70, 0)?;
     let lay = layer(head);
     let col = color(head)?;
@@ -435,12 +442,18 @@ fn polyline(out: &mut Out, head: &[Group], verts: &[&[Group]]) -> Result<()> {
             }
             let mut ids = Vec::with_capacity(4);
             for code in 71..=74 {
-                let k = i_or(v, code, 0)?.unsigned_abs() as usize;
+                let Some(g) = first(v, code) else {
+                    continue;
+                };
+                let k = g.i64()?.unsigned_abs() as usize;
                 if k == 0 {
                     continue;
                 }
                 let id = *local.get(k - 1).ok_or_else(|| {
-                    Error::format(format!("polyface face uses vertex {k} of {}", local.len()))
+                    group_err(
+                        g,
+                        format!("polyface face uses vertex {k} of {}", local.len()),
+                    )
                 })?;
                 ids.push(id);
             }
@@ -476,10 +489,13 @@ fn polyline(out: &mut Out, head: &[Group], verts: &[&[Group]]) -> Result<()> {
         }
         let (m, n) = (m.max(0) as usize, n.max(0) as usize);
         if m.checked_mul(n) != Some(grid.len()) {
-            return Err(Error::format(format!(
-                "polygon mesh declares {m} x {n} vertices but has {}",
-                grid.len()
-            )));
+            return Err(group_err(
+                start,
+                format!(
+                    "polygon mesh declares {m} x {n} vertices but has {}",
+                    grid.len()
+                ),
+            ));
         }
         let (wrap_m, wrap_n) = (flags & 1 != 0, flags & 32 != 0);
         let rows = if wrap_m { m } else { m.saturating_sub(1) };
@@ -552,24 +568,29 @@ fn lwpolyline(out: &mut Out, body: &[Group]) -> Result<()> {
     out.part(pts, i_or(body, 70, 0)? & 1 != 0, body)
 }
 
-fn mesh_entity(out: &mut Out, body: &[Group]) -> Result<()> {
-    let bad = |m: &str| Error::format(format!("MESH entity: {m}"));
+fn mesh_entity(out: &mut Out, head: &Group, body: &[Group]) -> Result<()> {
+    let bad = |g: &Group, m: &str| group_err(g, format!("MESH entity: {m}"));
     let mut verts: Option<Vec<u32>> = None;
-    let mut list: Option<Vec<i64>> = None;
+    let mut list: Option<&[Group]> = None;
+    let mut smoothed = false;
     let mut j = 0;
     while j < body.len() {
-        match body[j].code {
+        let at = &body[j];
+        match at.code {
+            91 if verts.is_none() => {
+                smoothed |= at.i64()? > 0;
+                j += 1;
+            }
             92 if verts.is_none() => {
-                let n =
-                    usize::try_from(body[j].i64()?).map_err(|_| bad("negative vertex count"))?;
+                let n = usize::try_from(at.i64()?).map_err(|_| bad(at, "negative vertex count"))?;
                 j += 1;
                 if n.checked_mul(3).is_none_or(|k| j + k > body.len()) {
-                    return Err(bad("vertex list ends early"));
+                    return Err(bad(at, "vertex list ends early"));
                 }
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     if body[j].code != 10 || body[j + 1].code != 20 || body[j + 2].code != 30 {
-                        return Err(bad("expected vertex groups 10, 20, 30"));
+                        return Err(bad(&body[j], "expected vertex groups 10, 20, 30"));
                     }
                     let p = [body[j].f64()?, body[j + 1].f64()?, body[j + 2].f64()?];
                     v.push(out.vid(p));
@@ -579,39 +600,39 @@ fn mesh_entity(out: &mut Out, body: &[Group]) -> Result<()> {
             }
             93 if list.is_none() => {
                 let n =
-                    usize::try_from(body[j].i64()?).map_err(|_| bad("negative face list size"))?;
+                    usize::try_from(at.i64()?).map_err(|_| bad(at, "negative face list size"))?;
                 j += 1;
                 if j + n > body.len() {
-                    return Err(bad("face list ends early"));
+                    return Err(bad(at, "face list ends early"));
                 }
-                let mut l = Vec::with_capacity(n);
                 for g in &body[j..j + n] {
                     if g.code != 90 {
-                        return Err(bad("expected face list group 90"));
+                        return Err(bad(g, "expected face list group 90"));
                     }
-                    l.push(g.i64()?);
                 }
+                list = Some(&body[j..j + n]);
                 j += n;
-                list = Some(l);
             }
             _ => j += 1,
         }
     }
+    out.smoothed += usize::from(smoothed);
     let verts = verts.unwrap_or_default();
     let list = list.unwrap_or_default();
     let (lay, col) = (layer(body), color(body)?);
     let mut i = 0;
     while i < list.len() {
-        let n = usize::try_from(list[i]).map_err(|_| bad("negative face size"))?;
+        let n = usize::try_from(list[i].i64()?).map_err(|_| bad(&list[i], "negative face size"))?;
         let ids = list
             .get(i + 1..i + 1 + n)
-            .ok_or_else(|| bad("face list ends inside a face"))?
+            .ok_or_else(|| bad(list.last().unwrap_or(head), "face list ends inside a face"))?
             .iter()
-            .map(|&k| {
+            .map(|g| {
+                let k = g.i64()?;
                 usize::try_from(k)
                     .ok()
                     .and_then(|k| verts.get(k).copied())
-                    .ok_or_else(|| bad(&format!("face uses vertex {k} of {}", verts.len())))
+                    .ok_or_else(|| bad(g, &format!("face uses vertex {k} of {}", verts.len())))
             })
             .collect::<Result<Vec<u32>>>()?;
         if ids.len() < 3 {
@@ -660,7 +681,7 @@ pub fn read(r: &[u8]) -> Result<Data> {
     let binary = r.starts_with(BINARY_SENTINEL);
     let groups = match r.strip_prefix(BINARY_SENTINEL) {
         Some(rest) => binary_groups(rest)?,
-        None => ascii_groups(r)?,
+        None => ascii_groups(r.strip_prefix(b"\xEF\xBB\xBF").unwrap_or(r))?,
     };
     let ends_with_eof = groups
         .last()
@@ -714,6 +735,18 @@ pub fn read(r: &[u8]) -> Result<Data> {
     while k < entities.len() {
         let (kind, head, body) = entities[k];
         k += 1;
+        if i_or(body, 67, 0)? == 1 && !matches!(kind, "VERTEX" | "SEQEND") {
+            out.paper += 1;
+            if kind == "POLYLINE" {
+                while k < entities.len() && entities[k].0 == "VERTEX" {
+                    k += 1;
+                }
+                if k < entities.len() && entities[k].0 == "SEQEND" {
+                    k += 1;
+                }
+            }
+            continue;
+        }
         match kind {
             "3DFACE" => {
                 let c = [
@@ -742,7 +775,7 @@ pub fn read(r: &[u8]) -> Result<Data> {
                 if k < entities.len() && entities[k].0 == "SEQEND" {
                     k += 1;
                 }
-                polyline(&mut out, body, &verts)?;
+                polyline(&mut out, head, body, &verts)?;
             }
             "LWPOLYLINE" => lwpolyline(&mut out, body)?,
             "LINE" => {
@@ -754,7 +787,7 @@ pub fn read(r: &[u8]) -> Result<Data> {
                 out.point_layer.push(layer(body));
                 out.point_color.push(color(body)?);
             }
-            "MESH" if !binary => mesh_entity(&mut out, body)?,
+            "MESH" if !binary => mesh_entity(&mut out, head, body)?,
             "VERTEX" | "SEQEND" => {}
             other => *out.skipped.entry(other.to_string()).or_default() += 1,
         }
@@ -768,6 +801,19 @@ pub fn read(r: &[u8]) -> Result<Data> {
         warnings.push(format!(
             "ignored nonzero bulge on {} polyline vertices; arcs read as straight segments",
             out.bulges
+        ));
+    }
+    if out.paper > 0 {
+        warnings.push(format!(
+            "skipped {} paper space entities (group 67 = 1); only model space is read",
+            out.paper
+        ));
+    }
+    if out.smoothed > 0 {
+        warnings.push(format!(
+            "read the level-0 cage of {} MESH entities with a smoothing level above 0; \
+             CAD shows the subdivided surface, which is not read",
+            out.smoothed
         ));
     }
     if out.short_parts > 0 {
@@ -1088,6 +1134,64 @@ mod tests {
         let e = read(cut.as_bytes()).unwrap_err().to_string();
         assert!(e.contains("line 26") && e.contains("EOF"), "{e}");
         assert!(read(b"").is_err());
+    }
+
+    #[test]
+    fn paper_space_entities_are_skipped_with_a_warning() {
+        let two = face(CORNERS).replace(
+            "0\nENDSEC",
+            &format!("0\n3DFACE\n8\nTITLE\n67\n1\n{CORNERS}0\nPOLYLINE\n67\n1\n70\n8\n0\nVERTEX\n10\n0\n20\n0\n30\n0\n0\nSEQEND\n0\nENDSEC"),
+        );
+        let d = read(two.as_bytes()).unwrap();
+        assert_eq!(d.mesh.unwrap().n_faces(), 1);
+        assert!(d.polylines.is_none());
+        assert_eq!(
+            d.warnings,
+            ["skipped 2 paper space entities (group 67 = 1); only model space is read"]
+        );
+    }
+
+    #[test]
+    fn a_utf8_byte_order_mark_is_skipped() {
+        let mut b = b"\xEF\xBB\xBF".to_vec();
+        b.extend(face(CORNERS).bytes());
+        assert_eq!(read(&b).unwrap().mesh.unwrap().n_faces(), 1);
+    }
+
+    fn mesh(level: i64, count: &str, face: &str) -> String {
+        let v = "10\n0\n20\n0\n30\n0\n10\n1\n20\n0\n30\n0\n10\n0\n20\n1\n30\n0\n";
+        format!(
+            "0\nSECTION\n2\nENTITIES\n0\nMESH\n8\nA\n71\n2\n72\n0\n91\n{level}\n92\n{count}\n{v}93\n4\n90\n3\n{face}0\nENDSEC\n0\nEOF\n"
+        )
+    }
+
+    #[test]
+    fn a_smoothed_mesh_warns_that_only_its_cage_is_read() {
+        let flat = read(mesh(0, "3", "90\n0\n90\n1\n90\n2\n").as_bytes()).unwrap();
+        assert!(flat.warnings.is_empty());
+        let smooth = read(mesh(2, "3", "90\n0\n90\n1\n90\n2\n").as_bytes()).unwrap();
+        assert_eq!(smooth.mesh.unwrap().n_faces(), 1);
+        assert!(smooth.warnings[0].contains("level-0 cage of 1 MESH"));
+    }
+
+    #[test]
+    fn entity_errors_name_the_line_of_the_group() {
+        let e = |s: String| read(s.as_bytes()).unwrap_err().to_string();
+        let count = e(mesh(0, "2000000000", "90\n0\n90\n1\n90\n2\n"));
+        assert!(
+            count.starts_with("line 16: MESH entity: vertex list ends early"),
+            "{count}"
+        );
+        let index = e(mesh(0, "3", "90\n0\n90\n9\n90\n2\n"));
+        assert!(
+            index.starts_with("line 42: MESH entity: face uses vertex 9"),
+            "{index}"
+        );
+        let nan = e(face(&CORNERS.replace("21\n0\n", "21\nnan\n")));
+        assert!(
+            nan.starts_with("line 18: group 21 value \"nan\" is not finite"),
+            "{nan}"
+        );
     }
 
     #[test]
