@@ -399,6 +399,49 @@ fn slicing_and_splitting_touching_shells() {
 }
 
 #[test]
+fn a_cavity_touching_the_outer_shell_at_its_vertices() {
+    let m = fixtures::vertex_touching_cavity();
+    let want = 4.5 - 1.0 / 6.0;
+    assert!(close(volume(&m), want));
+    let part = |outer: bool| {
+        let keep: Vec<bool> = (0..m.n_faces()).map(|f| (f < 12) == outer).collect();
+        m.filter_faces(&keep).unwrap()
+    };
+    let (outer, inner) = (part(true), fixtures::flipped(&part(false)));
+    let d = run(&outer, &inner, Op::Difference);
+    let s = summary(&d);
+    assert_eq!(
+        (s.shells, s.inward_shells, s.touching_shell_vertices),
+        (2, 0, 4),
+        "{s:?}"
+    );
+    assert!(close(volume(&d), want));
+    let side = fixtures::box_mesh([1.5, -1.0, -1.0], [4.0, 4.0, 4.0]);
+    check_identities(&m, &side);
+    let cut = fixtures::box_mesh([-1.0, -1.0, 0.5], [4.0, 4.0, 4.0]);
+    let e = boolean(&m, &cut, Op::Intersection, &BooleanOptions::default()).unwrap_err();
+    assert!(e.to_string().contains("touches itself"), "{e}");
+    let u = run(&m, &inner, Op::Union);
+    assert!(close(volume(&u), 4.5));
+
+    let big = fixtures::box_mesh([0.0; 3], [4.0; 3]);
+    let tip = fixtures::tetrahedron();
+    let tip = tip
+        .clone()
+        .with_vertices([[0.0; 3], [2.0, 1.0, 1.0], [1.0, 2.0, 1.0], [1.0, 1.0, 2.0]].to_vec())
+        .unwrap();
+    let tip = if volume(&tip) < 0.0 {
+        fixtures::flipped(&tip)
+    } else {
+        tip
+    };
+    let d = run(&big, &tip, Op::Difference);
+    let s = summary(&d);
+    assert_eq!((s.shells, s.touching_shell_vertices), (2, 1), "{s:?}");
+    assert!(close(volume(&d), 64.0 - volume(&tip)));
+}
+
+#[test]
 fn split_through_a_lone_vertex_on_the_plane() {
     let (a, b) = split_by_plane(&fixtures::cube(), [1.0; 3], [1.0; 3]).unwrap();
     assert_eq!((a.n_faces(), b.n_faces()), (12, 0));

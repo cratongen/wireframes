@@ -582,8 +582,12 @@ Semantics:
   vertex of one shell on the interior of another shell's edge or face stays a
   `SelfIntersection`.
 - InwardShell: per closed, consistently wound shell, nesting depth = number of other
-  closed shells containing one of its vertices (exact point-in-shell, section 7.1
-  rule). Even depth must have positive signed volume, odd depth negative.
+  closed shells containing it (`topology::shell_location`: the first of its vertices
+  off the other shell, exact point-in-shell by the section 7.1 rule; when every
+  vertex lies on the other shell, as for a cavity touching it at all its vertices,
+  the first exact point inside one of its edges that is off it). Even depth must
+  have positive signed volume, odd depth negative. `repair` orients by the same
+  depth.
 - SelfIntersection: a pair of non-degenerate faces with `tri_tri` = `Cross` or
   `Touch` where the faces share no vertex, or share exactly one vertex and meet
   elsewhere too, or share an edge and are not coplanar but meet elsewhere (cannot
@@ -1695,7 +1699,12 @@ These refine the sections above; where they differ, this section wins.
   feature_offsets}`; `Bvh::{is_empty, item_box}`; `validate::{degenerate_mask,
   earliest_within}`; `topology::{locate_point, ray_crosses}` (the section 7.1
   ray rule, brute force over a face list: core needs it for `InwardShell`, ops for
-  orientation in `repair`; query adds the BVH).
+  orientation in `repair`; query adds the BVH); `topology::locate_implicit` (the
+  same rule for an exact `ImplicitPoint`) and `topology::shell_location(vertices,
+  inner, outer) -> Option<i8>` (nesting of one closed shell in another; a point
+  inside an edge is the `Lpi` of the edge with the axis plane through a float
+  strictly between two of its coordinates; `None` when every vertex and edge lies
+  on `outer`).
 - `orient3d_i(a, b, c, d)` has the sign of `det[a - d; b - d; c - d]`, the
   convention of `predicates::orient3d`.
 - `tri_tri`: `Touch` means the intersection lies in both boundaries; `Cross`
@@ -1715,7 +1724,9 @@ These refine the sections above; where they differ, this section wins.
   duplicate_vertex, unused_vertex, non_manifold_fin, bowtie, edge_overlapping_shells,
   flipped_face, inward_cube, overlapping_cubes, touching_cubes, folded_face}`.
   Valid solids with shell contacts: `touching_tetrahedra` (one shared vertex index),
-  `edge_touching_cubes(welded)` and `vertex_touching_cubes`.
+  `edge_touching_cubes(welded)`, `vertex_touching_cubes` and
+  `vertex_touching_cavity` (a tetrahedron with its faces split at their centroids
+  and the inward cavity spanned by those four centroids).
 - Not done in core: the semi-static floating filter in front of the `exact`
   predicates (they always evaluate with expansions; results are exact, speed
   not measured).

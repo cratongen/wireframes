@@ -4,7 +4,7 @@ use rayon::prelude::*;
 
 use crate::intersect::{SegTri, TriTri, seg_tri, tri_tri};
 use crate::predicates::collinear3;
-use crate::topology::{Radial, Shells, locate_point, radial_pairs_at};
+use crate::topology::{Radial, Shells, radial_pairs_at, shell_location};
 use crate::{Aabb, Bvh, EdgeMap, Mesh, Result, tolerance};
 
 /// Declaration order is the sort order of problems.
@@ -527,12 +527,7 @@ pub fn validate(mesh: &Mesh, tolerance: f64) -> Result<MeshReport> {
                     let (tf, tb, _) = &closed[t];
                     let fits =
                         (0..3).all(|k| tb.min[k] <= bounds.min[k] && bounds.max[k] <= tb.max[k]);
-                    fits && faces
-                        .iter()
-                        .flatten()
-                        .map(|&i| locate_point(v, tf, v[i as usize]))
-                        .find(|&l| l != 0)
-                        == Some(-1)
+                    fits && shell_location(v, faces, tf) == Some(-1)
                 })
                 .count();
             (depth % 2 == 0) != (*vol > 0.0)
@@ -746,6 +741,25 @@ mod tests {
         }
         let s = summary(&fixtures::cube());
         assert_eq!((s.touching_shell_edges, s.touching_shell_vertices), (0, 0));
+    }
+
+    #[test]
+    fn a_cavity_touching_at_every_vertex_nests_by_an_edge_point() {
+        let m = fixtures::vertex_touching_cavity();
+        let r = validate(&m, 0.0).unwrap();
+        assert!(r.summary.is_solid(), "{:?}", r.problems);
+        assert_eq!(
+            (r.summary.shells, r.summary.touching_shell_vertices),
+            (2, 4)
+        );
+        let outward: Vec<[u32; 3]> = m
+            .triangles()
+            .iter()
+            .enumerate()
+            .map(|(f, &[a, b, c])| if f < 12 { [a, b, c] } else { [a, c, b] })
+            .collect();
+        let s = summary(&Mesh::new(m.vertices().to_vec(), outward).unwrap());
+        assert_eq!(s.inward_shells, 1, "{s:?}");
     }
 
     #[test]

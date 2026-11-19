@@ -308,6 +308,39 @@ pub fn vertex_touching_cubes() -> Mesh {
     Mesh::concat(&[&cube(), &translated(&cube(), [1.0, 1.0, 1.0])]).expect("no labels")
 }
 
+/// The tetrahedron scaled by 3 with each face split at its centroid, and the
+/// cavity spanned by the four centroids, wound inward: a cavity touching the
+/// outer shell at every vertex it has, with coincident copies. Volume
+/// `4.5 - 1 / 6`.
+pub fn vertex_touching_cavity() -> Mesh {
+    let t = tetrahedron();
+    let mut v: Vec<[f64; 3]> = t.vertices().iter().map(|p| p.map(|x| 3.0 * x)).collect();
+    let mut f = vec![];
+    for &[a, b, c] in t.triangles() {
+        let i = v.len() as u32;
+        v.push([0, 1, 2].map(|k| (v[a as usize][k] + v[b as usize][k] + v[c as usize][k]) / 3.0));
+        f.extend([[a, b, i], [b, c, i], [c, a, i]]);
+    }
+    let inner: Vec<[f64; 3]> = v[4..8].to_vec();
+    let base = v.len() as u32;
+    v.extend_from_slice(&inner);
+    for skip in 0..4 {
+        let [a, b, c] = [0, 1, 2].map(|k| (skip + 1 + k) % 4);
+        let p = [a, b, c, skip].map(|i| inner[i]);
+        let d = |i: usize| [0, 1, 2].map(|k| p[i][k] - p[0][k]);
+        let (u, w, x) = (d(1), d(2), d(3));
+        let n = [
+            u[1] * w[2] - u[2] * w[1],
+            u[2] * w[0] - u[0] * w[2],
+            u[0] * w[1] - u[1] * w[0],
+        ];
+        let inward = n[0] * x[0] + n[1] * x[1] + n[2] * x[2] > 0.0;
+        let t = [a, b, c].map(|i| base + i as u32);
+        f.push(if inward { t } else { [t[0], t[2], t[1]] });
+    }
+    mesh(v, f)
+}
+
 /// Meshes with one deliberate defect each.
 pub mod broken {
     use super::*;

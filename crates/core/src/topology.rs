@@ -1,6 +1,7 @@
 use crate::Mesh;
+use crate::exact::{ImplicitPoint, orient2d_i, orient3d_i};
 use crate::intersect::point_in_triangle;
-use crate::predicates::{Sign, orient2d, side_of_plane};
+use crate::predicates::{Sign, orient2d, projection_axis, side_of_plane};
 use crate::{Error, Result};
 
 /// Undirected edges of a mesh with face and vertex incidence in CSR form.
@@ -466,6 +467,79 @@ pub fn ray_crosses(c: [[f64; 3]; 3], p: [f64; 3]) -> bool {
     side_of_plane(p, c[0], c[1], c[2]) == s.flip()
 }
 
+/// [`locate_point`] for an exact implicit point, with the same ray and
+/// perturbation.
+pub fn locate_implicit(vertices: &[[f64; 3]], faces: &[[u32; 3]], p: &ImplicitPoint) -> i8 {
+    let x = ImplicitPoint::Explicit;
+    let corners = |t: &[u32; 3]| t.map(|i| vertices[i as usize]);
+    let side = |c: [[f64; 3]; 3]| orient3d_i(p, c[1], c[2], c[0]);
+    let on = |c: [[f64; 3]; 3]| {
+        side(c) == Sign::Zero
+            && projection_axis(c).is_some_and(|k| {
+                let s = orient2d_i(&x(c[0]), &x(c[1]), &x(c[2]), k);
+                (0..3).all(|i| orient2d_i(&x(c[i]), &x(c[(i + 1) % 3]), p, k) != s.flip())
+            })
+    };
+    if faces.iter().any(|t| on(corners(t))) {
+        return 0;
+    }
+    let crosses = |c: [[f64; 3]; 3]| {
+        let s = orient2d_i(&x(c[0]), &x(c[1]), &x(c[2]), 2);
+        let plan = |a: [f64; 3], b: [f64; 3]| match orient2d_i(&x(a), &x(b), p, 2) {
+            Sign::Zero => match Sign::of(a[1] - b[1]) {
+                Sign::Zero => Sign::of(b[0] - a[0]),
+                t => t,
+            },
+            t => t,
+        };
+        s != Sign::Zero && (0..3).all(|i| plan(c[i], c[(i + 1) % 3]) == s) && side(c) == s.flip()
+    };
+    if faces.iter().filter(|t| crosses(corners(t))).count() % 2 == 1 {
+        -1
+    } else {
+        1
+    }
+}
+
+/// An exact point strictly inside the segment `pq`: where it meets the axis
+/// plane through a float strictly between two of its coordinates.
+fn inside_segment(p: [f64; 3], q: [f64; 3]) -> Option<ImplicitPoint> {
+    (0..3).find_map(|k| {
+        let (lo, hi) = (p[k].min(q[k]), p[k].max(q[k]));
+        let c = lo * 0.5 + hi * 0.5;
+        (lo < c && c < hi).then(|| {
+            let mut r = [0.0; 3];
+            r[k] = c;
+            let (mut s, mut t) = (r, r);
+            s[(k + 1) % 3] = 1.0;
+            t[(k + 2) % 3] = 1.0;
+            ImplicitPoint::Lpi { p, q, r, s, t }
+        })
+    })
+}
+
+/// Location of the closed shell `inner` against the closed shell `outer`: -1
+/// inside, 1 outside. Taken from the first vertex of `inner` off `outer`,
+/// else from an exact point inside the first edge of `inner` off `outer`
+/// (shells may touch at every vertex); `None` when all of those lie on `outer`.
+pub fn shell_location(vertices: &[[f64; 3]], inner: &[[u32; 3]], outer: &[[u32; 3]]) -> Option<i8> {
+    let v = |i: u32| vertices[i as usize];
+    if let Some(l) = inner
+        .iter()
+        .flatten()
+        .map(|&i| locate_point(vertices, outer, v(i)))
+        .find(|&l| l != 0)
+    {
+        return Some(l);
+    }
+    inner
+        .iter()
+        .flat_map(|t| (0..3).map(move |e| (t[e], t[(e + 1) % 3])))
+        .filter_map(|(a, b)| inside_segment(v(a), v(b)))
+        .map(|p| locate_implicit(vertices, outer, &p))
+        .find(|&l| l != 0)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -537,6 +611,18 @@ mod tests {
             let on = p.iter().all(|&x| (0.0..=1.0).contains(&x)) && !inside;
             let want = if inside { -1 } else if on { 0 } else { 1 };
             proptest::prop_assert_eq!(locate_point(m.vertices(), m.triangles(), p), want);
+        }
+
+        #[test]
+        fn locate_implicit_matches_locate_point(g in proptest::array::uniform3(-2i32..=14), which in 0usize..3) {
+            let m = [fixtures::cube(), fixtures::nested_shells(), fixtures::sphere(1)][which].clone();
+            let p = g.map(|x| x as f64 * 0.25 - 0.5);
+            let want = locate_point(m.vertices(), m.triangles(), p);
+            proptest::prop_assert_eq!(locate_implicit(m.vertices(), m.triangles(), &ImplicitPoint::Explicit(p)), want);
+            let q = [p[0] + 0.5, p[1], p[2] + 0.25];
+            let x = inside_segment(p, q).expect("coordinates far apart");
+            let at = x.to_f64();
+            proptest::prop_assert!(at[0] > p[0] && at[0] < q[0]);
         }
     }
 }

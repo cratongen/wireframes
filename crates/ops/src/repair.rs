@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use rayon::prelude::*;
 use wireframes_core::predicates::collinear3;
-use wireframes_core::topology::{Shells, locate_point};
+use wireframes_core::topology::{Shells, shell_location};
 use wireframes_core::validate::{degenerate_mask, earliest_within};
 use wireframes_core::{
     Aabb, EdgeMap, Mesh, MeshProblemKind, MeshSummary, Result, tolerance, validate,
@@ -242,12 +242,7 @@ fn orient(mesh: &Mesh) -> Vec<bool> {
                 .filter(|&t| {
                     let (a, b) = (&boxes[t], &boxes[s]);
                     (0..3).all(|k| a.min[k] <= b.min[k] && b.max[k] <= a.max[k])
-                        && face_lists[s]
-                            .iter()
-                            .flatten()
-                            .map(|&i| locate_point(v, &face_lists[t], v[i as usize]))
-                            .find(|&l| l != 0)
-                            == Some(-1)
+                        && shell_location(v, &face_lists[s], &face_lists[t]) == Some(-1)
                 })
                 .count();
             (depth % 2 == 0) != (vol > 0.0)
@@ -713,6 +708,7 @@ mod tests {
             fixtures::sphere(2),
             fixtures::torus(12, 8),
             fixtures::nested_shells(),
+            fixtures::vertex_touching_cavity(),
             fixtures::open_cube(),
             fixtures::pit_surface(12, 3),
         ] {

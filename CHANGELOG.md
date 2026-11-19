@@ -52,6 +52,9 @@ All notable changes to wireframes are listed here. The format follows
 
 ### Fixed
 
+- `validate` and `repair` no longer take a cavity that touches its outer shell
+  at every vertex it has for an inward shell; nesting falls back to an exact
+  point inside one of its edges.
 - `split_by_plane` no longer panics when a closed mesh meets the plane only at
   a vertex.
 
