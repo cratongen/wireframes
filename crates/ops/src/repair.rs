@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use rayon::prelude::*;
 use wireframes_core::predicates::collinear3;
-use wireframes_core::topology::locate_point;
+use wireframes_core::topology::{Shells, locate_point};
 use wireframes_core::validate::{degenerate_mask, earliest_within};
 use wireframes_core::{
     Aabb, EdgeMap, Mesh, MeshProblemKind, MeshSummary, Result, tolerance, validate,
@@ -26,6 +26,10 @@ pub struct RepairOptions {
     /// Consistent winding, outward by nesting parity.
     pub orient: bool,
     pub fill_holes: Option<HoleFill>,
+    /// Weld also merges the coincident vertices where closed shells touch,
+    /// which makes their contact share vertex indices. By default each closed
+    /// shell keeps its own vertices there.
+    pub weld_touching_shells: bool,
 }
 
 impl Default for RepairOptions {
@@ -37,6 +41,7 @@ impl Default for RepairOptions {
             remove_unused_vertices: true,
             orient: true,
             fill_holes: None,
+            weld_touching_shells: false,
         }
     }
 }
@@ -49,6 +54,12 @@ pub enum RepairAction {
     },
     VertexRemoved {
         vertex: u32,
+    },
+    /// Input `vertex` was shared by closed shells that touch there; output
+    /// vertex `copy` is the copy it gets for one more of them.
+    VertexSplit {
+        vertex: u32,
+        copy: u32,
     },
     /// `reason` is `DegenerateFace` or `DuplicateFace`; `face` indexes the input.
     FaceRemoved {
@@ -68,8 +79,10 @@ pub enum RepairAction {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct RepairReport {
-    /// In step order: weld, degenerate, duplicate, unused, orient, fill.
+    /// In step order: weld (merges, then splits), degenerate, duplicate,
+    /// unused, orient, fill.
     pub actions: Vec<RepairAction>,
+    /// Output vertex of each input vertex; a split vertex maps to its first copy.
     pub vertex_map: Vec<Option<u32>>,
     pub face_map: Vec<Option<u32>>,
     pub before: MeshSummary,
@@ -361,6 +374,50 @@ fn fill(v: &[[f64; 3]], p: &[u32], how: HoleFill) -> Vec<[u32; 3]> {
     out
 }
 
+const OPEN: u32 = u32::MAX - 1;
+const UNUSED: u32 = u32::MAX;
+
+/// Per face, the closed shell of `welded` it lies in when `split`, so each
+/// closed shell keeps its own vertices where it touches another; `OPEN` for
+/// every other face.
+fn shell_buckets(welded: &Mesh, keep: &[bool], degenerate: &[bool], split: bool) -> Vec<u32> {
+    let nf = welded.n_faces();
+    if !split {
+        return vec![OPEN; nf];
+    }
+    let skip: Vec<bool> = (0..nf).map(|f| !keep[f] || degenerate[f]).collect();
+    let edges = EdgeMap::new(welded, Some(&skip));
+    let shells = Shells::new(welded, &edges);
+    let tris = welded.triangles();
+    let mut closed = vec![true; shells.count];
+    for id in 0..edges.edges.len() as u32 {
+        let fs = edges.faces_of_edge(id);
+        let open = match *fs {
+            [_] => true,
+            [a, b] => {
+                let [p, q] = edges.edges[id as usize];
+                let dir = |f: u32| {
+                    let t = tris[f as usize];
+                    (0..3).any(|k| t[k] == p && t[(k + 1) % 3] == q)
+                };
+                dir(a) == dir(b)
+            }
+            _ => shells.non_manifold.binary_search(&id).is_ok(),
+        };
+        if open {
+            for &f in fs {
+                closed[shells.of[f as usize] as usize] = false;
+            }
+        }
+    }
+    (0..nf)
+        .map(|f| match shells.of[f] {
+            s if s != u32::MAX && closed[s as usize] => s,
+            _ => OPEN,
+        })
+        .collect()
+}
+
 pub fn repair(mesh: &Mesh, opts: &RepairOptions) -> Result<(Mesh, RepairReport)> {
     use MeshProblemKind::{DegenerateFace, DuplicateFace};
     let weld = opts.weld.map(|t| tolerance::check("weld", t)).transpose()?;
@@ -373,14 +430,6 @@ pub fn repair(mesh: &Mesh, opts: &RepairOptions) -> Result<(Mesh, RepairReport)>
         Some(t) => clusters(mesh.vertices(), t),
         None => (0..nv as u32).collect(),
     };
-    for (i, &r) in rep.iter().enumerate() {
-        if r != i as u32 {
-            actions.push(RepairAction::VertexMerged {
-                vertex: i as u32,
-                into: r,
-            });
-        }
-    }
     let welded = Mesh::new(
         mesh.vertices().to_vec(),
         mesh.triangles()
@@ -419,27 +468,91 @@ pub fn repair(mesh: &Mesh, opts: &RepairOptions) -> Result<(Mesh, RepairReport)>
         }
     }
 
-    let mut used = vec![false; nv];
-    for t in (0..nf).filter(|&f| keep[f]).map(|f| tris[f]) {
-        for i in t {
-            used[i as usize] = true;
+    let bucket = shell_buckets(
+        &welded,
+        &keep,
+        &degenerate,
+        weld.is_some() && !opts.weld_touching_shells,
+    );
+    let orig = mesh.triangles();
+    let kept_faces: Vec<u32> = (0..nf as u32).filter(|&f| keep[f as usize]).collect();
+    let mut first_row: HashMap<(u32, u32), u32> = HashMap::new();
+    for &f in &kept_faces {
+        for &j in &orig[f as usize] {
+            let row = first_row
+                .entry((rep[j as usize], bucket[f as usize]))
+                .or_insert(j);
+            *row = (*row).min(j);
         }
     }
-    let mut kept_vertices = vec![];
-    let mut new_index = vec![None; nv];
-    for i in 0..nv {
-        if rep[i] != i as u32 {
+    let mut by_cluster: HashMap<u32, Vec<(u32, u32)>> = HashMap::new();
+    for (&(c, b), &row) in &first_row {
+        by_cluster.entry(c).or_default().push((row, b));
+    }
+    let mut idents: Vec<(u32, u32, u32)> = vec![];
+    for (&c, list) in by_cluster.iter_mut() {
+        list.sort_unstable();
+        for (k, &(row, b)) in list.iter().enumerate() {
+            idents.push((if k == 0 { c } else { row }, b, c));
+        }
+    }
+    for c in (0..nv as u32).filter(|&c| rep[c as usize] == c && !by_cluster.contains_key(&c)) {
+        if opts.remove_unused_vertices {
             continue;
         }
-        if used[i] || !opts.remove_unused_vertices {
-            new_index[i] = Some(kept_vertices.len() as u32);
-            kept_vertices.push(i as u32);
-        } else {
-            actions.push(RepairAction::VertexRemoved { vertex: i as u32 });
+        idents.push((c, UNUSED, c));
+    }
+    idents.sort_unstable();
+    let mut out_of: HashMap<(u32, u32), u32> = HashMap::new();
+    let mut first_of_cluster: HashMap<u32, u32> = HashMap::new();
+    let mut kept_vertices = vec![];
+    let mut splits = vec![];
+    let mut seen_row: HashMap<u32, u32> = HashMap::new();
+    for (k, &(row, b, c)) in idents.iter().enumerate() {
+        out_of.insert((c, b), k as u32);
+        first_of_cluster.entry(c).or_insert(k as u32);
+        kept_vertices.push(row);
+        if seen_row.insert(row, k as u32).is_some() {
+            splits.push(RepairAction::VertexSplit {
+                vertex: row,
+                copy: k as u32,
+            });
         }
     }
-    let vertex_map: Vec<Option<u32>> = rep.iter().map(|&r| new_index[r as usize]).collect();
-    let kept_faces: Vec<u32> = (0..nf as u32).filter(|&f| keep[f as usize]).collect();
+    let mut first_face: Vec<Option<u32>> = vec![None; nv];
+    for &f in &kept_faces {
+        for &j in &orig[f as usize] {
+            first_face[j as usize].get_or_insert(f);
+        }
+    }
+    let vertex_map: Vec<Option<u32>> = (0..nv)
+        .map(|i| {
+            let c = rep[i];
+            match first_face[i] {
+                Some(f) => Some(out_of[&(c, bucket[f as usize])]),
+                None => first_of_cluster.get(&c).copied(),
+            }
+        })
+        .collect();
+    let mut weld_actions = vec![];
+    for i in 0..nv {
+        let into = match vertex_map[i] {
+            Some(k) if first_face[i].is_some() => kept_vertices[k as usize],
+            _ => rep[i],
+        };
+        if into != i as u32 {
+            weld_actions.push(RepairAction::VertexMerged {
+                vertex: i as u32,
+                into,
+            });
+        }
+    }
+    weld_actions.extend(splits);
+    actions.splice(0..0, weld_actions);
+    for c in (0..nv as u32).filter(|&c| rep[c as usize] == c && !first_of_cluster.contains_key(&c))
+    {
+        actions.push(RepairAction::VertexRemoved { vertex: c });
+    }
     let mut face_map = vec![None; nf];
     for (k, &f) in kept_faces.iter().enumerate() {
         face_map[f as usize] = Some(k as u32);
@@ -450,7 +563,7 @@ pub fn repair(mesh: &Mesh, opts: &RepairOptions) -> Result<(Mesh, RepairReport)>
         .collect();
     let mut out_tris: Vec<[u32; 3]> = kept_faces
         .iter()
-        .map(|&f| tris[f as usize].map(|i| new_index[i as usize].expect("used vertex kept")))
+        .map(|&f| orig[f as usize].map(|j| out_of[&(rep[j as usize], bucket[f as usize])]))
         .collect();
 
     let reverse = |t: &mut [u32; 3]| *t = [t[0], t[2], t[1]];
@@ -674,6 +787,59 @@ mod tests {
             let (_, again) = fix(&out);
             assert!(again.actions.is_empty(), "{:?}", again.actions);
         }
+    }
+
+    #[test]
+    fn touching_shells_keep_their_own_vertices() {
+        let apart = fixtures::edge_touching_cubes(false);
+        let (out, r) = fix(&apart);
+        assert!(r.actions.is_empty(), "{:?}", r.actions);
+        assert_eq!(out, apart);
+
+        let welded = fixtures::edge_touching_cubes(true);
+        let (out, r) = fix(&welded);
+        let splits: Vec<&RepairAction> = r
+            .actions
+            .iter()
+            .filter(|a| matches!(a, RepairAction::VertexSplit { .. }))
+            .collect();
+        assert_eq!(splits.len(), 2, "{:?}", r.actions);
+        assert_eq!(r.actions.len(), 2, "{:?}", r.actions);
+        assert_eq!(out.n_vertices(), 16);
+        assert!(r.after.is_solid() && r.before.is_solid(), "{:?}", r.after);
+        assert_eq!(
+            (
+                r.after.touching_shell_edges,
+                r.after.touching_shell_vertices
+            ),
+            (1, 2)
+        );
+        let (again, r2) = fix(&out);
+        assert!(r2.actions.is_empty(), "{:?}", r2.actions);
+        assert_eq!(again, out);
+
+        let soup = fixtures::soup(&apart);
+        let (out, r) = fix(&soup);
+        assert!(r.after.is_solid(), "{:?}", r.after);
+        assert_eq!((out.n_vertices(), r.after.shells), (16, 2));
+        assert!(close(volume(&out).unwrap(), 2.0));
+        assert!(fix(&out).1.actions.is_empty());
+
+        let opts = RepairOptions {
+            weld_touching_shells: true,
+            ..RepairOptions::default()
+        };
+        let (out, r) = repair(&apart, &opts).unwrap();
+        assert_eq!(out.n_vertices(), 14);
+        assert_eq!(
+            r.actions
+                .iter()
+                .filter(|a| matches!(a, RepairAction::VertexMerged { .. }))
+                .count(),
+            2
+        );
+        assert!(r.after.is_solid(), "{:?}", r.after);
+        check_maps(&apart, &out, &r);
     }
 
     #[test]

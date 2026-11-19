@@ -350,3 +350,18 @@ fn a_shell_touching_itself_is_refused() {
         "{e}"
     );
 }
+
+#[test]
+fn repair_option_keeps_touching_inputs_apart() {
+    let a = fixtures::edge_touching_cubes(false);
+    let b = fixtures::box_mesh([0.5, 0.5, 0.0], [1.5, 1.5, 1.0]);
+    let plain = boolean(&a, &b, Op::Union, &BooleanOptions::default()).unwrap();
+    let fixed = boolean(&a, &b, Op::Union, &BooleanOptions { repair: true }).unwrap();
+    let report = fixed.repairs[0].as_ref().unwrap();
+    assert!(report.actions.is_empty(), "{:?}", report.actions);
+    assert_eq!(plain.mesh, fixed.mesh);
+    let welded = fixtures::edge_touching_cubes(true);
+    let r = boolean(&welded, &b, Op::Union, &BooleanOptions { repair: true }).unwrap();
+    assert_eq!(r.repairs[0].as_ref().unwrap().actions.len(), 2);
+    assert!(close(volume(&r.mesh), 2.0 + 1.0 - 0.5));
+}

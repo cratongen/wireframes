@@ -15,8 +15,9 @@ pub(crate) struct PyRepairReport {
     pub(crate) inner: RepairReport,
 }
 
-const ACTIONS: [&str; 5] = [
+const ACTIONS: [&str; 6] = [
     "vertex_merged",
+    "vertex_split",
     "vertex_removed",
     "face_removed",
     "face_flipped",
@@ -26,10 +27,11 @@ const ACTIONS: [&str; 5] = [
 fn action_name(a: &RepairAction) -> &'static str {
     ACTIONS[match a {
         RepairAction::VertexMerged { .. } => 0,
-        RepairAction::VertexRemoved { .. } => 1,
-        RepairAction::FaceRemoved { .. } => 2,
-        RepairAction::FaceFlipped { .. } => 3,
-        RepairAction::FaceAdded { .. } => 4,
+        RepairAction::VertexSplit { .. } => 1,
+        RepairAction::VertexRemoved { .. } => 2,
+        RepairAction::FaceRemoved { .. } => 3,
+        RepairAction::FaceFlipped { .. } => 4,
+        RepairAction::FaceAdded { .. } => 5,
     }]
 }
 
@@ -41,7 +43,8 @@ fn index_map<'py>(py: Python<'py>, map: &[Option<u32>]) -> Bound<'py, PyArray1<i
 impl PyRepairReport {
     /// One row per change in step order (weld, degenerate, duplicate, unused,
     /// orient, fill): ``action``, ``vertex``, ``face``, ``other`` (the vertex
-    /// merged into, or the hole of an added face) and ``reason`` (the problem
+    /// merged into, the output copy of a split vertex, or the hole of an
+    /// added face) and ``reason`` (the problem
     /// kind of a removed face).
     #[getter]
     fn actions(&self) -> PyResult<PyTable> {
@@ -51,6 +54,9 @@ impl PyRepairReport {
             let (v, f, o, r) = match act {
                 RepairAction::VertexMerged { vertex, into } => {
                     (Some(*vertex), None, Some(*into), None)
+                }
+                RepairAction::VertexSplit { vertex, copy } => {
+                    (Some(*vertex), None, Some(*copy), None)
                 }
                 RepairAction::VertexRemoved { vertex } => (Some(*vertex), None, None, None),
                 RepairAction::FaceRemoved { face, reason } => {
@@ -286,7 +292,12 @@ impl PyMesh {
     /// ----------
     /// weld : float or None
     ///     Merge vertices within this distance (transitively); 0 merges equal
-    ///     coordinates, None skips welding.
+    ///     coordinates, None skips welding. Closed shells that touch along an
+    ///     edge or at a vertex keep their own vertices there: a vertex they
+    ///     share is split (``vertex_split`` actions).
+    /// weld_touching_shells : bool
+    ///     Also merge the vertices where closed shells touch, so the shells
+    ///     share them by index.
     /// remove_degenerate, remove_duplicate_faces, remove_unused_vertices : bool
     ///     Which removals run.
     /// orient : bool
@@ -297,7 +308,7 @@ impl PyMesh {
     /// Returns
     /// -------
     /// tuple of (Mesh, RepairReport)
-    #[pyo3(signature = (*, weld=Some(0.0), remove_degenerate=true, remove_duplicate_faces=true, remove_unused_vertices=true, orient=true, fill_holes=None))]
+    #[pyo3(signature = (*, weld=Some(0.0), remove_degenerate=true, remove_duplicate_faces=true, remove_unused_vertices=true, orient=true, fill_holes=None, weld_touching_shells=false))]
     #[allow(clippy::too_many_arguments)]
     fn repair(
         &self,
@@ -308,6 +319,7 @@ impl PyMesh {
         remove_unused_vertices: bool,
         orient: bool,
         fill_holes: Option<&str>,
+        weld_touching_shells: bool,
     ) -> PyResult<(PyMesh, PyRepairReport)> {
         let opts = RepairOptions {
             weld,
@@ -316,6 +328,7 @@ impl PyMesh {
             remove_unused_vertices,
             orient,
             fill_holes: hole_fill(fill_holes)?,
+            weld_touching_shells,
         };
         let (mesh, report) = py
             .detach(|| wireframes_ops::repair(&self.inner, &opts))

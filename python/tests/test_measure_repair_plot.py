@@ -154,3 +154,20 @@ def test_plot_values_and_problems(orebody):
     with pytest.raises(wf.InvalidInput):
         wf.plot.plan("not geometry")
     plt.close("all")
+
+
+def test_repair_keeps_touching_shells_apart(box):
+    a = box([0, 0, 0], [1, 1, 1])
+    two = a | box([1, 1, 0], [2, 2, 1])
+    assert two.is_solid and two.n_vertices == 16
+    fixed, report = two.repair()
+    assert len(report) == 0 and fixed.n_vertices == 16
+    welded, report = two.repair(weld_touching_shells=True)
+    assert report.summary["vertex_merged"] == 2 and welded.n_vertices == 14
+    assert welded.is_solid
+    split, report = welded.repair()
+    assert report.summary["vertex_split"] == 2 and split.n_vertices == 16
+    actions = report.actions
+    assert set(actions["action"].tolist()) == {"vertex_split"}
+    assert split.validate().summary["touching_shell_edges"] == 1
+    assert len(split.repair()[1]) == 0

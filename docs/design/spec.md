@@ -767,13 +767,15 @@ pub struct RepairOptions {
     pub remove_unused_vertices: bool, // default true
     pub orient: bool,               // default true: consistent winding, outward by nesting parity
     pub fill_holes: Option<HoleFill>, // default None
+    pub weld_touching_shells: bool, // default false: closed shells in contact keep their own vertices
 }
-impl Default for RepairOptions { /* weld Some(0.0), the four bools true, fill_holes None */ }
+impl Default for RepairOptions { /* weld Some(0.0), the four bools true, fill_holes None, weld_touching_shells false */ }
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum RepairAction {
     VertexMerged { vertex: u32, into: u32 },
     VertexRemoved { vertex: u32 },
+    VertexSplit { vertex: u32, copy: u32 },            // input vertex, output index of its extra copy
     FaceRemoved { face: u32, reason: MeshProblemKind }, // DegenerateFace or DuplicateFace
     FaceFlipped { face: u32 },
     FaceAdded { face: u32, hole: u32 },                 // face index in the output
@@ -781,8 +783,8 @@ pub enum RepairAction {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct RepairReport {
-    pub actions: Vec<RepairAction>,     // in step order: weld, degenerate, duplicate, unused, orient, fill
-    pub vertex_map: Vec<Option<u32>>,   // input vertex -> output vertex
+    pub actions: Vec<RepairAction>,     // in step order: weld (merges, then splits), degenerate, duplicate, unused, orient, fill
+    pub vertex_map: Vec<Option<u32>>,   // input vertex -> output vertex (first copy of a split vertex)
     pub face_map: Vec<Option<u32>>,     // input face -> output face
     pub before: MeshSummary,
     pub after: MeshSummary,
@@ -793,7 +795,17 @@ pub fn repair(mesh: &Mesh, opts: &RepairOptions) -> Result<(Mesh, RepairReport)>
 ```
 
 Semantics: steps run in the listed order. Weld keeps the earliest vertex of each
-cluster and its attributes; clusters are transitive closures within `weld`.
+cluster and its attributes; clusters are transitive closures within `weld`. Unless
+`weld_touching_shells`, weld then keeps closed shells in contact apart: `Shells`
+(section 3.11) on the welded mesh, after degenerate and duplicate removal, finds
+the closed shells (no boundary, non-manifold or inconsistent edge), and a cluster
+used by several closed shells becomes one output vertex per shell (open faces share
+one), each with the attributes of the earliest input vertex that shell used there.
+The first copy keeps the cluster's earliest vertex, as without contacts. An input
+vertex shared by several closed shells gets a `VertexSplit` per extra copy. Without
+`weld`, nothing is merged or split. Splitting needs a consistent winding around the
+contact, as `radial_pairs` does; a contact it cannot pair stays welded and is
+reported as non-manifold.
 Degenerate and duplicate removal keeps the earliest face. Orient flips the fewest
 faces per edge-connected component to agree with that component's first face, then
 flips whole closed components to match nesting parity (exact containment);
@@ -1268,6 +1280,7 @@ class Mesh:
         remove_unused_vertices: bool = True,
         orient: bool = True,
         fill_holes: Literal["fan", "min_area"] | None = None,
+        weld_touching_shells: bool = False,
     ) -> tuple[Mesh, RepairReport]: ...
     def components(self) -> list[Mesh]: ...
     def component_labels(self) -> npt.NDArray[np.int64]: ...
@@ -1334,8 +1347,9 @@ class Mesh:
 `"is_solid"`), `.problems -> Table` (columns `kind` (str), `face`, `vertex`, `edge`,
 `other` as int64 with nulls), `.is_solid -> bool`, `__len__` = number of problems.
 
-`RepairReport`: `.actions -> Table` (`action` str in `vertex_merged, vertex_removed,
-face_removed, face_flipped, face_added`, `vertex`, `face`, `other`, `reason`),
+`RepairReport`: `.actions -> Table` (`action` str in `vertex_merged, vertex_split,
+vertex_removed, face_removed, face_flipped, face_added`, `vertex`, `face`, `other`
+(merge target, split copy or hole), `reason`),
 `.vertex_map`, `.face_map` (int64, -1 removed), `.before`, `.after` (dicts),
 `.holes_left`, `.summary -> dict[str, int]` (count per action).
 

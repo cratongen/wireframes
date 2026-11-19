@@ -220,8 +220,9 @@ class Mesh:
         remove_unused_vertices: bool = True,
         orient: bool = True,
         fill_holes: Literal["fan", "min_area"] | None = None,
+        weld_touching_shells: bool = False,
     ) -> tuple[Mesh, RepairReport]:
-        """A repaired copy and the report of every change."""
+        """A repaired copy and the report of every change; touching closed shells keep their own vertices."""
     def components(self) -> list[Mesh]:
         """One mesh per edge-connected component."""
     def component_labels(self) -> Ints:
