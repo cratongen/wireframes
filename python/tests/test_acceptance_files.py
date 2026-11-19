@@ -558,7 +558,6 @@ def test_truncated_dxf_is_an_error(tmp_path, small):
         wf.read(tmp_path / "m.dxf")
 
 
-@pytest.mark.skip(reason="acceptance: truncated off and vtu errors name neither the line nor the byte")
 @pytest.mark.parametrize("name", ["m.off", "m.vtu", "m.vtp"])
 def test_truncated_off_and_vtu_name_the_location(tmp_path, small, name):
     wf.write(tmp_path / name, small, skip_unsupported_columns=True)

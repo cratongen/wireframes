@@ -87,7 +87,6 @@ fn datamine_error_names_the_file_that_holds_it() {
 }
 
 #[test]
-#[ignore = "acceptance: a truncated off names neither the line nor the byte offset"]
 fn truncated_off_names_the_line() {
     let off = "OFF\n4 4 0\n0 0 0\n1 0 0\n";
     let msg = off::read(off.as_bytes()).unwrap_err().to_string();
@@ -95,7 +94,6 @@ fn truncated_off_names_the_line() {
 }
 
 #[test]
-#[ignore = "acceptance: a truncated appended vtu names neither the array offset nor the byte"]
 fn truncated_vtu_names_the_byte_offset() {
     let bytes = vtu::write(&mesh_data(tetra()), &WriteOptions::default()).unwrap();
     let cut = &bytes[..bytes.len() - 80];

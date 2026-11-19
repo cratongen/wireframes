@@ -91,9 +91,9 @@ pub fn read(r: &[u8]) -> Result<Data> {
         return Err(Error::Unsupported("binary off is not supported".into()));
     }
     while header.len() < need {
-        let (no, line) = lines
-            .next_content()
-            .ok_or_else(|| Error::format("off header ends before the element counts"))?;
+        let (no, line) = lines.next_content().ok_or_else(|| {
+            Error::format_at(lines.no, "off header ends before the element counts")
+        })?;
         if line.eq_ignore_ascii_case(b"BINARY") {
             return Err(Error::Unsupported("binary off is not supported".into()));
         }
@@ -119,7 +119,10 @@ pub fn read(r: &[u8]) -> Result<Data> {
     let mut verts = Vec::with_capacity(nv.min(r.len() / 6));
     for _ in 0..nv {
         let (no, line) = lines.next_content().ok_or_else(|| {
-            Error::format(format!("file ends after {} of {nv} vertices", verts.len()))
+            Error::format_at(
+                lines.no,
+                format!("file ends after {} of {nv} vertices", verts.len()),
+            )
         })?;
         let mut p = [0.0; 4];
         let mut it = tokens(line);
@@ -146,9 +149,9 @@ pub fn read(r: &[u8]) -> Result<Data> {
     let mut polys = Polygons::default();
     let mut corners = Vec::new();
     for f in 0..nf {
-        let (no, line) = lines
-            .next_content()
-            .ok_or_else(|| Error::format(format!("file ends after {f} of {nf} faces")))?;
+        let (no, line) = lines.next_content().ok_or_else(|| {
+            Error::format_at(lines.no, format!("file ends after {f} of {nf} faces"))
+        })?;
         let mut it = tokens(line);
         let n = count(it.next().unwrap_or_default(), no, "corner")?;
         corners.clear();
@@ -214,4 +217,21 @@ pub fn write(data: &Data, opts: &WriteOptions) -> Result<Vec<u8>> {
         out.push(b'\n');
     }
     Ok(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_truncated_file_names_the_line_it_ends_on() {
+        let cut_in_vertices = "OFF\n4 4 0\n0 0 0\n1 0 0\n";
+        let e = read(cut_in_vertices.as_bytes()).unwrap_err().to_string();
+        assert_eq!(e, "line 4: file ends after 2 of 4 vertices");
+        let cut_in_faces = "OFF\n3 2 0\n0 0 0\n1 0 0\n0 1 0\n3 0 1 2\n\n";
+        let e = read(cut_in_faces.as_bytes()).unwrap_err().to_string();
+        assert_eq!(e, "line 7: file ends after 1 of 2 faces");
+        let e = read(b"OFF\n# counts follow\n").unwrap_err().to_string();
+        assert_eq!(e, "line 2: off header ends before the element counts");
+    }
 }

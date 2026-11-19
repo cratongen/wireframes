@@ -201,6 +201,8 @@ struct Ctx<'a> {
     header: usize,
     zlib: bool,
     appended: Option<(&'a [u8], bool)>,
+    /// File byte offset of the first appended data byte, after the `_`.
+    app_start: usize,
     offsets: Vec<usize>,
 }
 
@@ -288,11 +290,18 @@ fn decode_array(t: &Tag, content: &[u8], ctx: &Ctx) -> Result<Array> {
         None => 1,
     };
     let ty = xml_ty(t.attr("type").unwrap_or(""))?;
+    let format = t.attr("format").unwrap_or("ascii");
+    let at = match format {
+        "appended" => ctx.app_start.saturating_add(t.count("offset")?),
+        _ => t.after,
+    };
     let what = |e: Error| match e {
-        Error::Format { message, .. } => Error::format(format!("array {name:?}: {message}")),
+        Error::Format { message, .. } => {
+            Error::format(format!("array {name:?} with data at byte {at}: {message}"))
+        }
         e => e,
     };
-    let values = match t.attr("format").unwrap_or("ascii") {
+    let values = match format {
         "ascii" => {
             let s =
                 std::str::from_utf8(content).map_err(|_| Error::format("non-text ascii array"))?;
@@ -308,10 +317,13 @@ fn decode_array(t: &Tag, content: &[u8], ctx: &Ctx) -> Result<Array> {
             let off = t.count("offset")?;
             let (app, raw) = ctx
                 .appended
-                .ok_or_else(|| Error::format("appended array without AppendedData"))?;
-            let rest = app
-                .get(off..)
-                .ok_or_else(|| Error::format(format!("appended offset {off} is past the data")))?;
+                .ok_or_else(|| what(Error::format("appended array without AppendedData")))?;
+            let rest = app.get(off..).ok_or_else(|| {
+                what(Error::format(format!(
+                    "appended offset {off} is past the data, which ends at byte {}",
+                    ctx.app_start + app.len()
+                )))
+            })?;
             let bytes = if raw {
                 ctx.payload(rest).map_err(what)?
             } else {
@@ -673,6 +685,7 @@ pub fn read(r: &[u8]) -> Result<Data> {
             )));
         }
     };
+    let mut app_start = r.len();
     let appended = match app_at {
         None => None,
         Some(at) => {
@@ -693,6 +706,7 @@ pub fn read(r: &[u8]) -> Result<Data> {
             if r.get(j) != Some(&b'_') {
                 return Err(Error::format("AppendedData does not start with '_'"));
             }
+            app_start = j + 1;
             let data = &r[j + 1..];
             let data = if raw {
                 data
@@ -718,6 +732,7 @@ pub fn read(r: &[u8]) -> Result<Data> {
         header,
         zlib,
         appended,
+        app_start,
         offsets,
     };
     let mut pieces: Vec<Piece> = Vec::new();
@@ -757,9 +772,9 @@ pub fn read(r: &[u8]) -> Result<Data> {
                 let content = if t.empty {
                     &head[0..0]
                 } else {
-                    let next = tags
-                        .get(k + 1)
-                        .ok_or_else(|| Error::format("DataArray is not closed"))?;
+                    let next = tags.get(k + 1).ok_or_else(|| {
+                        Error::format(format!("DataArray at byte {} is not closed", t.start))
+                    })?;
                     &head[t.after..next.start]
                 };
                 let a = decode_array(t, content, &ctx)?;
@@ -770,6 +785,12 @@ pub fn read(r: &[u8]) -> Result<Data> {
             }
             _ => {}
         }
+    }
+    if !r.trim_ascii_end().ends_with(b"</VTKFile>") {
+        return Err(Error::format(format!(
+            "file ends at byte {} without </VTKFile>; it is truncated",
+            r.len()
+        )));
     }
     match kind.as_str() {
         "UnstructuredGrid" => {
@@ -983,4 +1004,44 @@ pub fn write_vtp(data: &Data, opts: &WriteOptions) -> Result<Vec<u8>> {
         pd.polys.len()
     );
     Ok(w.finish("PolyData", &piece))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn triangle(zlib: bool) -> Vec<u8> {
+        let m = Mesh::new(
+            vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+            vec![[0, 1, 2]],
+        )
+        .unwrap();
+        let data = Data {
+            mesh: Some(m),
+            ..Data::default()
+        };
+        let opts = WriteOptions {
+            zlib,
+            ..WriteOptions::default()
+        };
+        write(&data, &opts).unwrap()
+    }
+
+    #[test]
+    fn a_truncated_appended_array_names_its_byte_offset() {
+        for zlib in [false, true] {
+            let full = triangle(zlib);
+            let app = find(&full, b"<AppendedData").unwrap();
+            let start = app + find(&full[app..], b"_").unwrap() + 1;
+            for cut in [start, start + 3, full.len() - 30, full.len() - 1 - 30] {
+                let e = read(&full[..cut]).unwrap_err().to_string();
+                let at = e
+                    .split("at byte ")
+                    .nth(1)
+                    .map(|r| r.split(|c: char| !c.is_ascii_digit()).next().unwrap_or(""))
+                    .and_then(|n| n.parse::<usize>().ok());
+                assert!(at.is_some_and(|a| a >= start && a <= full.len()), "{e}");
+            }
+        }
+    }
 }
