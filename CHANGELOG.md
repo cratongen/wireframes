@@ -70,6 +70,8 @@ All notable changes to wireframes are listed here. The format follows
 - `split_by_plane` triangulates the cap from the rounded section points, so
   cap triangles no longer overlap where the section has long, nearly collinear
   runs of points (a bench split of a clipped pit).
+- `block_fraction` is exactly 0 or 1 for a block that no face meets, instead
+  of picking up `f64` residue from the faces above it.
 
 ### Known issues
 
