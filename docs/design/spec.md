@@ -1009,8 +1009,11 @@ Arrangement (`arrangement.rs`):
    exact point, the umbrellas found through the same radial pairs; where it touches
    itself along an edge whose ends it does not touch, that edge keeps its four faces
    on shared vertices. `clip_by_surface` uses the same split per piece. A result that
-   is not closed and manifold after rounding errors with `InvalidInput("internal:
-   rounding the result to f64 left it open or non-manifold")`.
+   is not closed and manifold after rounding, or that keeps a face whose rounded
+   corners are collinear (which `validate` leaves out, so its edges are open), errors
+   with `InvalidInput("internal: rounding the result to f64 left it open or
+   non-manifold")` (`"... the clip result ..."` for `clip_by_surface`), never
+   returns it.
 
 `clip_by_surface`: `above` is the part of the solid on the side the surface normals
 point to, `below` the other; both are closed and outward, capped by the pieces of

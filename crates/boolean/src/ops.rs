@@ -711,6 +711,17 @@ pub(crate) fn is_closed_result(mesh: &Mesh) -> Result<bool> {
         && s.inconsistent_edges == 0)
 }
 
+/// Whether a boolean or clip result is closed for `validate`, which leaves a
+/// face with collinear rounded corners out and so sees its edges as open.
+pub(crate) fn is_closed_solid_result(mesh: &Mesh) -> Result<bool> {
+    let v = mesh.vertices();
+    let flat = mesh
+        .triangles()
+        .iter()
+        .any(|t| collinear3(v[t[0] as usize], v[t[1] as usize], v[t[2] as usize]));
+    Ok(!flat && is_closed_result(mesh)?)
+}
+
 fn keep_rule(op: Op, mesh: usize, st: Status) -> Option<bool> {
     use Status::*;
     match (op, mesh, st) {
@@ -747,7 +758,7 @@ pub fn boolean(a: &Mesh, b: &Mesh, op: Op, opts: &BooleanOptions) -> Result<Bool
         (a.face_attributes(), b.face_attributes()),
         labels,
     )?;
-    if !is_closed_result(&mesh)? {
+    if !is_closed_solid_result(&mesh)? {
         return Err(Error::invalid(
             "internal: rounding the result to f64 left it open or non-manifold",
         ));
@@ -843,6 +854,38 @@ mod tests {
         let (out, _) = collapse_rounded(s, &[0, 1, 2, 3, 4]);
         check(&out);
         assert_eq!(out.triangles.len(), 6);
+    }
+
+    #[test]
+    fn a_face_with_collinear_rounded_corners_leaves_a_result_open() {
+        let v = vec![
+            [60.0, 16.0, 0.0],
+            [60.72727272741031, 15.41818181797862, 0.0],
+            [60.0, 15.200000000186265, 0.0],
+            [62.66666666662786, 16.0, 0.0],
+            [62.66666666732635, 16.0, 0.0],
+            [62.66666666709352, 16.0, 3.7255176721373573e-10],
+            [60.0, 16.0, 4.705882354479968],
+            [60.0, 15.362549800425768, 0.9561752990377386],
+        ];
+        let t = vec![
+            [0, 1, 2],
+            [0, 3, 1],
+            [0, 4, 3],
+            [4, 0, 5],
+            [5, 0, 6],
+            [7, 0, 2],
+            [7, 6, 0],
+            [4, 5, 3],
+            [3, 5, 1],
+            [5, 6, 7],
+            [2, 1, 7],
+            [7, 1, 5],
+        ];
+        let m = Mesh::new(v, t).unwrap();
+        assert!(is_closed_manifold(m.triangles()));
+        assert!(!m.validate(0.0).unwrap().summary.is_closed);
+        assert!(!is_closed_solid_result(&m).unwrap());
     }
 
     #[test]
