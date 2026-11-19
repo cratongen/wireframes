@@ -66,6 +66,15 @@ def read(path: str | PathLike[str], *, crs: str | None = None, length_unit: str 
         When the file cannot be read or its content is malformed.
     InvalidInput
         When `length_unit` disagrees with the unit the file declares.
+
+    Examples
+    --------
+    >>> import pathlib, tempfile
+    >>> folder = pathlib.Path(tempfile.mkdtemp())
+    >>> wf.write(folder / "box.obj", wf.datasets.box([0, 0, 0], [2, 2, 2]))
+    >>> data = wf.read(folder / "box.obj")
+    >>> data.mesh.volume, data.polylines, data.warnings
+    (8.0, None, [])
     """
     return Dataset(*_wireframes._read(path, crs=crs, length_unit=length_unit))
 
@@ -117,6 +126,14 @@ def _require(module: str, method: str) -> Any:
 
 
 def _to_pyarrow(self: Table) -> Any:
+    """The table as a pyarrow Table, nulls kept; needs pyarrow.
+
+    Examples
+    --------
+    >>> t = wf.Table({"hole": ["A", "B", "C"], "au": [1.0, None, 2.5]})
+    >>> t.to_pyarrow()["au"].null_count
+    1
+    """
     pa = _require("pyarrow", "to_pyarrow")
     arrays = {}
     for name in self.column_names:
@@ -132,6 +149,14 @@ def _to_pyarrow(self: Table) -> Any:
 
 
 def _to_polars(self: Table) -> Any:
+    """The table as a polars DataFrame, nulls kept; needs polars.
+
+    Examples
+    --------
+    >>> t = wf.Table({"hole": ["A", "B", "C"], "au": [1.0, None, 2.5]})
+    >>> t.to_polars()["au"].null_count()
+    1
+    """
     pl = _require("polars", "to_polars")
     series = []
     for name in self.column_names:
@@ -146,6 +171,14 @@ def _to_polars(self: Table) -> Any:
 
 
 def _to_pandas(self: Table) -> Any:
+    """The table as a pandas DataFrame; int and bool nulls become nullable dtypes.
+
+    Examples
+    --------
+    >>> t = wf.Table({"hole": ["A", "B", "C"], "au": [1.0, None, 2.5]})
+    >>> t.to_pandas()["hole"].tolist()
+    ['A', 'B', 'C']
+    """
     pd = _require("pandas", "to_pandas")
     columns = {}
     for name in self.column_names:
@@ -171,6 +204,12 @@ def _drop_null(self: Table, *columns: str) -> Table:
     -------
     Table
         The rows where every checked column is valid.
+
+    Examples
+    --------
+    >>> t = wf.Table({"hole": ["A", "B", "C"], "au": [1.0, None, 2.5]})
+    >>> t.drop_null("au")["hole"].tolist()
+    ['A', 'C']
     """
     keep = np.ones(self.num_rows, dtype=bool)
     for name in columns or self.column_names:
@@ -215,6 +254,12 @@ def _from_table(
     -------
     Polylines
         One feature per run of equal `feature` values.
+
+    Examples
+    --------
+    >>> rows = {"ID": [1, 1, 2, 2], "X": [0, 3, 0, 0], "Y": [0, 4, 0, 2]}
+    >>> wf.Polylines.from_table(rows).length().tolist()
+    [5.0, 2.0]
     """
     if not isinstance(table, Table):
         table = Table(dict(table))
@@ -260,6 +305,12 @@ def _to_points(self: Polylines) -> PointSet:
     -------
     PointSet
         One point per vertex, in vertex order.
+
+    Examples
+    --------
+    >>> ring = wf.Polylines([[[0, 0, 0], [4, 0, 0], [4, 3, 0], [0, 3, 0]]], closed=[True])
+    >>> len(ring.to_points()), ring.to_points().column_names
+    (4, ['feature', 'part'])
     """
     table = self.to_table()
     attributes = {n: table[n] for n in table.column_names if n not in ("x", "y", "z", "vertex", "closed")}
@@ -274,20 +325,70 @@ def _axis(a: int) -> property:
 for _cls in (Mesh, Polylines, PointSet):
     _cls.x, _cls.y, _cls.z = (_axis(a) for a in range(3))
 
+_FRAMES = {
+    "to_polars": "a polars DataFrame",
+    "to_pandas": "a pandas DataFrame",
+    "to_pyarrow": "a pyarrow Table",
+}
+_FRAME_EXAMPLES = {
+    Mesh: (
+        "m = wf.datasets.box([0, 0, 0], [2, 2, 2])",
+        {
+            "to_polars": ('m.to_polars(on="faces").shape', "(12, 3)"),
+            "to_pandas": ("m.to_pandas().shape", "(8, 3)"),
+            "to_pyarrow": ("m.to_pyarrow().num_rows", "8"),
+        },
+    ),
+    PointSet: (
+        'p = wf.PointSet([[0, 0, 0], [1, 1, 1]], {"au": [1.5, 2.0]})',
+        {
+            "to_polars": ("p.to_polars().columns", "['x', 'y', 'z', 'au']"),
+            "to_pandas": ('p.to_pandas()["au"].tolist()', "[1.5, 2.0]"),
+            "to_pyarrow": ("p.to_pyarrow().column_names", "['x', 'y', 'z', 'au']"),
+        },
+    ),
+    Polylines: (
+        "ring = wf.Polylines([[[0, 0, 0], [4, 0, 0], [4, 3, 0], [0, 3, 0]]], closed=[True])",
+        {
+            "to_polars": ("ring.to_polars().shape", "(4, 7)"),
+            "to_pandas": ('ring.to_pandas()["x"].tolist()', "[0.0, 4.0, 4.0, 0.0]"),
+            "to_pyarrow": ("ring.to_pyarrow().num_rows", "4"),
+        },
+    ),
+}
+
+
+def _frame(cls: type, method: str) -> Any:
+    if cls is Mesh:
+
+        def frame(self: Mesh, *, on: str = "vertices") -> Any:
+            return getattr(self.to_table(on=on), method)()
+
+        params = 'Parameters\n----------\non : {"vertices", "faces"}\n    Which rows, as in ``to_table``.\n\n'
+    else:
+
+        def frame(self: Any) -> Any:
+            return getattr(self.to_table(), method)()
+
+        params = ""
+    setup, cases = _FRAME_EXAMPLES[cls]
+    call, result = cases[method]
+    frame.__name__ = method
+    frame.__qualname__ = f"{cls.__name__}.{method}"
+    frame.__doc__ = (
+        f"``to_table()`` as {_FRAMES[method]}; needs {method[3:]}.\n\n{params}"
+        f"Examples\n--------\n>>> {setup}\n>>> {call}\n{result}\n"
+    )
+    return frame
+
+
 for _cls in (Mesh, Polylines, PointSet):
-    _cls.to_polars = lambda self, **kw: self.to_table(**kw).to_polars()
-    _cls.to_pandas = lambda self, **kw: self.to_table(**kw).to_pandas()
-    _cls.to_pyarrow = lambda self, **kw: self.to_table(**kw).to_pyarrow()
-    _cls.to_polars.__doc__ = "``to_table()`` as a polars DataFrame; needs polars."
-    _cls.to_pandas.__doc__ = "``to_table()`` as a pandas DataFrame; needs pandas."
-    _cls.to_pyarrow.__doc__ = "``to_table()`` as a pyarrow Table; needs pyarrow."
+    for _method in _FRAMES:
+        setattr(_cls, _method, _frame(_cls, _method))
 
 Table.to_pyarrow = _to_pyarrow
 Table.to_polars = _to_polars
 Table.to_pandas = _to_pandas
-Table.to_pyarrow.__doc__ = "The table as a pyarrow Table, nulls kept; needs pyarrow."
-Table.to_polars.__doc__ = "The table as a polars DataFrame, nulls kept; needs polars."
-Table.to_pandas.__doc__ = "The table as a pandas DataFrame; int and bool nulls become nullable dtypes."
 Table.drop_null = _drop_null
 Polylines.from_table = staticmethod(_from_table)
 Polylines.to_points = _to_points

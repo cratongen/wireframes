@@ -26,6 +26,12 @@ use crate::query::finite_points;
 /// -------
 /// Mesh
 ///     Faces wound counter-clockwise in plan (normals up).
+///
+/// Examples
+/// --------
+/// >>> s = wf.dtm([[0, 0, 0], [10, 0, 1], [10, 10, 2], [0, 10, 1], [5, 5, 3]])
+/// >>> s.n_faces, s.is_solid
+/// (4, False)
 #[pyfunction]
 #[pyo3(signature = (points, *, breaklines=None, boundary=None, min_spacing=0.0, max_edge=None))]
 fn dtm(
@@ -64,6 +70,12 @@ fn dtm(
 /// Mesh
 ///     The original vertices, face column ``feature``; normals follow the
 ///     outer ring's Newell normal.
+///
+/// Examples
+/// --------
+/// >>> ring = wf.Polylines([[[0, 0, 0], [4, 0, 0], [4, 3, 0], [0, 3, 0]]], closed=[True])
+/// >>> wf.triangulate(ring).area
+/// 12.0
 #[pyfunction]
 fn triangulate(py: Python, polygons: PyRef<PyPolylines>) -> PyResult<PyMesh> {
     let p = &polygons.inner;
@@ -89,6 +101,13 @@ fn triangulate(py: Python, polygons: PyRef<PyPolylines>) -> PyResult<PyMesh> {
 /// Mesh
 ///     A validated solid with face column ``section`` (band index; caps are
 ///     -1 and -2).
+///
+/// Examples
+/// --------
+/// >>> square = [[0, 0], [4, 0], [4, 4], [0, 4]]
+/// >>> sections = wf.Polylines([[[x, y, 0] for x, y in square], [[x, y, 10] for x, y in square]], closed=[True, True])
+/// >>> wf.loft(sections).volume
+/// 160.0
 #[pyfunction]
 #[pyo3(signature = (sections, *, cap_ends=true))]
 fn loft(py: Python, sections: PyRef<PyPolylines>, cap_ends: bool) -> PyResult<PyMesh> {
@@ -113,6 +132,12 @@ fn loft(py: Python, sections: PyRef<PyPolylines>, cap_ends: bool) -> PyResult<Py
 /// -------
 /// Mesh
 ///     An outward solid.
+///
+/// Examples
+/// --------
+/// >>> ring = wf.Polylines([[[0, 0, 0], [4, 0, 0], [4, 3, 0], [0, 3, 0]]], closed=[True])
+/// >>> wf.extrude(ring, [0, 0, 10]).volume
+/// 120.0
 #[pyfunction]
 fn extrude(py: Python, polygons: PyRef<PyPolylines>, vector: &Bound<PyAny>) -> PyResult<PyMesh> {
     let v = vec3(vector, "vector")?;
@@ -130,6 +155,17 @@ impl PyMesh {
     /// Walls drop from the boundary loop to `z` and a flat base closes them.
     /// The surface must have one boundary loop, entirely above or entirely
     /// below `z`.
+    ///
+    /// Parameters
+    /// ----------
+    /// z : float
+    ///     Elevation of the flat base.
+    ///
+    /// Examples
+    /// --------
+    /// >>> s = wf.dtm([[0, 0, 10], [10, 0, 10], [10, 10, 10], [0, 10, 10]])
+    /// >>> s.close_to_elevation(4.0).volume
+    /// 600.0
     fn close_to_elevation(&self, py: Python, z: f64) -> PyResult<PyMesh> {
         Ok(py
             .detach(|| wireframes_build::close_to_elevation(&self.inner, z))
@@ -147,6 +183,12 @@ impl PyMesh {
     ///     Stop when the next collapse moves the surface more than this.
     /// preserve_boundary : bool
     ///     Keep boundary vertices on their boundary lines.
+    ///
+    /// Examples
+    /// --------
+    /// >>> m = wf.datasets.orebody()
+    /// >>> m.decimate(target_faces=100).n_faces <= 100
+    /// True
     #[pyo3(signature = (*, target_faces=None, max_error=None, preserve_boundary=true))]
     fn decimate(
         &self,
@@ -176,6 +218,12 @@ impl PyMesh {
     ///     Shrinking step, positive.
     /// mu : float
     ///     Inflating step, below ``-lambda_``.
+    ///
+    /// Examples
+    /// --------
+    /// >>> m = wf.datasets.topography(n=50)
+    /// >>> m.smooth(iterations=5).n_faces == m.n_faces
+    /// True
     #[pyo3(signature = (*, iterations=10, lambda_=0.5, mu=-0.53))]
     fn smooth(&self, py: Python, iterations: usize, lambda_: f64, mu: f64) -> PyResult<PyMesh> {
         Ok(py
@@ -187,10 +235,21 @@ impl PyMesh {
     /// A copy with every vertex moved by `distance` along its vertex normal,
     /// outward when positive.
     ///
+    /// Parameters
+    /// ----------
+    /// distance : float
+    ///     Move along each vertex normal; positive grows a solid outward.
+    ///
     /// Raises
     /// ------
     /// InvalidMesh
     ///     When the result self-intersects.
+    ///
+    /// Examples
+    /// --------
+    /// >>> m = wf.datasets.box([0, 0, 0], [2, 2, 2])
+    /// >>> m.offset(0.1).volume > m.volume
+    /// True
     fn offset(&self, py: Python, distance: f64) -> PyResult<PyMesh> {
         Ok(py
             .detach(|| wireframes_build::offset(&self.inner, distance))
@@ -202,6 +261,20 @@ impl PyMesh {
     ///
     /// Face attributes come from the closest input face; vertex attributes
     /// are dropped.
+    ///
+    /// Parameters
+    /// ----------
+    /// edge_length : float
+    ///     Target edge length, positive.
+    /// iterations : int
+    ///     Number of split, collapse, flip and relax passes.
+    ///
+    /// Examples
+    /// --------
+    /// >>> m = wf.datasets.box([0, 0, 0], [4, 4, 4])
+    /// >>> r = m.remesh(1.0)
+    /// >>> r.n_faces > m.n_faces, r.is_solid
+    /// (True, True)
     #[pyo3(signature = (edge_length, *, iterations=5))]
     fn remesh(&self, py: Python, edge_length: f64, iterations: usize) -> PyResult<PyMesh> {
         Ok(py
@@ -212,10 +285,22 @@ impl PyMesh {
 
     /// Contour lines of the surface at each elevation in `levels`.
     ///
+    /// Parameters
+    /// ----------
+    /// levels : array_like
+    ///     Elevations to contour.
+    ///
     /// Returns
     /// -------
     /// Polylines
     ///     One feature per line, with the feature column ``elevation``.
+    ///
+    /// Examples
+    /// --------
+    /// >>> s = wf.dtm([[0, 0, 0], [10, 0, 0], [10, 10, 10], [0, 10, 10]])
+    /// >>> lines = s.contours([2.5, 5.0])
+    /// >>> lines.attributes["elevation"].tolist(), lines.length().tolist()
+    /// ([2.5, 5.0], [10.0, 10.0])
     fn contours(&self, py: Python, levels: &Bound<PyAny>) -> PyResult<PyPolylines> {
         let l = floats(levels, "levels")?;
         Ok(py

@@ -676,7 +676,6 @@ def test_every_public_callable_has_a_docstring():
     assert [n for n, f in public_callables() if not (f.__doc__ or "").strip()] == []
 
 
-@pytest.mark.skip(reason="acceptance: 36 public callables with arguments have no Parameters section")
 def test_every_public_callable_with_arguments_documents_them():
     no_params = [
         n for n, f in public_callables() if parameter_names(f) and "Parameters\n----------" not in f.__doc__
@@ -684,7 +683,6 @@ def test_every_public_callable_with_arguments_documents_them():
     assert no_params == []
 
 
-@pytest.mark.skip(reason="acceptance: no public function or method has an Examples section")
 def test_every_public_callable_has_a_runnable_example():
     finder = doctest.DocTestFinder(recurse=False)
     runner = doctest.DocTestRunner(optionflags=doctest.ELLIPSIS | doctest.NORMALIZE_WHITESPACE)

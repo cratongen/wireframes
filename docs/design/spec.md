@@ -1243,7 +1243,7 @@ immutable; choices as string literals; numpy arrays out (`float64`, `int64`,
 `triangles`, `parts`, `closed`, `feature`, columns from `[]` or `column`, grid
 `points`, `cell_types`, `offsets`, `connectivity`) are read-only, so a write
 raises `ValueError` instead of vanishing; `.copy()` gives a writeable array, and
-`with_vertices` or `with_*_column` build a changed container; NumPy-style docstrings, present tense, first line "A copy with ..." or a
+`with_vertices` or `with_*_column` build a changed container; NumPy-style docstrings (a `Parameters` section whenever the callable takes arguments, and an `Examples` section that runs as a doctest with `wf` and `np` in scope), present tense, first line "A copy with ..." or a
 noun phrase; messages lowercase.
 
 Type aliases in the stub:

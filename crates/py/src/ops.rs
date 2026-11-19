@@ -250,6 +250,12 @@ impl PyMesh {
     /// ----------
     /// matrix : array_like
     ///     ``(4, 4)`` row-major matrix applied to column vectors.
+    ///
+    /// Examples
+    /// --------
+    /// >>> m = wf.datasets.box([0, 0, 0], [2, 2, 2])
+    /// >>> m.transform(np.diag([2.0, 2.0, 2.0, 1.0])).volume
+    /// 64.0
     fn transform(&self, matrix: &Bound<PyAny>) -> PyResult<PyMesh> {
         let m = matrix4(matrix)?;
         Ok(wireframes_ops::transform(&self.inner, m)
@@ -258,6 +264,17 @@ impl PyMesh {
     }
 
     /// A copy moved by `offset`.
+    ///
+    /// Parameters
+    /// ----------
+    /// offset : array_like
+    ///     ``(3,)`` displacement.
+    ///
+    /// Examples
+    /// --------
+    /// >>> m = wf.datasets.box([0, 0, 0], [2, 2, 2])
+    /// >>> m.translate([100, 0, 0]).bounds
+    /// ([100.0, 0.0, 0.0], [102.0, 2.0, 2.0])
     fn translate(&self, offset: &Bound<PyAny>) -> PyResult<PyMesh> {
         let d = vec3(offset, "offset")?;
         Ok(wireframes_ops::translate(&self.inner, d)
@@ -266,16 +283,34 @@ impl PyMesh {
     }
 
     /// A copy with every triangle wound the other way.
+    ///
+    /// Examples
+    /// --------
+    /// >>> m = wf.datasets.box([0, 0, 0], [2, 2, 2])
+    /// >>> m.flip().validate().summary["inward_shells"]
+    /// 1
     fn flip(&self) -> PyMesh {
         wireframes_ops::flip(&self.inner).into()
     }
 
     /// A copy with coordinates rescaled to `unit`.
     ///
+    /// Parameters
+    /// ----------
+    /// unit : str
+    ///     Target unit, such as ``"m"``, ``"ft"`` or ``"km"``.
+    ///
     /// Raises
     /// ------
     /// InvalidInput
     ///     When the mesh declares no length unit, or `unit` is unknown.
+    ///
+    /// Examples
+    /// --------
+    /// >>> m = wf.datasets.box([0, 0, 0], [1, 1, 1], length_unit="m")
+    /// >>> cm = m.to_length_unit("cm")
+    /// >>> cm.length_unit, cm.bounds[1]
+    /// ('cm', [100.0, 100.0, 100.0])
     fn to_length_unit(&self, unit: &str) -> PyResult<PyMesh> {
         Ok(wireframes_ops::to_length_unit(&self.inner, unit)
             .map_err(to_py)?
@@ -308,6 +343,13 @@ impl PyMesh {
     /// Returns
     /// -------
     /// tuple of (Mesh, RepairReport)
+    ///
+    /// Examples
+    /// --------
+    /// >>> topography = wf.datasets.topography(n=20)
+    /// >>> closed, report = topography.repair(fill_holes="fan")
+    /// >>> topography.validate().summary["boundary_edges"] > 0, closed.validate().summary["boundary_edges"]
+    /// (True, 0)
     #[pyo3(signature = (*, weld=Some(0.0), remove_degenerate=true, remove_duplicate_faces=true, remove_unused_vertices=true, orient=true, fill_holes=None, weld_touching_shells=false))]
     #[allow(clippy::too_many_arguments)]
     fn repair(
@@ -338,6 +380,12 @@ impl PyMesh {
 
     /// One mesh per edge-connected component, in order of first face; shells
     /// that touch along an edge or at a vertex are separate components.
+    ///
+    /// Examples
+    /// --------
+    /// >>> a, b = wf.datasets.box([0, 0, 0], [2, 2, 2]), wf.datasets.box([5, 0, 0], [6, 1, 1])
+    /// >>> [c.volume for c in wf.concat([a, b]).components()]
+    /// [8.0, 1.0]
     fn components(&self) -> PyResult<Vec<PyMesh>> {
         Ok(wireframes_ops::components(&self.inner)
             .map_err(to_py)?
@@ -347,6 +395,12 @@ impl PyMesh {
     }
 
     /// Edge-connected component of each triangle, numbered by first face.
+    ///
+    /// Examples
+    /// --------
+    /// >>> a, b = wf.datasets.box([0, 0, 0], [2, 2, 2]), wf.datasets.box([5, 0, 0], [6, 1, 1])
+    /// >>> np.bincount(wf.concat([a, b]).component_labels()).tolist()
+    /// [12, 12]
     fn component_labels<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray1<i64>> {
         PyArray1::from_vec(
             py,
@@ -369,6 +423,12 @@ impl PyMesh {
     /// -------
     /// numpy.ndarray
     ///     ``len(edges) - 1`` volumes; value ``i`` covers ``edges[i] <= z < edges[i + 1]``.
+    ///
+    /// Examples
+    /// --------
+    /// >>> m = wf.datasets.box([0, 0, 0], [2, 2, 2])
+    /// >>> m.volume_by_elevation([0.0, 0.5, 2.0]).tolist()
+    /// [2.0, 6.0]
     fn volume_by_elevation<'py>(
         &self,
         py: Python<'py>,
@@ -387,6 +447,12 @@ impl PyMesh {
     /// ----------
     /// points : array_like, PointSet or Mesh
     ///     ``(n, 2)`` or ``(n, 3)``; z is ignored.
+    ///
+    /// Examples
+    /// --------
+    /// >>> s = wf.dtm([[0, 0, 10], [10, 0, 10], [10, 10, 10], [0, 10, 10]])
+    /// >>> s.surface_z([[5, 5], [20, 20]]).tolist()
+    /// [10.0, nan]
     fn surface_z<'py>(
         &self,
         py: Python<'py>,
@@ -398,6 +464,17 @@ impl PyMesh {
     }
 
     /// Point elevation minus ``surface_z``: positive above the surface.
+    ///
+    /// Parameters
+    /// ----------
+    /// points : array_like, PointSet or Mesh
+    ///     ``(n, 3)`` points.
+    ///
+    /// Examples
+    /// --------
+    /// >>> s = wf.dtm([[0, 0, 10], [10, 0, 10], [10, 10, 10], [0, 10, 10]])
+    /// >>> s.vertical_distance([[5, 5, 12], [5, 5, 7]]).tolist()
+    /// [2.0, -3.0]
     fn vertical_distance<'py>(
         &self,
         py: Python<'py>,
@@ -425,6 +502,13 @@ impl PyMesh {
     /// -------
     /// numpy.ndarray
     ///     Negative where the surfaces cross, NaN where either is missing.
+    ///
+    /// Examples
+    /// --------
+    /// >>> s = wf.dtm([[0, 0, 10], [10, 0, 10], [10, 10, 10], [0, 10, 10]])
+    /// >>> bottom = s.translate([0, 0, -6])
+    /// >>> s.thickness(bottom, [[5, 5]]).tolist()
+    /// [6.0]
     #[pyo3(signature = (bottom, points, *, mode="vertical"))]
     fn thickness<'py>(
         &self,

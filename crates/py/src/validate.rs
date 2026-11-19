@@ -131,6 +131,14 @@ impl PyMesh {
     /// -------
     /// MeshReport
     ///     Counts and every problem.
+    ///
+    /// Examples
+    /// --------
+    /// >>> m = wf.datasets.box([0, 0, 0], [2, 2, 2])
+    /// >>> m.validate()
+    /// MeshReport(is_solid=true, shells=1, no problems)
+    /// >>> wf.datasets.topography(n=20).validate().summary["boundary_edges"] > 0
+    /// True
     #[pyo3(signature = (*, tolerance=0.0))]
     fn validate(&self, py: Python, tolerance: f64) -> PyResult<PyMeshReport> {
         let report = py

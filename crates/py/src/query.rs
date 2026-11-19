@@ -109,6 +109,12 @@ impl PyMesh {
     /// ------
     /// InvalidMesh
     ///     When the mesh is not a solid.
+    ///
+    /// Examples
+    /// --------
+    /// >>> m = wf.datasets.box([0, 0, 0], [2, 2, 2])
+    /// >>> m.locate([[1, 1, 1], [2, 1, 1], [5, 5, 5]]).tolist()
+    /// [-1, 0, 1]
     fn locate<'py>(
         &self,
         py: Python<'py>,
@@ -131,6 +137,14 @@ impl PyMesh {
     ///     ``(n, 3)`` points.
     /// boundary : bool
     ///     Whether a point on the surface counts as inside (closed set).
+    ///
+    /// Examples
+    /// --------
+    /// >>> m = wf.datasets.box([0, 0, 0], [2, 2, 2])
+    /// >>> m.contains([[1, 1, 1], [2, 1, 1], [5, 5, 5]]).tolist()
+    /// [True, True, False]
+    /// >>> m.contains([[1, 1, 1], [2, 1, 1], [5, 5, 5]], boundary=False).tolist()
+    /// [True, False, False]
     #[pyo3(signature = (points, *, boundary=true))]
     fn contains<'py>(
         &self,
@@ -145,6 +159,17 @@ impl PyMesh {
     }
 
     /// Distance from each point to the surface, negative inside the solid.
+    ///
+    /// Parameters
+    /// ----------
+    /// points : array_like, PointSet or Mesh
+    ///     ``(n, 3)`` points.
+    ///
+    /// Examples
+    /// --------
+    /// >>> m = wf.datasets.box([0, 0, 0], [2, 2, 2])
+    /// >>> m.signed_distance([[1, 1, 1], [3, 1, 1]]).tolist()
+    /// [-1.0, 1.0]
     fn signed_distance<'py>(
         &self,
         py: Python<'py>,
@@ -157,6 +182,17 @@ impl PyMesh {
     }
 
     /// Unsigned distance from each point to the closest point of any face.
+    ///
+    /// Parameters
+    /// ----------
+    /// points : array_like, PointSet or Mesh
+    ///     ``(n, 3)`` points.
+    ///
+    /// Examples
+    /// --------
+    /// >>> m = wf.datasets.box([0, 0, 0], [2, 2, 2])
+    /// >>> m.distance([[1, 1, 1], [3, 1, 1]]).tolist()
+    /// [1.0, 1.0]
     fn distance<'py>(
         &self,
         py: Python<'py>,
@@ -170,11 +206,23 @@ impl PyMesh {
 
     /// The closest point of the mesh to each point.
     ///
+    /// Parameters
+    /// ----------
+    /// points : array_like, PointSet or Mesh
+    ///     ``(n, 3)`` points.
+    ///
     /// Returns
     /// -------
     /// tuple of (numpy.ndarray, numpy.ndarray, numpy.ndarray)
     ///     ``(n, 3)`` closest points, the face holding each (smaller index on
     ///     ties) and the distances.
+    ///
+    /// Examples
+    /// --------
+    /// >>> m = wf.datasets.box([0, 0, 0], [2, 2, 2])
+    /// >>> points, faces, distances = m.closest_point([[3, 1, 1]])
+    /// >>> points.tolist(), distances.tolist()
+    /// ([[2.0, 1.0, 1.0]], [1.0])
     #[allow(clippy::type_complexity)]
     fn closest_point<'py>(
         &self,
@@ -210,6 +258,13 @@ impl PyMesh {
     ///     ``ray``, ``t`` (in units of the direction), ``face``, ``x``, ``y``,
     ///     ``z``, ``kind`` (interior, edge, vertex, coplanar) and ``entering``
     ///     (null for open meshes and coplanar hits).
+    ///
+    /// Examples
+    /// --------
+    /// >>> m = wf.datasets.box([0, 0, 0], [2, 2, 2])
+    /// >>> hits = m.ray_hits([[1, 1, -1]], [[0, 0, 1]])
+    /// >>> hits["t"].tolist(), hits["entering"].tolist()
+    /// ([1.0, 3.0], [True, False])
     fn ray_hits(
         &self,
         py: Python,
@@ -225,10 +280,21 @@ impl PyMesh {
 
     /// Every face each segment meets: ``ray_hits`` with ``0 <= t <= 1``.
     ///
+    /// Parameters
+    /// ----------
+    /// starts, ends : array_like
+    ///     ``(n, 3)`` segment end points.
+    ///
     /// Returns
     /// -------
     /// Table
     ///     As ``ray_hits``, with the column ``segment`` in place of ``ray``.
+    ///
+    /// Examples
+    /// --------
+    /// >>> m = wf.datasets.box([0, 0, 0], [2, 2, 2])
+    /// >>> m.segment_hits([[1, 1, -1]], [[1, 1, 1]])["t"].tolist()
+    /// [0.5]
     fn segment_hits(
         &self,
         py: Python,
@@ -257,6 +323,13 @@ impl PyMesh {
     ///     ``from``, ``to``, ``inside`` (alternating), ``entry_face`` and
     ///     ``exit_face`` (int64, null where the trace meets no face),
     ///     covering ``depths[0]`` to ``depths[-1]``.
+    ///
+    /// Examples
+    /// --------
+    /// >>> m = wf.datasets.box([0, 0, 0], [2, 2, 2])
+    /// >>> runs = m.trace_intervals([[1, 1, -1], [1, 1, 3]], [0.0, 4.0])
+    /// >>> runs["from"].tolist(), runs["to"].tolist(), runs["inside"].tolist()
+    /// ([0.0, 1.0, 3.0], [1.0, 3.0, 4.0], [False, True, False])
     fn trace_intervals(
         &self,
         py: Python,
@@ -311,6 +384,12 @@ impl PyMesh {
     /// -------
     /// numpy.ndarray
     ///     Values in ``[0, 1]``.
+    ///
+    /// Examples
+    /// --------
+    /// >>> m = wf.datasets.box([0, 0, 0], [2, 2, 2])
+    /// >>> m.block_fraction([[2, 1, 1], [1, 1, 1]], [1, 1, 1]).tolist()
+    /// [0.5, 1.0]
     #[pyo3(signature = (centroids, size, *, rotation=None))]
     fn block_fraction<'py>(
         &self,

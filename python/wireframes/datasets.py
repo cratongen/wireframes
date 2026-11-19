@@ -34,6 +34,12 @@ def box(lo, hi, *, name: str | None = None, length_unit: str | None = "m") -> Me
     -------
     Mesh
         A solid of volume ``prod(hi - lo)``.
+
+    Examples
+    --------
+    >>> m = wf.datasets.box([0, 0, 0], [10, 20, 5], name="stope")
+    >>> m.volume, m.is_solid, m.column_names
+    (1000.0, True, ['name'])
     """
     (x0, y0, z0), (x1, y1, z1) = np.asarray(lo, float), np.asarray(hi, float)
     corners = [[x, y, z] for z in (z0, z1) for y in (y0, y1) for x in (x0, x1)]
@@ -62,6 +68,12 @@ def orebody(seed: int = 0, *, sections: int = 9, points: int = 24, length: float
     -------
     Mesh
         A validated solid with face column ``section``.
+
+    Examples
+    --------
+    >>> m = wf.datasets.orebody(seed=1)
+    >>> m.is_solid, m.column_names
+    (True, ['section'])
     """
     rng = np.random.default_rng(seed)
     xs = np.linspace(-length / 2, length / 2, sections)
@@ -92,6 +104,12 @@ def topography(seed: int = 0, *, n: int = 400, size: float = 800.0) -> Mesh:
     -------
     Mesh
         A height-field surface with vertex column ``z_noise``.
+
+    Examples
+    --------
+    >>> t = wf.datasets.topography(n=100)
+    >>> t.n_vertices, t.is_solid
+    (104, False)
     """
     rng = np.random.default_rng(seed)
     half = size / 2
@@ -142,6 +160,13 @@ def pit(
     -------
     Mesh
         A height-field surface.
+
+    Examples
+    --------
+    >>> ground = wf.datasets.topography()
+    >>> design = wf.datasets.pit(ground)
+    >>> wf.cut_fill(ground, design)["cut"] > 0
+    True
     """
     g = np.linspace(-size / 2, size / 2, n)
     gx, gy = np.meshgrid(g, g)
@@ -168,6 +193,12 @@ def drillholes(seed: int = 0, *, n: int = 12, depth: float = 350.0) -> Polylines
     -------
     Polylines
         One open two-vertex part per hole, with feature columns ``hole`` (str) and ``depth``.
+
+    Examples
+    --------
+    >>> holes = wf.datasets.drillholes(n=3)
+    >>> len(holes), holes.attributes["hole"].tolist()
+    (3, ['DH001', 'DH002', 'DH003'])
     """
     rng = np.random.default_rng(seed)
     xs = np.linspace(-170.0, 170.0, n) + rng.uniform(-10, 10, n)

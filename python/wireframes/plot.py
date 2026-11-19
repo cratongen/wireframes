@@ -111,6 +111,15 @@ def plan(
     Returns
     -------
     tuple of (Figure, Axes)
+
+    Examples
+    --------
+    >>> import matplotlib.pyplot as plt
+    >>> from wireframes import plot
+    >>> fig, ax = plot.plan([wf.datasets.orebody(), wf.datasets.drillholes(n=3)])
+    >>> ax.get_xlabel()
+    'x (m)'
+    >>> plt.close(fig)
     """
     items = _items(data)
     fig, ax = _figure(ax)
@@ -192,6 +201,16 @@ def section(
     Returns
     -------
     tuple of (Figure, Axes)
+
+    Examples
+    --------
+    >>> import matplotlib.pyplot as plt
+    >>> from wireframes import plot
+    >>> m = wf.datasets.orebody()
+    >>> fig, ax = plot.section(m, m.centroid, [1, 0, 0])
+    >>> ax.get_ylabel()
+    'z (m)'
+    >>> plt.close(fig)
     """
     items = _items(data)
     o = np.asarray(origin, dtype=float)
@@ -272,6 +291,16 @@ def surface3d(
     Returns
     -------
     tuple of (Figure, Axes3D)
+
+    Examples
+    --------
+    >>> import matplotlib.pyplot as plt
+    >>> from wireframes import plot
+    >>> topography = wf.datasets.topography(n=30)
+    >>> fig, ax = plot.surface3d(topography, problems=topography.validate())
+    >>> ax.name
+    '3d'
+    >>> plt.close(fig)
     """
     items = _items(data)
     fig, ax = _figure(ax, projection="3d")

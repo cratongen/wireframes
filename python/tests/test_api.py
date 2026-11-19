@@ -121,3 +121,18 @@ def test_property_dtypes_and_shapes(box, orebody):
     p = wf.datasets.drillholes(n=3)
     assert p.closed.dtype == np.bool_ and p.feature.dtype == np.int64
     assert p.locate(p.coords).dtype == np.int64
+
+
+def test_every_dataset_has_a_runnable_example():
+    import doctest
+
+    from wireframes import datasets
+
+    finder = doctest.DocTestFinder(recurse=False)
+    runner = doctest.DocTestRunner(optionflags=doctest.ELLIPSIS | doctest.NORMALIZE_WHITESPACE)
+    for name in ("box", "orebody", "topography", "pit", "drillholes"):
+        tests = [
+            t for t in finder.find(getattr(datasets, name), name, globs={"wf": wf, "np": np}) if t.examples
+        ]
+        assert tests, f"datasets.{name} has no example"
+        assert all(runner.run(t, out=lambda s: None).failed == 0 for t in tests), name

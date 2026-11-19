@@ -86,6 +86,14 @@ fn none_in(path: &std::path::Path, what: &str) -> PyErr {
 /// ------
 /// InvalidInput
 ///     When the file holds no mesh.
+///
+/// Examples
+/// --------
+/// >>> import pathlib, tempfile
+/// >>> folder = pathlib.Path(tempfile.mkdtemp())
+/// >>> wf.write(folder / "box_tr.csv", wf.datasets.box([0, 0, 0], [2, 2, 2]))
+/// >>> wf.read_mesh(folder / "box_pt.csv", crs="EPSG:31983").crs
+/// 'EPSG:31983'
 #[pyfunction]
 #[pyo3(signature = (path, *, crs=None, length_unit=None))]
 fn read_mesh(
@@ -99,6 +107,21 @@ fn read_mesh(
 }
 
 /// The polylines in the file at `path`; see ``read_mesh``.
+///
+/// Parameters
+/// ----------
+/// path : str or PathLike
+///     File to read; see ``wireframes.read`` for the formats.
+/// crs, length_unit : str, optional
+///     Labels of the result; None takes the unit the file declares.
+///
+/// Examples
+/// --------
+/// >>> import pathlib, tempfile
+/// >>> folder = pathlib.Path(tempfile.mkdtemp())
+/// >>> wf.write(folder / "holes.dxf", wf.datasets.drillholes(n=3), skip_unsupported_columns=True)
+/// >>> len(wf.read_polylines(folder / "holes.dxf"))
+/// 3
 #[pyfunction]
 #[pyo3(signature = (path, *, crs=None, length_unit=None))]
 fn read_polylines(
@@ -114,6 +137,21 @@ fn read_polylines(
 }
 
 /// The points in the file at `path`; see ``read_mesh``.
+///
+/// Parameters
+/// ----------
+/// path : str or PathLike
+///     File to read; see ``wireframes.read`` for the formats.
+/// crs, length_unit : str, optional
+///     Labels of the result; None takes the unit the file declares.
+///
+/// Examples
+/// --------
+/// >>> import pathlib, tempfile
+/// >>> folder = pathlib.Path(tempfile.mkdtemp())
+/// >>> wf.write(folder / "collars.vtk", wf.PointSet([[0, 0, 0], [1, 1, 1]], {"au": [1.5, 2.0]}))
+/// >>> wf.read_points(folder / "collars.vtk")["au"].tolist()
+/// [1.5, 2.0]
 #[pyfunction]
 #[pyo3(signature = (path, *, crs=None, length_unit=None))]
 fn read_points(
@@ -230,6 +268,14 @@ fn data_arg(data: &Bound<PyAny>) -> PyResult<Data> {
 /// UserWarning
 ///     When binary STL rounds coordinates to float32 (UTM coordinates do), naming
 ///     how many vertices moved and by how much.
+///
+/// Examples
+/// --------
+/// >>> import pathlib, tempfile
+/// >>> folder = pathlib.Path(tempfile.mkdtemp())
+/// >>> wf.write(folder / "box.stl", wf.datasets.box([0, 0, 0], [2, 2, 2]), ascii=True)
+/// >>> wf.read_mesh(folder / "box.stl").volume
+/// 8.0
 #[pyfunction]
 #[pyo3(signature = (path, data, *, ascii=false, dxf_entity="3dface", zlib=false, skip_unsupported_columns=false))]
 fn write(

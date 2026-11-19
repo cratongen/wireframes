@@ -303,6 +303,12 @@ impl PyTable {
     /// ------
     /// MissingColumn
     ///     When the table has no such column.
+    ///
+    /// Examples
+    /// --------
+    /// >>> t = wf.Table({"hole": ["A", "B", "C"], "au": [1.0, None, 2.5]})
+    /// >>> t.column("au").tolist()
+    /// [1.0, nan, 2.5]
     fn column<'py>(&self, py: Python<'py>, name: &str) -> PyResult<Bound<'py, PyAny>> {
         frozen(column_py(py, self.get_column(name)?)?)
     }
@@ -316,6 +322,17 @@ impl PyTable {
     }
 
     /// Validity of column `name`: True where the row holds a value.
+    ///
+    /// Parameters
+    /// ----------
+    /// name : str
+    ///     Column name.
+    ///
+    /// Examples
+    /// --------
+    /// >>> t = wf.Table({"hole": ["A", "B", "C"], "au": [1.0, None, 2.5]})
+    /// >>> t.mask("au").tolist()
+    /// [True, False, True]
     fn mask<'py>(&self, py: Python<'py>, name: &str) -> PyResult<Bound<'py, PyArray1<bool>>> {
         let c = self.get_column(name)?;
         Ok(PyArray1::from_vec(
@@ -330,6 +347,12 @@ impl PyTable {
     /// ----------
     /// mask : array_like of bool
     ///     One value per row.
+    ///
+    /// Examples
+    /// --------
+    /// >>> t = wf.Table({"hole": ["A", "B", "C"], "au": [1.0, None, 2.5]})
+    /// >>> t.filter([True, False, True])["hole"].tolist()
+    /// ['A', 'C']
     fn filter(&self, mask: &Bound<PyAny>) -> PyResult<PyTable> {
         let keep = bools(mask, "mask")?;
         Ok(self.inner.filter(&keep).map_err(to_py)?.into())
@@ -345,6 +368,12 @@ impl PyTable {
     ///     One value per row; None or NaN marks a null.
     /// unit : str, optional
     ///     Unit of the column.
+    ///
+    /// Examples
+    /// --------
+    /// >>> t = wf.Table({"hole": ["A", "B", "C"], "au": [1.0, None, 2.5]})
+    /// >>> t.with_column("cu", [0.1, 0.2, 0.3], unit="%").column_names
+    /// ['hole', 'au', 'cu']
     #[pyo3(signature = (name, values, *, unit=None))]
     fn with_column(
         &self,
@@ -362,6 +391,17 @@ impl PyTable {
     }
 
     /// A copy with every column of `data` added or replaced.
+    ///
+    /// Parameters
+    /// ----------
+    /// data : Table or mapping of str to array_like
+    ///     Columns with one value per row.
+    ///
+    /// Examples
+    /// --------
+    /// >>> t = wf.Table({"hole": ["A", "B", "C"], "au": [1.0, None, 2.5]})
+    /// >>> t.with_columns({"cu": [0.1, 0.2, 0.3], "au": [1.0, 2.0, 3.0]})["au"].tolist()
+    /// [1.0, 2.0, 3.0]
     fn with_columns(&self, data: &Bound<PyAny>) -> PyResult<PyTable> {
         let more = mapping_table(data, None, "data")?;
         let mut table = if self.inner.num_columns() == 0 && self.inner.rows() == 0 {
@@ -376,6 +416,12 @@ impl PyTable {
     }
 
     /// Column name to numpy values, as ``column`` gives them.
+    ///
+    /// Examples
+    /// --------
+    /// >>> t = wf.Table({"hole": ["A", "B", "C"], "au": [1.0, None, 2.5]})
+    /// >>> t.to_dict()["hole"].tolist()
+    /// ['A', 'B', 'C']
     fn to_dict<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
         let d = PyDict::new(py);
         for (name, c) in self.inner.names().iter().zip(self.inner.columns()) {
@@ -648,6 +694,12 @@ impl PyMesh {
     ///     One value per vertex.
     /// unit : str, optional
     ///     Unit of the column.
+    ///
+    /// Examples
+    /// --------
+    /// >>> m = wf.datasets.box([0, 0, 0], [2, 2, 2])
+    /// >>> m.with_vertex_column("grade", np.arange(8.0), unit="g/t").column_names
+    /// ['grade']
     #[pyo3(signature = (name, values, *, unit=None))]
     fn with_vertex_column(
         &self,
@@ -669,6 +721,12 @@ impl PyMesh {
     ///     One value per triangle.
     /// unit : str, optional
     ///     Unit of the column.
+    ///
+    /// Examples
+    /// --------
+    /// >>> m = wf.datasets.box([0, 0, 0], [2, 2, 2])
+    /// >>> m.with_face_column("domain", np.ones(12, dtype=np.int64)).column_names
+    /// ['domain']
     #[pyo3(signature = (name, values, *, unit=None))]
     fn with_face_column(
         &self,
@@ -681,6 +739,19 @@ impl PyMesh {
     }
 
     /// A copy with new attribute tables; None keeps a table as it is.
+    ///
+    /// Parameters
+    /// ----------
+    /// vertex : Table or mapping of str to array_like, optional
+    ///     One row per vertex.
+    /// face : Table or mapping of str to array_like, optional
+    ///     One row per triangle.
+    ///
+    /// Examples
+    /// --------
+    /// >>> m = wf.datasets.box([0, 0, 0], [2, 2, 2])
+    /// >>> m.with_attributes(face={"domain": np.ones(12)}).column_names
+    /// ['domain']
     #[pyo3(signature = (*, vertex=None, face=None))]
     fn with_attributes(
         &self,
@@ -704,6 +775,12 @@ impl PyMesh {
     /// ----------
     /// vertices : array_like
     ///     ``(n, 3)`` coordinates, as many as the mesh has.
+    ///
+    /// Examples
+    /// --------
+    /// >>> m = wf.datasets.box([0, 0, 0], [2, 2, 2])
+    /// >>> m.with_vertices(m.coords * 2).volume
+    /// 64.0
     fn with_vertices(&self, vertices: &Bound<PyAny>) -> PyResult<PyMesh> {
         let v = rows3(vertices, "vertices", false)?;
         self.with(|m| m.with_vertices(v))
@@ -715,6 +792,12 @@ impl PyMesh {
     /// ----------
     /// mask : array_like of bool
     ///     One value per triangle.
+    ///
+    /// Examples
+    /// --------
+    /// >>> m = wf.datasets.box([0, 0, 0], [2, 2, 2])
+    /// >>> m.filter_faces(m.face_normals[:, 2] > 0).n_faces
+    /// 2
     fn filter_faces(&self, mask: &Bound<PyAny>) -> PyResult<PyMesh> {
         let keep = bools(mask, "mask")?;
         Ok(self.inner.filter_faces(&keep).map_err(to_py)?.into())
@@ -727,6 +810,12 @@ impl PyMesh {
     /// ----------
     /// on : {"vertices", "faces"}
     ///     Which rows.
+    ///
+    /// Examples
+    /// --------
+    /// >>> m = wf.datasets.box([0, 0, 0], [2, 2, 2])
+    /// >>> m.to_table().column_names, m.to_table(on="faces").num_rows
+    /// (['x', 'y', 'z'], 12)
     #[pyo3(signature = (*, on="vertices"))]
     fn to_table(&self, on: &str) -> PyResult<PyTable> {
         let m = &self.inner;
@@ -896,12 +985,38 @@ impl PyPolylines {
     }
 
     /// A copy with the features where `mask` is True.
+    ///
+    /// Parameters
+    /// ----------
+    /// mask : array_like of bool
+    ///     One value per feature.
+    ///
+    /// Examples
+    /// --------
+    /// >>> holes = wf.datasets.drillholes(n=3)
+    /// >>> len(holes.filter([True, False, True]))
+    /// 2
     fn filter(&self, mask: &Bound<PyAny>) -> PyResult<PyPolylines> {
         let keep = bools(mask, "mask")?;
         Ok(self.inner.filter(&keep).map_err(to_py)?.into())
     }
 
     /// A copy with feature column `name` added or replaced.
+    ///
+    /// Parameters
+    /// ----------
+    /// name : str
+    ///     Column name.
+    /// values : array_like or sequence of str or None
+    ///     One value per feature; None or NaN marks a null.
+    /// unit : str, optional
+    ///     Unit of the column.
+    ///
+    /// Examples
+    /// --------
+    /// >>> holes = wf.datasets.drillholes(n=3)
+    /// >>> holes.with_column("hole", ["DH1", "DH2", "DH3"]).attributes["hole"].tolist()
+    /// ['DH1', 'DH2', 'DH3']
     #[pyo3(signature = (name, values, *, unit=None))]
     fn with_column(
         &self,
@@ -919,6 +1034,21 @@ impl PyPolylines {
     }
 
     /// A copy with vertex column `name` added or replaced.
+    ///
+    /// Parameters
+    /// ----------
+    /// name : str
+    ///     Column name.
+    /// values : array_like or sequence of str or None
+    ///     One value per vertex; None or NaN marks a null.
+    /// unit : str, optional
+    ///     Unit of the column.
+    ///
+    /// Examples
+    /// --------
+    /// >>> ring = wf.Polylines([[[0, 0, 0], [4, 0, 0], [4, 3, 0], [0, 3, 0]]], closed=[True])
+    /// >>> ring.with_vertex_column("id", [1, 2, 3, 4]).column_names
+    /// ['id']
     #[pyo3(signature = (name, values, *, unit=None))]
     fn with_vertex_column(
         &self,
@@ -936,11 +1066,23 @@ impl PyPolylines {
     }
 
     /// 3D length of each feature, closing segments of rings included.
+    ///
+    /// Examples
+    /// --------
+    /// >>> ring = wf.Polylines([[[0, 0, 0], [4, 0, 0], [4, 3, 0], [0, 3, 0]]], closed=[True])
+    /// >>> ring.length().tolist()
+    /// [14.0]
     fn length<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray1<f64>> {
         array1(py, self.inner.length())
     }
 
     /// Plan area of each feature, even-odd over its rings.
+    ///
+    /// Examples
+    /// --------
+    /// >>> ring = wf.Polylines([[[0, 0, 0], [4, 0, 0], [4, 3, 0], [0, 3, 0]]], closed=[True])
+    /// >>> ring.area().tolist()
+    /// [12.0]
     fn area<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray1<f64>> {
         array1(py, self.inner.area())
     }
@@ -956,6 +1098,12 @@ impl PyPolylines {
     ///     ``(n, 2)`` or ``(n, 3)`` points; z is ignored.
     /// feature : int, optional
     ///     Feature to test; None tests every feature.
+    ///
+    /// Examples
+    /// --------
+    /// >>> ring = wf.Polylines([[[0, 0, 0], [4, 0, 0], [4, 3, 0], [0, 3, 0]]], closed=[True])
+    /// >>> ring.contains([[1, 1], [5, 5]]).tolist()
+    /// [True, False]
     #[pyo3(signature = (points, *, feature=None))]
     fn contains<'py>(
         &self,
@@ -985,6 +1133,17 @@ impl PyPolylines {
     }
 
     /// The first feature whose rings hold each point in plan, -1 for none.
+    ///
+    /// Parameters
+    /// ----------
+    /// points : array_like, PointSet or Mesh
+    ///     ``(n, 2)`` or ``(n, 3)`` points; z is ignored.
+    ///
+    /// Examples
+    /// --------
+    /// >>> ring = wf.Polylines([[[0, 0, 0], [4, 0, 0], [4, 3, 0], [0, 3, 0]]], closed=[True])
+    /// >>> ring.locate([[1, 1], [5, 5]]).tolist()
+    /// [0, -1]
     fn locate<'py>(
         &self,
         py: Python<'py>,
@@ -1015,6 +1174,12 @@ impl PyPolylines {
     /// -------
     /// numpy.ndarray
     ///     NaN when there is no ring.
+    ///
+    /// Examples
+    /// --------
+    /// >>> ring = wf.Polylines([[[0, 0, 0], [4, 0, 0], [4, 3, 0], [0, 3, 0]]], closed=[True])
+    /// >>> ring.distance([[1, 1], [2, 5]], signed=True).tolist()
+    /// [-1.0, 2.0]
     #[pyo3(signature = (points, *, feature=None, signed=false))]
     fn distance<'py>(
         &self,
@@ -1035,6 +1200,12 @@ impl PyPolylines {
 
     /// Every vertex as a row: ``feature``, ``part``, ``vertex``, ``x``, ``y``,
     /// ``z``, ``closed``, the vertex columns and the feature columns.
+    ///
+    /// Examples
+    /// --------
+    /// >>> ring = wf.Polylines([[[0, 0, 0], [4, 0, 0], [4, 3, 0], [0, 3, 0]]], closed=[True])
+    /// >>> ring.to_table().num_rows
+    /// 4
     fn to_table(&self) -> PyResult<PyTable> {
         let p = &self.inner;
         let n = p.n_vertices();
@@ -1167,12 +1338,38 @@ impl PyPointSet {
     }
 
     /// A copy with the points where `mask` is True.
+    ///
+    /// Parameters
+    /// ----------
+    /// mask : array_like of bool
+    ///     One value per point.
+    ///
+    /// Examples
+    /// --------
+    /// >>> p = wf.PointSet([[0, 0, 0], [1, 1, 1]], {"au": [1.5, 2.0]})
+    /// >>> len(p.filter([True, False]))
+    /// 1
     fn filter(&self, mask: &Bound<PyAny>) -> PyResult<PyPointSet> {
         let keep = bools(mask, "mask")?;
         Ok(self.inner.filter(&keep).map_err(to_py)?.into())
     }
 
     /// A copy with column `name` added or replaced.
+    ///
+    /// Parameters
+    /// ----------
+    /// name : str
+    ///     Column name.
+    /// values : array_like or sequence of str or None
+    ///     One value per point; None or NaN marks a null.
+    /// unit : str, optional
+    ///     Unit of the column.
+    ///
+    /// Examples
+    /// --------
+    /// >>> p = wf.PointSet([[0, 0, 0], [1, 1, 1]], {"au": [1.5, 2.0]})
+    /// >>> p.with_column("cu", [0.1, 0.2], unit="%").column_names
+    /// ['au', 'cu']
     #[pyo3(signature = (name, values, *, unit=None))]
     fn with_column(
         &self,
@@ -1190,6 +1387,12 @@ impl PyPointSet {
     }
 
     /// ``x``, ``y``, ``z`` and the attribute columns.
+    ///
+    /// Examples
+    /// --------
+    /// >>> p = wf.PointSet([[0, 0, 0], [1, 1, 1]], {"au": [1.5, 2.0]})
+    /// >>> p.to_table().column_names
+    /// ['x', 'y', 'z', 'au']
     fn to_table(&self) -> PyResult<PyTable> {
         Ok(append(coord_table(self.inner.coords())?, self.inner.attributes())?.into())
     }
@@ -1248,6 +1451,16 @@ impl PyUnstructuredGrid {
 
     /// Triangles of the surface cells (VTK types 5 to 9), with every point and
     /// the cell data of each triangle's cell.
+    ///
+    /// Examples
+    /// --------
+    /// >>> import pathlib, tempfile
+    /// >>> folder = pathlib.Path(tempfile.mkdtemp())
+    /// >>> vtk = "# vtk DataFile Version 2.0\ncells\nASCII\nDATASET UNSTRUCTURED_GRID\nPOINTS 4 double\n0 0 0 1 0 0 0 1 0 0 0 1\nCELLS 2 9\n4 0 1 2 3\n3 0 1 2\nCELL_TYPES 2\n10\n5\n"
+    /// >>> _ = (folder / "cells.vtk").write_text(vtk)
+    /// >>> grid = wf.read(folder / "cells.vtk").grid
+    /// >>> grid.n_cells, grid.surface().n_faces
+    /// (2, 1)
     fn surface(&self) -> PyResult<PyMesh> {
         Ok(self.inner.surface().map_err(to_py)?.into())
     }
@@ -1273,6 +1486,12 @@ impl PyUnstructuredGrid {
 /// -------
 /// Mesh
 ///     A column missing from one mesh is null in its rows.
+///
+/// Examples
+/// --------
+/// >>> a, b = wf.datasets.box([0, 0, 0], [2, 2, 2]), wf.datasets.box([1, 1, 1], [3, 3, 3])
+/// >>> wf.concat([a, b]).n_faces
+/// 24
 #[pyfunction]
 pub(crate) fn concat(meshes: &Bound<PyAny>) -> PyResult<PyMesh> {
     let items: Vec<Bound<PyAny>> = meshes.try_iter()?.collect::<PyResult<_>>()?;
