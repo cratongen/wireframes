@@ -341,7 +341,6 @@ def test_stage_results_do_not_depend_on_thread_count():
     assert len(digests) == 1
 
 
-@pytest.mark.skip(reason="acceptance: clipping an octagonal pit by flat ground folds the cap at utm scale")
 def test_octagonal_pit_clipped_by_flat_ground_is_a_solid():
     pit, rings = benched_pit(OCTAGON, 1)
     solid = pit.close_to_elevation(600.0)
