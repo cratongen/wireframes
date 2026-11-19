@@ -1,8 +1,10 @@
 //! Results that rounding to `f64` used to leave open or self-intersecting, from
 //! the underground acceptance scenarios, reduced to their inputs.
 
-use wireframes_boolean::{BooleanOptions, clip_by_surface, difference, intersection};
-use wireframes_core::Mesh;
+use wireframes_boolean::{
+    BooleanOptions, Op, boolean, clip_by_surface, difference, intersection, split_by_plane,
+};
+use wireframes_core::{Error, Mesh, Result, fixtures};
 use wireframes_ops::volume;
 
 fn solid(m: &Mesh) -> bool {
@@ -42,6 +44,231 @@ fn lofted_lens_clipped_by_a_tilted_grid_fault_is_two_solids() {
     assert!(solid(&r.below) && solid(&r.above));
     let (lo, hi) = (volume(&r.below).unwrap(), volume(&r.above).unwrap());
     assert!(close(lo + hi, volume(&lens).unwrap()), "{lo} + {hi}");
+}
+
+/// The two inputs of a reduced case in `tests/data/rounding/<name>.txt`: per
+/// mesh a line `tag vertices faces`, then one vertex and one face per line,
+/// coordinates written so that they parse to the same `f64`.
+fn pair(name: &str) -> (Mesh, Mesh) {
+    let path = format!(
+        "{}/tests/data/rounding/{name}.txt",
+        env!("CARGO_MANIFEST_DIR")
+    );
+    let text = std::fs::read_to_string(&path).unwrap();
+    let mut lines = text.lines();
+    let mut read = || {
+        let head: Vec<usize> = lines
+            .next()
+            .unwrap()
+            .split(' ')
+            .skip(1)
+            .map(|x| x.parse().unwrap())
+            .collect();
+        let v: Vec<[f64; 3]> = (0..head[0])
+            .map(|_| {
+                let p: Vec<f64> = lines
+                    .next()
+                    .unwrap()
+                    .split(' ')
+                    .map(|x| x.parse().unwrap())
+                    .collect();
+                [p[0], p[1], p[2]]
+            })
+            .collect();
+        let t: Vec<[u32; 3]> = (0..head[1])
+            .map(|_| {
+                let p: Vec<u32> = lines
+                    .next()
+                    .unwrap()
+                    .split(' ')
+                    .map(|x| x.parse().unwrap())
+                    .collect();
+                [p[0], p[1], p[2]]
+            })
+            .collect();
+        Mesh::new(v, t).unwrap()
+    };
+    let a = read();
+    (a, read())
+}
+
+const REDUCED: [&str; 9] = [
+    "clipped_boxes",
+    "pit_pushback",
+    "touching_slivers",
+    "runaway_union",
+    "runaway_intersection",
+    "runaway_difference",
+    "runaway_difference_reversed",
+    "rotated_stopes",
+    "crosscut_chain",
+];
+
+/// Union, intersection and difference of `a` and `b` are solids (or empty)
+/// and satisfy `vol(a | b) + vol(a & b) = vol(a) + vol(b)` and
+/// `vol(a - b) + vol(a & b) = vol(a)`.
+fn booleans_are_solids_with_exact_volumes(name: &str) {
+    let (a, b) = pair(name);
+    assert!(solid(&a) && solid(&b), "{name}: inputs");
+    let o = BooleanOptions::default();
+    let run = |op| {
+        let m = boolean(&a, &b, op, &o)
+            .unwrap_or_else(|e| panic!("{name} {op:?}: {e}"))
+            .mesh;
+        assert!(m.is_empty() || solid(&m), "{name} {op:?}");
+        if m.is_empty() {
+            0.0
+        } else {
+            volume(&m).unwrap()
+        }
+    };
+    let (u, i, d) = (run(Op::Union), run(Op::Intersection), run(Op::Difference));
+    let (va, vb) = (volume(&a).unwrap(), volume(&b).unwrap());
+    assert!(close(u + i, va + vb), "{name}: {u} + {i} vs {va} + {vb}");
+    assert!(close(d + i, va), "{name}: {d} + {i} vs {va}");
+}
+
+#[test]
+#[ignore = "rounding: a sub-ulp shell, the difference of prisms whose caps differ by one ulp, rounds flat"]
+fn difference_of_prisms_whose_caps_differ_by_one_ulp_is_empty_or_a_solid() {
+    let (a, b) = ulp_prisms();
+    let m = difference(&b, &a, &BooleanOptions::default()).unwrap().mesh;
+    assert!(m.is_empty() || solid(&m));
+    let v = if m.is_empty() {
+        0.0
+    } else {
+        volume(&m).unwrap()
+    };
+    assert!(v.abs() <= 1e-12 * volume(&a).unwrap(), "{v}");
+}
+
+#[test]
+#[ignore = "rounding: boxes clipped by one topography have caps that agree only to rounding"]
+fn booleans_of_boxes_clipped_by_the_same_topography() {
+    booleans_are_solids_with_exact_volumes("clipped_boxes");
+}
+
+#[test]
+#[ignore = "rounding: a pit and its pushback clipped by one ground share walls that agree only to rounding"]
+fn booleans_of_a_triangular_pit_and_its_pushback_clipped_by_the_same_ground() {
+    booleans_are_solids_with_exact_volumes("pit_pushback");
+}
+
+#[test]
+#[ignore = "rounding: touching pushback slivers have walls that agree only to rounding"]
+fn booleans_of_touching_pushback_slivers() {
+    booleans_are_solids_with_exact_volumes("touching_slivers");
+}
+
+#[test]
+#[ignore = "rounding: the union of the runaway pushback pair folds slivers and leaves boundary edges"]
+fn booleans_of_the_runaway_pushback_pair_reduced_for_union() {
+    booleans_are_solids_with_exact_volumes("runaway_union");
+}
+
+#[test]
+#[ignore = "rounding: the intersection of the runaway pushback pair is a sliver an ulp thick"]
+fn booleans_of_the_runaway_pushback_pair_reduced_for_intersection() {
+    booleans_are_solids_with_exact_volumes("runaway_intersection");
+}
+
+#[test]
+#[ignore = "rounding: the difference of the runaway pushback pair folds slivers between near-coplanar walls"]
+fn booleans_of_the_runaway_pushback_pair_reduced_for_difference() {
+    booleans_are_solids_with_exact_volumes("runaway_difference");
+}
+
+#[test]
+#[ignore = "rounding: the reversed difference of the runaway pushback pair folds slivers between near-coplanar walls"]
+fn booleans_of_the_runaway_pushback_pair_reduced_for_the_reversed_difference() {
+    booleans_are_solids_with_exact_volumes("runaway_difference_reversed");
+}
+
+#[test]
+#[ignore = "rounding: a tessellated stope wall rotated to strike is planar only to rounding"]
+fn union_of_a_tessellated_stope_and_a_box_rotated_to_strike() {
+    booleans_are_solids_with_exact_volumes("rotated_stopes");
+}
+
+#[test]
+#[ignore = "rounding: a drive that earlier unions rounded meets a crosscut within ulps of its walls"]
+fn union_of_a_rounded_drive_with_a_crosscut() {
+    booleans_are_solids_with_exact_volumes("crosscut_chain");
+}
+
+#[test]
+#[ignore = "rounding: wall vertices of a pit at UTM coordinates lie within ulps of tilted ground"]
+fn square_pit_at_utm_clipped_by_tilted_ground_is_two_solids() {
+    let (pit, ground) = pair("square_pit_tilted_ground");
+    assert!(solid(&pit));
+    let r = clip_by_surface(&pit, &ground, &BooleanOptions::default()).unwrap();
+    assert!(solid(&r.below) && solid(&r.above));
+    let (lo, hi) = (volume(&r.below).unwrap(), volume(&r.above).unwrap());
+    assert!(close(lo + hi, volume(&pit).unwrap()), "{lo} + {hi}");
+}
+
+#[test]
+#[ignore = "rounding: other icosphere vertices lie within ulps of a plane through its centre"]
+fn split_of_an_icosphere_through_its_centre_is_two_solids() {
+    let m = fixtures::sphere(1);
+    let (a, b) = split_by_plane(&m, m.vertices()[12], [1.0, 1.0, 1.0]).unwrap();
+    assert!(solid(&a) && solid(&b));
+    let (lo, hi) = (volume(&a).unwrap(), volume(&b).unwrap());
+    assert!(close(lo + hi, volume(&m).unwrap()), "{lo} + {hi}");
+}
+
+/// Each reduced case either returns solids or fails as a kernel limit, never
+/// as an input defect or a panic; prints how many fail.
+#[test]
+fn reduced_rounding_cases_return_solids_or_kernel_errors() {
+    let o = BooleanOptions::default();
+    let mut refused = vec![];
+    let mut check = |name: &str, r: Result<Vec<Mesh>>| match r {
+        Ok(ms) => assert!(ms.iter().all(|m| m.is_empty() || solid(m)), "{name}"),
+        Err(Error::Kernel { .. }) => refused.push(name.to_string()),
+        Err(e) => panic!("{name}: {e}"),
+    };
+    for name in REDUCED {
+        let (a, b) = pair(name);
+        for op in [Op::Union, Op::Intersection, Op::Difference] {
+            check(
+                &format!("{name} {op:?}"),
+                boolean(&a, &b, op, &o).map(|r| vec![r.mesh]),
+            );
+        }
+    }
+    let (a, b) = ulp_prisms();
+    check("ulp prisms", difference(&b, &a, &o).map(|r| vec![r.mesh]));
+    let (pit, ground) = pair("square_pit_tilted_ground");
+    check(
+        "square pit",
+        clip_by_surface(&pit, &ground, &o).map(|r| vec![r.below, r.above]),
+    );
+    let m = fixtures::sphere(1);
+    check(
+        "icosphere",
+        split_by_plane(&m, m.vertices()[12], [1.0, 1.0, 1.0]).map(|(a, b)| vec![a, b]),
+    );
+    println!("{} refused: {refused:?}", refused.len());
+}
+
+fn ulp_prisms() -> (Mesh, Mesh) {
+    let prism = |half: f64, bottom: f64| {
+        let mut v = vec![];
+        for top in [false, true] {
+            for y in [-half, half] {
+                for x in [-half, half] {
+                    v.push([x, y, if top { 5.0 + x / 4.0 + y / 2.0 } else { bottom }]);
+                }
+            }
+        }
+        Mesh::new(v, utm_stope().triangles().to_vec()).unwrap()
+    };
+    let a = prism(10.0, -10.0);
+    let mut v = prism(6.0, -5.0).vertices().to_vec();
+    v[4][2] = v[4][2].next_up();
+    let b = Mesh::new(v, a.triangles().to_vec()).unwrap();
+    (a, b)
 }
 
 fn utm_stope() -> Mesh {
