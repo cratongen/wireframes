@@ -611,7 +611,6 @@ def test_binary_stl_with_padding_reads_and_warns(tmp_path):
     ]
 
 
-@pytest.mark.skip(reason="acceptance: binary stl with a solid header and padding reads as an empty mesh")
 def test_binary_stl_with_solid_header_and_padding_is_not_read_as_empty(tmp_path):
     (tmp_path / "pad.stl").write_bytes(binary_stl(header=b"solid exported by package", tail=b"\0" * 7))
     try:
@@ -621,7 +620,6 @@ def test_binary_stl_with_solid_header_and_padding_is_not_read_as_empty(tmp_path)
     assert is_box(m)
 
 
-@pytest.mark.skip(reason="acceptance: ascii stl cut after a facet reads without error")
 def test_ascii_stl_cut_after_a_facet_is_an_error(tmp_path):
     cut = ASCII_STL[: ASCII_STL.index("endfacet", len(ASCII_STL) // 2) + len("endfacet\n")]
     (tmp_path / "cut.stl").write_text(cut)

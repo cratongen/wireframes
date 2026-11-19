@@ -55,19 +55,24 @@ fn starts_with_solid(r: &[u8]) -> bool {
 
 pub fn read(r: &[u8]) -> Result<Data> {
     let len = r.len() as u64;
+    let padded = |n: u64| {
+        let extra = len - 84 - 50 * n;
+        read_binary(
+            r,
+            n as usize,
+            vec![format!(
+                "binary stl declares {n} triangles; ignored {extra} trailing bytes"
+            )],
+        )
+    };
     match binary_count(r) {
         Some(n) if 84 + 50 * n == len => read_binary(r, n as usize, Vec::new()),
-        _ if starts_with_solid(r) => read_ascii(r),
-        Some(n) if 84 + 50 * n < len => {
-            let extra = len - 84 - 50 * n;
-            read_binary(
-                r,
-                n as usize,
-                vec![format!(
-                    "binary stl declares {n} triangles; ignored {extra} trailing bytes"
-                )],
-            )
-        }
+        count if starts_with_solid(r) => match (read_ascii(r), count) {
+            (Ok(d), _) => Ok(d),
+            (Err(_), Some(n)) if 84 + 50 * n < len => padded(n),
+            (Err(e), _) => Err(e),
+        },
+        Some(n) if 84 + 50 * n < len => padded(n),
         Some(n) => Err(Error::format(format!(
             "binary stl declares {n} triangles ({} bytes) but the file has {len} bytes",
             84 + 50 * n
@@ -184,13 +189,22 @@ fn read_ascii(r: &[u8]) -> Result<Data> {
     let mut corners: Vec<[f64; 3]> = Vec::new();
     let mut current = None;
     let mut short = 0usize;
+    let mut open = None;
     while let Some(t) = c.token() {
         if t.eq_ignore_ascii_case(b"solid") {
+            if let Some(at) = open {
+                return Err(Error::format_at(
+                    c.line,
+                    format!("solid opened on line {at} has no endsolid before this solid"),
+                ));
+            }
+            open = Some(c.line);
             current = Some(names.len() as u32);
             names.push(c.rest_of_line());
         } else if t.eq_ignore_ascii_case(b"endsolid") {
             c.rest_of_line();
             current = None;
+            open = None;
         } else if t.eq_ignore_ascii_case(b"facet") {
             c.expect("normal")?;
             for _ in 0..3 {
@@ -241,6 +255,12 @@ fn read_ascii(r: &[u8]) -> Result<Data> {
                 ),
             ));
         }
+    }
+    if let Some(at) = open {
+        return Err(Error::format_at(
+            c.line,
+            format!("solid opened on line {at} ends without endsolid; the file is truncated"),
+        ));
     }
     let mut data = Data::default();
     if short > 0 {
@@ -469,5 +489,36 @@ mod tests {
         )
         .unwrap();
         assert_eq!(f32_rounding(&exact), (0, 0.0));
+    }
+
+    const FACET: &str = "facet normal 0 0 1\nouter loop\nvertex 0 0 0\nvertex 1 0 0\nvertex 0 1 0\nendloop\nendfacet\n";
+
+    #[test]
+    fn an_ascii_solid_without_endsolid_is_truncated() {
+        let whole = format!("solid a\n{FACET}{FACET}endsolid a\n");
+        assert!(read(whole.as_bytes()).is_ok());
+        let cut = format!("solid a\n{FACET}");
+        let e = read(cut.as_bytes()).unwrap_err().to_string();
+        assert!(e.contains("line 1 ends without endsolid"), "{e}");
+        let unclosed = format!("solid a\n{FACET}solid b\n{FACET}endsolid b\n");
+        assert!(read(unclosed.as_bytes()).is_err());
+    }
+
+    #[test]
+    fn a_binary_file_with_a_solid_header_and_padding_reads_as_binary() {
+        let mut b = b"solid exported by package".to_vec();
+        b.resize(80, b' ');
+        b.extend(1u32.to_le_bytes());
+        for x in [0f32, 0., 1., 0., 0., 0., 1., 0., 0., 0., 1., 0.] {
+            b.extend(x.to_le_bytes());
+        }
+        b.extend([0u8; 2]);
+        b.extend([0u8; 7]);
+        let d = read(&b).unwrap();
+        assert_eq!(d.mesh.unwrap().n_faces(), 1);
+        assert_eq!(
+            d.warnings,
+            ["binary stl declares 1 triangles; ignored 7 trailing bytes"]
+        );
     }
 }
