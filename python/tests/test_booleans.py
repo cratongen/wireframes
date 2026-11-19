@@ -158,6 +158,8 @@ def test_split_and_slice_by_plane(orebody, box):
     top = box([0, 0, 0], [1, 1, 1]).filter_faces(np.arange(12) < 2)
     lo, hi = top.split_by_plane([0.5, 0, 0], [1, 0, 0])
     assert lo.area + hi.area == pytest.approx(top.area)
+    corner, empty = box([0, 0, 0], [1, 1, 1]).split_by_plane([1, 1, 1], [1, 1, 1])
+    assert corner.n_faces == 12 and empty.n_faces == 0
 
 
 def test_cut_fill_identities():

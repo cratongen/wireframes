@@ -252,9 +252,9 @@ pub fn split_by_plane(mesh: &Mesh, origin: [f64; 3], normal: [f64; 3]) -> Result
         .map(|g| if g < nv { vmap[g as usize] } else { g })
         .collect();
     let mut faces: [Vec<([u32; 3], Option<u32>)>; 2] = [vec![], vec![]];
-    for (f, t) in mesh.triangles().iter().enumerate() {
-        let neg = t.map(|v| sec.negative[v as usize]);
-        let t = &t.map(|v| vmap[v as usize]);
+    for (f, input) in mesh.triangles().iter().enumerate() {
+        let neg = input.map(|v| sec.negative[v as usize]);
+        let t = &input.map(|v| vmap[v as usize]);
         if roof[f] {
             faces[0].push((*t, Some(f as u32)));
             continue;
@@ -265,10 +265,12 @@ pub fn split_by_plane(mesh: &Mesh, origin: [f64; 3], normal: [f64; 3]) -> Result
         }
         let mut poly: [Vec<u32>; 2] = [vec![], vec![]];
         for k in 0..3 {
-            let (a, b) = (t[k], t[(k + 1) % 3]);
-            poly[usize::from(!neg[k])].push(a);
+            poly[usize::from(!neg[k])].push(t[k]);
             if neg[k] != neg[(k + 1) % 3] {
-                let x = gid(crossing_key(&sec.negative, &on, a, b));
+                let x = match crossing_key(&sec.negative, &on, input[k], input[(k + 1) % 3]) {
+                    Key::V(v) => vmap[v as usize],
+                    e => gid(e),
+                };
                 poly[0].push(x);
                 poly[1].push(x);
             }

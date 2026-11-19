@@ -397,3 +397,28 @@ fn slicing_and_splitting_touching_shells() {
         assert!(summary(&a).is_solid() && summary(&b).is_solid(), "{name}");
     }
 }
+
+#[test]
+fn split_through_a_lone_vertex_on_the_plane() {
+    let (a, b) = split_by_plane(&fixtures::cube(), [1.0; 3], [1.0; 3]).unwrap();
+    assert_eq!((a.n_faces(), b.n_faces()), (12, 0));
+    let (a, b) = split_by_plane(&fixtures::vertex_touching_cubes(), [1.0; 3], [1.0; 3]).unwrap();
+    assert!(close(volume(&a), 1.0) && close(volume(&b), 1.0));
+    for m in [
+        fixtures::edge_touching_cubes(false),
+        fixtures::edge_touching_cubes(true),
+        fixtures::touching_tetrahedra(),
+    ] {
+        for (o, n) in [
+            ([1.0; 3], [1.0; 3]),
+            ([0.0; 3], [1.0; 3]),
+            ([1.0, 1.0, 1.0], [1.0, -1.0, 0.0]),
+        ] {
+            let (a, b) = split_by_plane(&m, o, n).unwrap();
+            assert!(close(volume(&a) + volume(&b), volume(&m)), "{o:?} {n:?}");
+            for piece in [&a, &b] {
+                assert!(piece.is_empty() || summary(piece).is_solid(), "{o:?} {n:?}");
+            }
+        }
+    }
+}

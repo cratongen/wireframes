@@ -1575,6 +1575,8 @@ wireframes-boolean
 - Edge, vertex and face contact pairs, a difference that leaves bodies joined at
   edges and vertices, and a chain of ten mixed booleans each fed its previous result,
   checked against an exact voxel count.
+- `split_by_plane` of a closed mesh that meets the plane only at a vertex, with and
+  without touching shells, puts it whole on one side.
 - P closed manifold in gives closed manifold out (`is_closed`, no non-manifold edges
   or vertices, consistent winding) for every op.
 - P `A union A` and `A intersection A` have the volume of A; `A difference A` is empty.

@@ -50,6 +50,11 @@ All notable changes to wireframes are listed here. The format follows
 - Unused `dxf` and `regex` dependencies; DXF reading is a hand-written
   group-code reader.
 
+### Fixed
+
+- `split_by_plane` no longer panics when a closed mesh meets the plane only at
+  a vertex.
+
 ### Known issues
 
 - A boolean result shell that touches itself raises `InvalidInput`.
