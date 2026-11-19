@@ -243,16 +243,40 @@ impl PyMesh {
     ///     Shrinking step, positive.
     /// mu : float
     ///     Inflating step, below ``-lambda_``.
+    /// preserve_volume : bool
+    ///     Scale the smoothed solid about its volume centroid so its volume
+    ///     equals the input's to rounding. Needs a closed, outward solid and
+    ///     raises ``InvalidMesh`` or ``InvalidInput`` otherwise. Without it,
+    ///     Taubin smoothing changes a solid's volume a little: by -0.29 percent
+    ///     for the orebody after 5 iterations in example 05.
     ///
     /// Examples
     /// --------
     /// >>> m = wf.datasets.topography(n=50)
     /// >>> m.smooth(iterations=5).n_faces == m.n_faces
     /// True
-    #[pyo3(signature = (*, iterations=10, lambda_=0.5, mu=-0.53))]
-    fn smooth(&self, py: Python, iterations: usize, lambda_: f64, mu: f64) -> PyResult<PyMesh> {
+    /// >>> ore = wf.datasets.orebody()
+    /// >>> abs(ore.smooth(preserve_volume=True).volume / ore.volume - 1) < 1e-12
+    /// True
+    #[pyo3(signature = (*, iterations=10, lambda_=0.5, mu=-0.53, preserve_volume=false))]
+    fn smooth(
+        &self,
+        py: Python,
+        iterations: usize,
+        lambda_: f64,
+        mu: f64,
+        preserve_volume: bool,
+    ) -> PyResult<PyMesh> {
         Ok(py
-            .detach(|| wireframes_build::smooth_taubin(&self.inner, iterations, lambda_, mu))
+            .detach(|| {
+                wireframes_build::smooth_taubin(
+                    &self.inner,
+                    iterations,
+                    lambda_,
+                    mu,
+                    preserve_volume,
+                )
+            })
             .map_err(to_py)?
             .into())
     }

@@ -306,8 +306,10 @@ class Mesh:
         preserve_boundary: bool = True,
     ) -> Mesh:
         """A copy with fewer triangles."""
-    def smooth(self, *, iterations: int = 10, lambda_: float = 0.5, mu: float = -0.53) -> Mesh:
-        """A Taubin-smoothed copy."""
+    def smooth(
+        self, *, iterations: int = 10, lambda_: float = 0.5, mu: float = -0.53, preserve_volume: bool = False
+    ) -> Mesh:
+        """A Taubin-smoothed copy; `preserve_volume` rescales a solid to its input volume."""
     def offset(self, distance: float) -> Mesh:
         """A copy with each vertex moved by `distance` along its normal; faces at corners move less."""
     def remesh(self, edge_length: float, *, iterations: int = 5) -> Mesh:

@@ -1216,7 +1216,7 @@ pub fn extrude(polygons: &Polylines, vector: [f64; 3]) -> Result<Mesh>;
 pub fn close_to_elevation(surface: &Mesh, z: f64) -> Result<Mesh>;
 pub struct DecimateOptions { pub target_faces: Option<usize>, pub max_error: Option<f64>, pub preserve_boundary: bool }
 pub fn decimate(mesh: &Mesh, opts: &DecimateOptions) -> Result<Mesh>;
-pub fn smooth_taubin(mesh: &Mesh, iterations: usize, lambda: f64, mu: f64) -> Result<Mesh>;
+pub fn smooth_taubin(mesh: &Mesh, iterations: usize, lambda: f64, mu: f64, preserve_volume: bool) -> Result<Mesh>;
 pub fn offset(mesh: &Mesh, distance: f64) -> Result<Mesh>;
 pub fn remesh(mesh: &Mesh, edge_length: f64, iterations: usize) -> Result<Mesh>;
 pub fn contours(surface: &Mesh, levels: &[f64]) -> Result<Polylines>;
@@ -1269,7 +1269,14 @@ Semantics:
   `target_faces` or when the next cost exceeds `max_error` squared; ties by edge
   index; face and vertex attributes of survivors are kept.
 - `smooth_taubin`: uniform Laplacian weights, `lambda > 0`, `mu < -lambda`,
-  boundary vertices fixed; defaults in Python `lambda=0.5, mu=-0.53`.
+  boundary vertices fixed; defaults in Python `lambda=0.5, mu=-0.53,
+  preserve_volume=False`. Taubin steps alone change a solid's volume slightly.
+  With `preserve_volume`, the input must be a closed outward solid (`InvalidMesh`
+  from `volume` when not closed, `InvalidInput` when its volume is not positive);
+  after the steps every vertex is scaled about the smoothed volume centroid by
+  `cbrt(V_in / V_out)`, so the volume matches the input's to rounding and the
+  centroid does not move. The uniform Laplacian commutes with that scaling, so
+  scaling once at the end equals rescaling after every step.
 - `offset`: vertices move by `distance` along angle-weighted vertex normals
   (outward positive); output validated and refused with `InvalidMesh` when it
   self-intersects. Faces move less than `distance` where they meet at an angle
@@ -1530,7 +1537,7 @@ class Mesh:
         max_error: float | None = None,
         preserve_boundary: bool = True,
     ) -> Mesh: ...
-    def smooth(self, *, iterations: int = 10, lambda_: float = 0.5, mu: float = -0.53) -> Mesh: ...
+    def smooth(self, *, iterations: int = 10, lambda_: float = 0.5, mu: float = -0.53, preserve_volume: bool = False) -> Mesh: ...
     def offset(self, distance: float) -> Mesh: ...
     def remesh(self, edge_length: float, *, iterations: int = 5) -> Mesh: ...
     def contours(self, levels: ArrayLike) -> Polylines: ...
@@ -1841,7 +1848,8 @@ wireframes-build
 - P `close_to_elevation` volume equals `cut_fill` against a flat plane at `z`.
 - P `decimate` keeps a solid closed and manifold; its volume error is reported, not
   bounded, except for planar inputs, where volume and boundary stay exact.
-- P `smooth_taubin` keeps boundary vertices fixed and preserves topology.
+- P `smooth_taubin` keeps boundary vertices fixed and preserves topology; with
+  `preserve_volume` a closed solid keeps its volume to a relative 1e-12.
 - P `remesh` keeps a closed input closed; Hausdorff distance (sampled) to the input
   stays below `edge_length`.
 - P `contours` of a plane `z = ax + by + c` at level L are straight lines lying on

@@ -18,7 +18,8 @@ All notable changes to wireframes are listed here. The format follows
 - Queries: `contains`, `locate`, `signed_distance`, `closest_point`, `ray_hits`,
   `segment_hits`, `trace_intervals` and exact `block_fraction`.
 - Construction: `dtm` with breaklines, `triangulate`, `extrude`, `loft`,
-  `close_to_elevation`, `contours`, `decimate`, `smooth`, `offset`, `remesh`.
+  `close_to_elevation`, `contours`, `decimate`, `smooth` (with `preserve_volume`
+  to keep a solid's volume), `offset`, `remesh`.
 - Python package `wireframes` with a full `.pyi` stub, seeded datasets, matplotlib
   plots and `to_polars`/`to_pandas`/`to_pyarrow` conversions.
 - Numbered examples for every public capability, and an mkdocs guide.

@@ -229,8 +229,11 @@ tonnage without warning. `wireframes` enforces three rules:
     faces move less where they meet at an angle (by `distance / sqrt(3)` at a
     box corner). Neither a mitred nor an isotropic (Minkowski) offset exists
     yet (spec decision 16). Not started.
-  - `smooth` runs Taubin smoothing, which does not preserve volume exactly: in
-    example 05 the orebody's volume changes by 0.16 percent.
+  - `smooth` runs Taubin smoothing, which changes a solid's volume slightly
+    (by -0.29 percent for the orebody after 5 iterations in example 05).
+    `preserve_volume=True` rescales the result about its volume centroid so
+    the volume matches the input to rounding; it is off by default and needs
+    a closed solid.
 
 ### M7: Boitata adopts wireframes
 

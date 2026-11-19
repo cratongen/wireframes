@@ -98,17 +98,28 @@ assert abs(floor.area - holed_pad.area()[0]) <= 1e-9 * floor.area
 # ## Editing meshes
 #
 # `decimate` collapses edges by quadric error and keeps a solid closed; `smooth` applies Taubin's
-# shrink-free smoothing with the boundary fixed; `remesh` evens out edge lengths; `offset` moves every vertex
-# along its normal and refuses a result that intersects itself.
+# smoothing with the boundary fixed, which changes a solid's volume a little unless you pass
+# `preserve_volume=True`; `remesh` evens out edge lengths; `offset` moves every vertex along its normal and
+# refuses a result that intersects itself.
 
 # %%
 orebody = wf.datasets.orebody()
 light = orebody.decimate(target_faces=150)
 smooth = orebody.smooth(iterations=5)
+kept = orebody.smooth(iterations=5, preserve_volume=True)
 even = orebody.remesh(15.0, iterations=3)
 grown = orebody.offset(2.0)
-for name, m in [("decimate", light), ("smooth", smooth), ("remesh", even), ("offset 2 m", grown)]:
-    print(f"{name:11} {m.n_faces:5} triangles, volume {m.volume:12,.0f} m3, closed: {m.is_closed}")
+edits = [
+    ("decimate", light),
+    ("smooth", smooth),
+    ("smooth, kept", kept),
+    ("remesh", even),
+    ("offset 2 m", grown),
+]
+for name, m in edits:
+    print(f"{name:12} {m.n_faces:5} triangles, volume {m.volume:12,.0f} m3, closed: {m.is_closed}")
+print(f"smooth changes the volume by {100 * (smooth.volume / orebody.volume - 1):+.2f} percent")
+assert kept.is_solid and abs(kept.volume / orebody.volume - 1) < 1e-12
 
 # %%
 fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(11, 4.6), layout="constrained")

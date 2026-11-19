@@ -9,7 +9,7 @@
 | `surface.close_to_elevation(z)` | solid between a height-field surface and a flat floor |
 | `mesh.contours(levels)` | contour lines with an `elevation` column |
 | `mesh.decimate(target_faces=None, max_error=None)` | fewer triangles by quadric edge collapse |
-| `mesh.smooth(iterations=10, lambda_=0.5, mu=-0.53)` | Taubin smoothing, boundary fixed |
+| `mesh.smooth(iterations=10, lambda_=0.5, mu=-0.53, preserve_volume=False)` | Taubin smoothing, boundary fixed; `preserve_volume=True` keeps a solid's volume |
 | `mesh.remesh(edge_length, iterations=5)` | isotropic remeshing |
 | `mesh.offset(distance)` | vertices moved along their normals, outward when positive |
 

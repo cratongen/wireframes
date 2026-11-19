@@ -128,3 +128,15 @@ def test_decimate_smooth_offset_remesh(orebody):
     assert max(sampled_hausdorff(box, re), sampled_hausdorff(re, box)) < 1.0
     with pytest.raises(wf.InvalidInput):
         orebody.smooth(lambda_=-1.0)
+
+
+def test_smooth_preserve_volume(orebody):
+    drift = orebody.smooth(iterations=5).volume / orebody.volume - 1
+    kept = orebody.smooth(iterations=5, preserve_volume=True)
+    assert abs(drift) > 1e-4
+    assert kept.is_solid and abs(kept.volume / orebody.volume - 1) < 1e-12
+    np.testing.assert_allclose(kept.centroid, orebody.smooth(iterations=5).centroid, rtol=0, atol=1e-6)
+    with pytest.raises(wf.InvalidMesh):
+        wf.dtm(grid_points(5)).smooth(preserve_volume=True)
+    with pytest.raises(wf.InvalidInput):
+        orebody.flip().smooth(preserve_volume=True)
