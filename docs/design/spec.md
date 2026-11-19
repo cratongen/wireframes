@@ -997,10 +997,18 @@ part of the solid ...")`, never a guess.
 `split_by_plane`: returns `(negative, positive)` where positive means
 `(p - origin) . normal > 0`; points on the plane go to positive (boitata rule).
 Crossing points on edges are computed exactly and rounded once, before the cap is
-built. Section points of a closed mesh whose rounded coordinates are equal (shells
-touching on the plane, or exact points that round together, compared with `cmp_lex`)
-are one point of the cap triangulation; each output shell then gets its own copy of
-such a point, so touching shells stay apart in both parts. Side tests use
+built; a crossing that rounds exactly onto an end of its edge is that input vertex.
+Section points of a closed mesh whose rounded coordinates project onto the same
+point along the dominant axis of the normal (shells touching on the plane, or
+exact points that round within a few ulps of each other, such as the crossings
+next to a vertex that lies an ulp off an inclined plane) are one point of the cap
+triangulation, represented by an input vertex when one of them is; each output
+shell then gets its own copy of such a point, so touching shells stay apart in
+both parts. Each part then gets the cleanup of section 6.2 item 7 (equal
+coordinates merge, repeated and cancelling faces go, collinear corners and folds
+are split away), repeated until nothing changes. A part of a closed mesh that is
+still not closed and manifold errors with `InvalidInput("internal: rounding the
+split to f64 left it open or non-manifold")`. Side tests use
 `exact::plane_side`, which evaluates the sign of `(p - origin) . normal` exactly with
 expansions, so `origin` and `normal` are taken as given f64 values. Closed meshes are
 capped: the cap is a CDT of the rounded section points in the dominant-axis

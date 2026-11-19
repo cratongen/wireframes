@@ -8,6 +8,7 @@ use wireframes_core::validate::degenerate_mask;
 use wireframes_core::{Column, EdgeMap, Error, Mesh, Polylines, Result, Table};
 
 use crate::hp::{self, Pt};
+use crate::ops::{Assembled, collapse_rounded, is_closed_result};
 use crate::triangulate::{Geom, cdt, even_odd};
 
 /// A section point: an input vertex on the plane, or the exact crossing of an
@@ -138,17 +139,78 @@ fn dominant(normal: [f64; 3]) -> usize {
         .expect("three axes")
 }
 
-/// For each section point, the smallest index of a point exactly equal to it.
-fn coincident(pts: &[Pt]) -> Vec<u32> {
+/// For each section point, the representative of the points whose rounded
+/// coordinates project onto the same point along `drop`: one that is an
+/// input vertex (`snap`) when there is one, else the smallest index.
+///
+/// Rounded section points lie within a few ulps of the plane, and `drop` is
+/// the dominant axis of its normal, so points with one projection are a few
+/// ulps apart in 3D. They must be one cap point because the cap is
+/// triangulated in that projection.
+fn coincident(pts: &[Pt], snap: &[Option<u32>], drop: usize) -> Vec<u32> {
+    let edge = |a: u32| snap[a as usize].is_none();
     let mut order: Vec<u32> = (0..pts.len() as u32).collect();
-    order.sort_by(|&a, &b| hp::cmp_lex(&pts[a as usize], &pts[b as usize]).then(a.cmp(&b)));
+    order.sort_by(|&a, &b| {
+        hp::cmp_proj(&pts[a as usize], &pts[b as usize], drop)
+            .then(edge(a).cmp(&edge(b)))
+            .then(a.cmp(&b))
+    });
     let mut same: Vec<u32> = (0..pts.len() as u32).collect();
     for w in order.windows(2) {
-        if hp::cmp_lex(&pts[w[0] as usize], &pts[w[1] as usize]) == Ordering::Equal {
+        if hp::cmp_proj(&pts[w[0] as usize], &pts[w[1] as usize], drop) == Ordering::Equal {
             same[w[1] as usize] = same[w[0] as usize];
         }
     }
     same
+}
+
+/// `list` after the cleanup booleans apply to rounded output
+/// ([`collapse_rounded`]): vertices with equal coordinates become one, faces
+/// that repeat a vertex or cancel go, and collinear corners and folds are
+/// split away. Also returns `merged` with the vertices that absorbed others,
+/// which may now be shared by touching shells.
+fn clean(
+    list: &[([u32; 3], Option<u32>)],
+    coords: &dyn Fn(u32) -> [f64; 3],
+    nv: u32,
+    merged: &HashSet<u32>,
+) -> (Vec<([u32; 3], Option<u32>)>, HashSet<u32>) {
+    let mut ids: Vec<u32> = list.iter().flat_map(|(t, _)| *t).collect();
+    ids.sort_unstable();
+    ids.dedup();
+    let at = |g: u32| ids.binary_search(&g).expect("listed") as u32;
+    let asm = Assembled {
+        vertices: ids.iter().map(|&g| coords(g)).collect(),
+        triangles: list.iter().map(|(t, _)| t.map(at)).collect(),
+        vertex_rows: ids.iter().map(|&g| (g < nv).then_some(g)).collect(),
+        face_source: list
+            .iter()
+            .map(|(_, f)| f.map_or((1, 0), |f| (0, f)))
+            .collect(),
+    };
+    let (mut out, mut point) = collapse_rounded(asm, &ids);
+    loop {
+        let n = out.triangles.len();
+        (out, point) = collapse_rounded(out, &point);
+        if out.triangles.len() == n {
+            break;
+        }
+    }
+    let bits = |g: u32| coords(g).map(|x| (x + 0.0).to_bits());
+    let kept: HashMap<[u64; 3], u32> = point.iter().map(|&r| (bits(r), r)).collect();
+    let mut merged = merged.clone();
+    merged.extend(
+        ids.iter()
+            .filter_map(|&g| kept.get(&bits(g)).filter(|&&r| r != g))
+            .copied(),
+    );
+    let list = out
+        .triangles
+        .iter()
+        .zip(&out.face_source)
+        .map(|(t, &(m, f))| (t.map(|i| point[i as usize]), (m == 0).then_some(f)))
+        .collect();
+    (list, merged)
 }
 
 /// Shell label of each face of `list`, the faces joined as [`Shells`] joins
@@ -218,8 +280,22 @@ pub fn split_by_plane(mesh: &Mesh, origin: [f64; 3], normal: [f64; 3]) -> Result
         .par_iter()
         .map(|&k| Pt::E(key_point(mesh, k, origin, normal).to_f64()))
         .collect();
+    let snap: Vec<Option<u32>> = sec
+        .keys
+        .iter()
+        .zip(&pts)
+        .map(|(&k, p)| match k {
+            Key::V(v) => Some(v),
+            Key::E(u, v) => {
+                let p = p.to_f64();
+                [u, v]
+                    .into_iter()
+                    .find(|&w| mesh.vertices()[w as usize] == p)
+            }
+        })
+        .collect();
     let same = if closed {
-        coincident(&pts)
+        coincident(&pts, &snap, drop)
     } else {
         (0..pts.len() as u32).collect()
     };
@@ -235,10 +311,7 @@ pub fn split_by_plane(mesh: &Mesh, origin: [f64; 3], normal: [f64; 3]) -> Result
     cap_segs.sort_unstable_by_key(|s| (s[0].min(s[1]), s[0].max(s[1])));
     cap_segs.dedup_by_key(|s| (s[0].min(s[1]), s[0].max(s[1])));
     let nv = mesh.n_vertices() as u32;
-    let own = |i: u32| match sec.keys[i as usize] {
-        Key::V(v) => v,
-        Key::E(..) => nv + i,
-    };
+    let own = |i: u32| snap[i as usize].unwrap_or(nv + i);
     let gid = |k: Key| own(same[sec.index[&k] as usize]);
     let mut vmap: Vec<u32> = (0..nv).collect();
     for (i, k) in sec.keys.iter().enumerate() {
@@ -319,6 +392,8 @@ pub fn split_by_plane(mesh: &Mesh, origin: [f64; 3], normal: [f64; 3]) -> Result
         }
     };
     let build = |list: &[([u32; 3], Option<u32>)]| -> Result<Mesh> {
+        let (list, merged) = clean(list, &coords, nv, &merged);
+        let list = &list[..];
         let shell = if merged.is_empty() {
             vec![0; list.len()]
         } else {
@@ -351,7 +426,13 @@ pub fn split_by_plane(mesh: &Mesh, origin: [f64; 3], normal: [f64; 3]) -> Result
         Ok(m.with_crs(mesh.crs.clone())
             .with_length_unit(mesh.length_unit.clone()))
     };
-    Ok((build(&faces[0])?, build(&faces[1])?))
+    let parts = (build(&faces[0])?, build(&faces[1])?);
+    if closed && !(is_closed_result(&parts.0)? && is_closed_result(&parts.1)?) {
+        return Err(Error::invalid(
+            "internal: rounding the split to f64 left it open or non-manifold",
+        ));
+    }
+    Ok(parts)
 }
 
 /// Section lines at each offset along `normal`; empty `offsets` means `[0.0]`.

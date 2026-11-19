@@ -98,6 +98,26 @@ fn clip_surface_that_misses() {
 }
 
 #[test]
+fn inclined_splits_through_every_sphere_vertex_cap_the_section() {
+    let m = fixtures::sphere(2);
+    for &o in m.vertices() {
+        for n in [
+            [1.0, 1.0, 1.0],
+            [1.0, -1.0, 1.0],
+            [-1.0, 1.0, 1.0],
+            [1.0, 2.0, 3.0],
+        ] {
+            let (a, b) = split_by_plane(&m, o, n).unwrap_or_else(|e| panic!("{o:?} {n:?}: {e}"));
+            assert!(closed(&a) && closed(&b), "{o:?} {n:?}");
+            assert!(
+                close(volume(&a) + volume(&b), volume(&m), 1e-9),
+                "{o:?} {n:?}"
+            );
+        }
+    }
+}
+
+#[test]
 fn clip_refuses_a_solid_beyond_the_surface_extent() {
     let s = sheet(3, -1.0, 2.0, |_, _| 0.0);
     for z in [50.0, -50.0] {

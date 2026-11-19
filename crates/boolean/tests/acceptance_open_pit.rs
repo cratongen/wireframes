@@ -56,7 +56,6 @@ fn booleans_of_prisms_whose_caps_differ_by_one_ulp_are_valid_solids() {
 }
 
 #[test]
-#[ignore = "acceptance: an inclined bench plane through sphere vertices cannot cap the section"]
 fn split_by_an_inclined_plane_through_vertices_caps_the_section() {
     let m = fixtures::sphere(1);
     let (a, b) = split_by_plane(&m, [-1.0, 1.0, 1.0], [1.0, 1.0, 1.0]).unwrap();

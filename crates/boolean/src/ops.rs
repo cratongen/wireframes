@@ -106,7 +106,7 @@ pub(crate) fn assemble(arr: &Arrangement, pieces: &[Shell]) -> Assembled {
             let f = &arr.faces[sub.face as usize];
             shell.face_source.push((f.mesh, f.index));
         }
-        let shell = collapse_rounded(shell, &point);
+        let (shell, _) = collapse_rounded(shell, &point);
         let base = out.vertices.len() as u32;
         out.vertices.extend(shell.vertices);
         out.vertex_rows.extend(shell.vertex_rows);
@@ -129,8 +129,8 @@ pub(crate) fn assemble(arr: &Arrangement, pieces: &[Shell]) -> Assembled {
 /// none moves a point, so the surface is the same set of points. `point` is
 /// the exact point of each vertex; copies of one exact point, where the shell
 /// touches itself, stay apart, and so do the other vertices that round onto
-/// them.
-fn collapse_rounded(shell: Assembled, point: &[u32]) -> Assembled {
+/// them. Also returns the exact point of each kept vertex.
+pub(crate) fn collapse_rounded(shell: Assembled, point: &[u32]) -> (Assembled, Vec<u32>) {
     let n = shell.vertices.len();
     let key = |i: usize| shell.vertices[i].map(|x| (x + 0.0).to_bits());
     let mut order: Vec<usize> = (0..n).collect();
@@ -260,17 +260,19 @@ fn collapse_rounded(shell: Assembled, point: &[u32]) -> Assembled {
         face_source: vec![],
     };
     let mut new_id: Vec<Option<u32>> = vec![None; n];
+    let mut kept_point = vec![];
     for (f, t) in tris.iter().enumerate().filter(|(f, _)| alive[*f]) {
         out.triangles.push(t.map(|i| {
             *new_id[i as usize].get_or_insert_with(|| {
                 out.vertices.push(shell.vertices[i as usize]);
                 out.vertex_rows.push(shell.vertex_rows[i as usize]);
+                kept_point.push(point[i as usize]);
                 out.vertices.len() as u32 - 1
             })
         }));
         out.face_source.push(src[f]);
     }
-    out
+    (out, kept_point)
 }
 
 fn ekey(a: u32, b: u32) -> (u32, u32) {
@@ -572,7 +574,7 @@ mod tests {
                 [2, 3, 4],
             ],
         );
-        let out = collapse_rounded(s, &[0, 1, 2, 3, 4]);
+        let (out, _) = collapse_rounded(s, &[0, 1, 2, 3, 4]);
         check(&out);
         assert_eq!(out.triangles.len(), 4);
         assert_eq!(out.vertex_rows, [Some(0), Some(2), Some(1), Some(3)]);
@@ -594,7 +596,7 @@ mod tests {
         );
         let before = Mesh::new(s.vertices.clone(), s.triangles.clone()).unwrap();
         assert!(!before.validate(0.0).unwrap().summary.is_solid());
-        let out = collapse_rounded(s, &[0, 1, 2, 3, 4]);
+        let (out, _) = collapse_rounded(s, &[0, 1, 2, 3, 4]);
         check(&out);
         assert_eq!(out.triangles.len(), 6);
     }
@@ -602,7 +604,7 @@ mod tests {
     #[test]
     fn copies_of_one_exact_point_stay_apart() {
         let s = shell(vec![A, B, C, D, D], vec![[0, 2, 1], [0, 1, 3], [1, 2, 4]]);
-        let out = collapse_rounded(s, &[0, 1, 2, 3, 3]);
+        let (out, _) = collapse_rounded(s, &[0, 1, 2, 3, 3]);
         assert_eq!((out.vertices.len(), out.triangles.len()), (5, 3));
     }
 
@@ -620,7 +622,7 @@ mod tests {
                 [1, 2, 3],
             ],
         );
-        let out = collapse_rounded(s, &[0, 1, 2, 3, 4]);
+        let (out, _) = collapse_rounded(s, &[0, 1, 2, 3, 4]);
         check(&out);
         assert_eq!(out.triangles.len(), 6);
         let area = |t: &[u32; 3]| {
