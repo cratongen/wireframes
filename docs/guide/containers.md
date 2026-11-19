@@ -80,6 +80,7 @@ rescales coordinates, and CRS transforms stay outside `wireframes`.
 | `wf.WireframesError` | `Exception` | base of every wireframes error |
 | `wf.InvalidInput` | `ValueError` | bad shapes or values, unsupported content, CRS or unit mismatch |
 | `wf.InvalidMesh` | `InvalidInput` | a mesh that fails validation; `.report` holds the `MeshReport` |
+| `wf.KernelError` | `RuntimeError` | a kernel limit on valid input, such as a boolean result that rounding to f64 left self-intersecting; `.report` and `.mesh` hold the failed result, or `None` |
 | `wf.FileError` | `OSError` | unreadable files and malformed content |
 | `wf.MissingColumn` | `KeyError` | an unknown column name; the message lists the columns |
 

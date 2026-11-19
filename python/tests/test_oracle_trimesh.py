@@ -45,7 +45,10 @@ def solids(seed, n):
         m = o.rigid(o.shape(KINDS[k % len(KINDS)], rng), o.rotation(rng), rng.uniform(-0.5, 0.5, 3))
         out.append(m)
         a, b = o.random_pair(rng, KINDS, KINDS, "overlap")
-        r = [a | b, a & b, a - b][k % 3]
+        try:
+            r = [wf.union, wf.intersection, wf.difference][k % 3](a, b)
+        except wf.KernelError as e:
+            r = e.mesh
         if r.n_faces:
             out.append(r)
     return out

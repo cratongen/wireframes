@@ -131,8 +131,10 @@ fn boundary_triangles(b: &Polylines) -> Result<Vec<[P2; 3]>> {
             }
         }
     }
-    let c = cdt(&Plan2(&pts), pts.len() as u32, &segs)
-        .map_err(|e| Error::invalid(format!("boundary rings are not simple: {e}")))?;
+    let c = cdt(&Plan2(&pts), pts.len() as u32, &segs).map_err(|e| match e {
+        Error::Kernel { .. } => e,
+        e => Error::invalid(format!("boundary rings are not simple: {e}")),
+    })?;
     Ok(even_odd(&c)
         .into_iter()
         .map(|t| t.map(|i| pts[i as usize]))

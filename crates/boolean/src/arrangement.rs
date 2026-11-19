@@ -450,7 +450,7 @@ pub(crate) fn build(a: &Mesh, b: &Mesh) -> Result<Arrangement> {
                 drop: face.drop,
             };
             let c = cdt(&geom, local.len() as u32, &lsegs).map_err(|e| {
-                Error::invalid(format!(
+                Error::kernel(format!(
                     "arrangement failed on {} face {}: {e}",
                     if face.mesh == 0 { "a" } else { "b" },
                     face.index

@@ -244,8 +244,8 @@ pub(crate) fn sample(arr: &Arrangement, members: &[u32]) -> Result<Sample> {
             }
         }
     }
-    Err(Error::invalid(
-        "internal: no f64 point lies strictly inside a patch; it is thinner than f64 resolution",
+    Err(Error::kernel(
+        "no f64 point lies strictly inside a patch; it is thinner than f64 resolution",
     ))
 }
 
@@ -319,9 +319,7 @@ impl Target {
             } else if side == s {
                 down.push(hit);
             } else {
-                return Err(Error::invalid(
-                    "internal: classification point lies on the other mesh",
-                ));
+                return Err(Error::kernel("classification point lies on the other mesh"));
             }
         }
         Ok((up, down))

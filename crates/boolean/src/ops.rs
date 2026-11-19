@@ -605,8 +605,8 @@ pub(crate) fn shells(arr: &Arrangement, piece: &Piece) -> Result<Vec<Shell>> {
                 }
             }
             _ => {
-                return Err(Error::invalid(
-                    "internal: the faces around an edge of the result do not bound wedges of solid",
+                return Err(Error::kernel(
+                    "the faces around an edge of the result do not bound wedges of solid",
                 ));
             }
         }
@@ -693,12 +693,12 @@ pub(crate) fn build_mesh(
     Ok(mesh.with_crs(labels.0).with_length_unit(labels.1))
 }
 
-/// Whether an assembled result is closed and manifold. Shells, and umbrellas
-/// within a shell, hold separate vertex copies, so this is plain
-/// [`is_closed_manifold`] unless a shell touches itself along an edge whose
-/// ends it does not touch, which no vertex copy can separate; such a mesh is
-/// accepted when its edges pair into wedges of solid and its vertices are
-/// manifold.
+/// `mesh` when `validate` passes it as a solid. Exact results of solids are
+/// solids; rounding their new vertices to `f64` can fold slivers thinner than
+/// the float spacing into self-intersections or flatten a face, and such a
+/// result is an error that carries the report and the mesh, never a return.
+/// Whether a split of a closed mesh that is not a solid is still closed and
+/// manifold: its edges pair into wedges of solid and its vertices are manifold.
 pub(crate) fn is_closed_result(mesh: &Mesh) -> Result<bool> {
     if mesh.is_empty() || is_closed_manifold(mesh.triangles()) {
         return Ok(true);
@@ -711,15 +711,17 @@ pub(crate) fn is_closed_result(mesh: &Mesh) -> Result<bool> {
         && s.inconsistent_edges == 0)
 }
 
-/// Whether a boolean or clip result is closed for `validate`, which leaves a
-/// face with collinear rounded corners out and so sees its edges as open.
-pub(crate) fn is_closed_solid_result(mesh: &Mesh) -> Result<bool> {
-    let v = mesh.vertices();
-    let flat = mesh
-        .triangles()
-        .iter()
-        .any(|t| collinear3(v[t[0] as usize], v[t[1] as usize], v[t[2] as usize]));
-    Ok(!flat && is_closed_result(mesh)?)
+pub(crate) fn solid_result(mesh: Mesh, what: &str) -> Result<Mesh> {
+    if mesh.is_empty() || mesh.validate(0.0)?.summary.is_solid() {
+        return Ok(mesh);
+    }
+    Err(Error::kernel_result(
+        format!(
+            "rounding {what} to f64 left a mesh that is not a solid (snap rounding is not \
+             implemented)"
+        ),
+        mesh,
+    )?)
 }
 
 fn keep_rule(op: Op, mesh: usize, st: Status) -> Option<bool> {
@@ -758,11 +760,7 @@ pub fn boolean(a: &Mesh, b: &Mesh, op: Op, opts: &BooleanOptions) -> Result<Bool
         (a.face_attributes(), b.face_attributes()),
         labels,
     )?;
-    if !is_closed_solid_result(&mesh)? {
-        return Err(Error::invalid(
-            "internal: rounding the result to f64 left it open or non-manifold",
-        ));
-    }
+    let mesh = solid_result(mesh, "the exact result")?;
     Ok(BooleanResult {
         mesh,
         face_source,
@@ -885,7 +883,11 @@ mod tests {
         let m = Mesh::new(v, t).unwrap();
         assert!(is_closed_manifold(m.triangles()));
         assert!(!m.validate(0.0).unwrap().summary.is_closed);
-        assert!(!is_closed_solid_result(&m).unwrap());
+        let Err(Error::Kernel { report, mesh, .. }) = solid_result(m.clone(), "it") else {
+            panic!("an open result must be a kernel error");
+        };
+        assert!(!report.unwrap().summary.is_closed);
+        assert_eq!(*mesh.unwrap(), m);
     }
 
     #[test]

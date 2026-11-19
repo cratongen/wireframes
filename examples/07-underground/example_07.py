@@ -701,12 +701,13 @@ else:
 # with 64-bit floating-point coordinates, so the new vertices along each intersection line are rounded. A boolean
 # that takes such a result as input sees those rounded vertices as exact, and long, thin triangles near them can
 # fold over each other. Joining the crosscuts to the 80 m level drive one at a time shows it: the first unions are
-# valid solids, then one result fails validation, and the next union refuses it. `repair()` does not remove
-# self-intersections.
+# valid solids, then one union raises `wf.KernelError`, because rounding its exact result left self-intersections.
+# The error says the input is not at fault; `error.report` lists the problems and `error.mesh` holds the rounded
+# result. `repair()` does not remove self-intersections.
 #
 # Two habits avoid it, and section 3 uses both: put pieces that do not touch together with `wf.concat` and run one
 # boolean, and build each quantity from the original solids rather than from earlier results (the dilution in
-# section 5). Check `is_solid` on any result you pass on.
+# section 5).
 
 # %%
 a, v, area = profile(5.0)
@@ -715,8 +716,9 @@ chain = prism(O + np.column_stack([np.full(a.size, -160.0), y_drive + a, 80.0 + 
 for k, crosscut in enumerate(crosscuts[80.0], start=1):
     try:
         chain = chain | crosscut
-    except wf.InvalidMesh as error:
+    except wf.KernelError as error:
         print(f"union {k}: {type(error).__name__}: {error}")
+        assert error.report.summary["is_closed"] and error.report.summary["self_intersections"] > 0
         break
     summary = chain.validate().summary
     print(f"union {k}: solid {chain.is_solid}, self-intersections {summary['self_intersections']}")

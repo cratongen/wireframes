@@ -799,12 +799,13 @@ InvalidInput: loft links one ring per section; section 6 has 2 parts
 with 64-bit floating-point coordinates, so the new vertices along each intersection line are rounded. A boolean
 that takes such a result as input sees those rounded vertices as exact, and long, thin triangles near them can
 fold over each other. Joining the crosscuts to the 80 m level drive one at a time shows it: the first unions are
-valid solids, then one result fails validation, and the next union refuses it. `repair()` does not remove
-self-intersections.
+valid solids, then one union raises `wf.KernelError`, because rounding its exact result left self-intersections.
+The error says the input is not at fault; `error.report` lists the problems and `error.mesh` holds the rounded
+result. `repair()` does not remove self-intersections.
 
 Two habits avoid it, and section 3 uses both: put pieces that do not touch together with `wf.concat` and run one
 boolean, and build each quantity from the original solids rather than from earlier results (the dilution in
-section 5). Check `is_solid` on any result you pass on.
+section 5).
 
 ```python
 a, v, area = profile(5.0)
@@ -813,8 +814,9 @@ chain = prism(O + np.column_stack([np.full(a.size, -160.0), y_drive + a, 80.0 + 
 for k, crosscut in enumerate(crosscuts[80.0], start=1):
     try:
         chain = chain | crosscut
-    except wf.InvalidMesh as error:
+    except wf.KernelError as error:
         print(f"union {k}: {type(error).__name__}: {error}")
+        assert error.report.summary["is_closed"] and error.report.summary["self_intersections"] > 0
         break
     summary = chain.validate().summary
     print(f"union {k}: solid {chain.is_solid}, self-intersections {summary['self_intersections']}")
@@ -833,8 +835,7 @@ union 7: solid True, self-intersections 0
 union 8: solid True, self-intersections 0
 union 9: solid True, self-intersections 0
 union 10: solid True, self-intersections 0
-union 11: solid False, self-intersections 21
-union 12: InvalidMesh: invalid mesh: a: self_intersections=21; the error's report lists each problem (as mesh.validate() does), and mesh.repair() or repair=True fixes what repair can
+union 11: KernelError: kernel limitation, not an input defect: rounding the exact result to f64 left a mesh that is not a solid (snap rounding is not implemented): self_intersections=21; the error's report lists each problem and its mesh holds the result
 ```
 
 Full script: [`example_07.py`](example_07.py), run by `mise run examples`.

@@ -15,6 +15,18 @@ pub enum Error {
         context: String,
         report: Box<MeshReport>,
     },
+    #[error(
+        "kernel limitation, not an input defect: {message}{}",
+        report.as_ref().map_or(String::new(), |r| format!(
+            ": {}; the error's report lists each problem and its mesh holds the result",
+            r.summary.defects()
+        ))
+    )]
+    Kernel {
+        message: String,
+        report: Option<Box<MeshReport>>,
+        mesh: Option<Box<crate::Mesh>>,
+    },
     #[error("{}", format_location(path, line, message))]
     Format {
         path: Option<PathBuf>,
@@ -50,6 +62,24 @@ fn format_location(path: &Option<PathBuf>, line: &Option<u64>, message: &str) ->
 impl Error {
     pub fn invalid(message: impl Into<String>) -> Error {
         Error::InvalidInput(message.into())
+    }
+
+    pub fn kernel(message: impl Into<String>) -> Error {
+        Error::Kernel {
+            message: message.into(),
+            report: None,
+            mesh: None,
+        }
+    }
+
+    /// A result that `validate` does not pass as a solid, with its report.
+    pub fn kernel_result(message: impl Into<String>, mesh: crate::Mesh) -> Result<Error> {
+        let report = mesh.validate(0.0)?;
+        Ok(Error::Kernel {
+            message: message.into(),
+            report: Some(Box::new(report)),
+            mesh: Some(Box::new(mesh)),
+        })
     }
 
     pub fn format(message: impl Into<String>) -> Error {
@@ -119,6 +149,25 @@ mod tests {
         assert!(
             m.contains("mesh.validate()") && m.contains("repair=True"),
             "{m}"
+        );
+    }
+
+    #[test]
+    fn kernel_messages_say_the_input_is_not_at_fault() {
+        assert_eq!(
+            Error::kernel("no ear").to_string(),
+            "kernel limitation, not an input defect: no ear"
+        );
+        let open = crate::Mesh::new(
+            vec![[0.0; 3], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+            vec![[0, 1, 2]],
+        )
+        .unwrap();
+        let e = Error::kernel_result("rounding", open).unwrap();
+        assert_eq!(
+            e.to_string(),
+            "kernel limitation, not an input defect: rounding: boundary_edges=3; \
+             the error's report lists each problem and its mesh holds the result"
         );
     }
 }

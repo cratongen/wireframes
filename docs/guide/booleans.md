@@ -51,9 +51,19 @@ stope-by-stope union does not depend on the order of the stopes.
 
 Exact predicates decide every crossing, and the result is exact until its new vertices are written as f64. Where
 two inputs agree only to the last digit, the exact result can hold slivers thinner than f64 can place, and
-rounding folds them into their neighbours. The output is closed and its volume is right to rounding, but
-`validate` reports the self-intersections, so the result is not a solid and the next boolean or clip refuses it.
-`repair` does not remove self-intersections.
+rounding folds them into their neighbours. The rounded mesh is closed and its volume is right to rounding, but
+`validate` finds self-intersections in it. Booleans, `clip_by_surface` and `split_by_plane` of a solid check every
+result and raise `wf.KernelError` instead of returning a mesh that is not a solid. The error is a limit of the
+kernel, not a fault in your input: `error.report` holds the `MeshReport` of the rounded result and `error.mesh` the
+result itself, so you can still read its volume. `repair` does not remove self-intersections; a fix needs snap
+rounding, which wireframes does not implement yet.
+
+```python
+try:
+    pushback = pit2 - pit1
+except wf.KernelError as error:
+    print(error.report.summary["self_intersections"], error.mesh.volume)
+```
 
 Open-pit work meets this when it combines pieces that were each clipped by the same topography: their caps come
 from the same topography triangles cut at different places. Combine the closed, unclipped solids first and clip
@@ -61,7 +71,7 @@ once:
 
 ```python
 stage2 = (closed2 - closed1).clip_by_surface(topography)[0]  # valid
-stage2 = closed2.clip_by_surface(topography)[0] - closed1.clip_by_surface(topography)[0]  # can self-intersect
+stage2 = closed2.clip_by_surface(topography)[0] - closed1.clip_by_surface(topography)[0]  # can raise wf.KernelError
 ```
 
 Underground work meets it in long chains of booleans. Each result carries rounded vertices along its intersection
@@ -75,9 +85,9 @@ level = drive | wf.concat(crosscuts)  # one union; the crosscuts do not touch ea
 dilution = (stopes - orebody).volume - ((stopes & development) - orebody).volume  # from original solids
 ```
 
-Check `is_solid` on any result you pass on. [Example 06](../examples/06-open-pit/README.md) shows both orders of
-clipping, and [example 07](../examples/07-underground/README.md) shows a chain of unions that fails validation at
-its eleventh step.
+[Example 06](../examples/06-open-pit/README.md) shows both orders of clipping, and
+[example 07](../examples/07-underground/README.md) shows a chain of unions that raises `wf.KernelError` at its
+eleventh step.
 
 ## Cutting
 

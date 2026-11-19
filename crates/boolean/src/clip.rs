@@ -6,7 +6,7 @@ use crate::BooleanOptions;
 use crate::arrangement;
 use crate::classify::{self, Sample, Target};
 use crate::hp::Pt;
-use crate::ops::{Piece, assemble, build_mesh, is_closed_solid_result, prepare, shells};
+use crate::ops::{Piece, assemble, build_mesh, prepare, shells, solid_result};
 
 pub struct ClipResult {
     pub below: Mesh,
@@ -156,12 +156,7 @@ pub fn clip_by_surface(solid: &Mesh, surface: &Mesh, opts: &BooleanOptions) -> R
             (a.face_attributes(), b.face_attributes()),
             labels.clone(),
         )?;
-        if !is_closed_solid_result(&mesh)? {
-            return Err(Error::invalid(
-                "internal: rounding the clip result to f64 left it open or non-manifold",
-            ));
-        }
-        out.push(mesh);
+        out.push(solid_result(mesh, "the exact clip")?);
     }
     let above = out.pop().expect("two pieces");
     let below = out.pop().expect("two pieces");

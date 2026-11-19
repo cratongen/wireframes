@@ -625,30 +625,32 @@ InvalidInput: points[64] and breaklines part 0 vertex 0 share the plan position 
 written as 64-bit floating-point numbers. Subtracting the clipped stage 1 pit from the clipped stage 2 pit hits
 the limit of that rounding: both pits carry a cap cut from the same topography triangles, and where the caps
 overlap they agree only to the last digit. The exact difference holds slivers thinner than a 64-bit number can
-place, and rounding folds them into their neighbours. The result is closed and its volume is right to rounding,
-but `validate()` finds the folds, so the next operation refuses it, and `repair()` does not touch
-self-intersections. Section 2 avoids the problem by subtracting the closed shells, which share exact walls, and
-clipping once.
+place, and rounding folds them into their neighbours. The rounded mesh is closed and its volume is right to
+rounding, but `validate()` finds the folds, so the difference raises `wf.KernelError` rather than return a mesh
+that is not a solid. The error says the input is not at fault, `error.report` lists the folds, and `error.mesh`
+holds the rounded result if you want to inspect it. Section 2 avoids the problem by subtracting the closed
+shells, which share exact walls, and clipping once.
 
 ```python
-pushback = pits[1] - pits[0]
-summary = pushback.validate().summary
-print(
-    f"closed: {summary['is_closed']}, self-intersections: {summary['self_intersections']}, "
-    f"volume off by {pushback.volume - stages[1].volume:+.1e} m3"
-)
-assert summary["is_closed"] and not summary["is_solid"]
 try:
-    pushback.clip_by_surface(oxidation)
-except wf.InvalidMesh as error:
+    pits[1] - pits[0]
+except wf.KernelError as error:
+    summary = error.report.summary
     print(f"{type(error).__name__}: {error}")
+    print(
+        f"closed: {summary['is_closed']}, self-intersections: {summary['self_intersections']}, "
+        f"volume off by {error.mesh.volume - stages[1].volume:+.1e} m3"
+    )
+    assert summary["is_closed"] and not summary["is_solid"]
 else:
-    raise AssertionError("a closed mesh with self-intersections must be refused")
+    raise AssertionError(
+        "this difference is expected to hit the rounding limit; update section 5 if it passes"
+    )
 ```
 
 ```text
+KernelError: kernel limitation, not an input defect: rounding the exact result to f64 left a mesh that is not a solid (snap rounding is not implemented): self_intersections=68, coplanar_overlaps=3; the error's report lists each problem and its mesh holds the result
 closed: True, self-intersections: 68, volume off by +5.4e-08 m3
-InvalidMesh: invalid mesh: solid: self_intersections=68, coplanar_overlaps=3; the error's report lists each problem (as mesh.validate() does), and mesh.repair() or repair=True fixes what repair can
 ```
 
 Full script: [`example_06.py`](example_06.py), run by `mise run examples`.

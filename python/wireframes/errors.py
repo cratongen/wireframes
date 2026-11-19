@@ -15,6 +15,20 @@ class InvalidMesh(InvalidInput):
     report: object
 
 
+class KernelError(WireframesError, RuntimeError):
+    """A limit of the kernel on valid input, never a fault of the input.
+
+    ``report`` holds the ``MeshReport`` of the result that failed and ``mesh`` the
+    result itself, when there is one; both are ``None`` otherwise. Rounding the exact
+    result of a boolean, clip or split to float64 can leave self-intersections where
+    the inputs agree only to rounding; the function raises this error rather than
+    return that mesh.
+    """
+
+    report: object
+    mesh: object
+
+
 class FileError(WireframesError, OSError):
     """A file that cannot be read or written, or whose content is malformed."""
 

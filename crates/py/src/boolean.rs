@@ -42,20 +42,19 @@ macro_rules! boolean_fn {
         ///     A closed mesh; face attributes follow the faces they came from.
         ///     Parts that touch along an edge or at a vertex are separate
         ///     shells with their own vertices, so the result is valid input
-        ///     to another boolean. Where the inputs agree only to rounding,
-        ///     such as two pits clipped by the same topography, rounding the
-        ///     exact result to f64 can leave self-intersections: the volume
-        ///     is right to rounding, but ``validate`` reports them and the
-        ///     next boolean refuses the mesh. Combine the unclipped solids
-        ///     and clip once to avoid it.
+        ///     to another boolean. The result is always a solid.
         ///
         /// Raises
         /// ------
         /// InvalidMesh
         ///     When an input is not a solid; ``report`` holds its validation.
-        /// InvalidInput
-        ///     When one shell of the result would touch itself along an
-        ///     edge or at a vertex, which no valid solid represents.
+        /// KernelError
+        ///     When rounding the exact result to f64 leaves a mesh that is
+        ///     not a solid, which happens where the inputs agree only to
+        ///     rounding, such as two pits clipped by the same topography.
+        ///     ``report`` and ``mesh`` hold the rounded result; its volume is
+        ///     right to rounding. Combine the unclipped solids and clip once
+        ///     to avoid it.
         ///
         /// Examples
         /// --------
@@ -279,10 +278,8 @@ impl PyMesh {
     /// tuple of (Mesh, Mesh)
     ///     ``(below, above)``, both closed; cap faces carry the surface's
     ///     face attributes. A surface that misses the solid gives the whole
-    ///     solid on one side and an empty mesh on the other. As for the
-    ///     booleans, rounding to f64 can leave self-intersections that
-    ///     ``validate`` reports when the surface and the solid agree only to
-    ///     rounding somewhere.
+    ///     solid on one side and an empty mesh on the other. Both are
+    ///     solids.
     ///
     /// Raises
     /// ------
@@ -293,6 +290,10 @@ impl PyMesh {
     ///     When the surface ends inside the solid, or when a part of the solid
     ///     lies beyond the surface's extent (no line along x, y or z through
     ///     it meets the surface), so it is neither above nor below.
+    /// KernelError
+    ///     When rounding a part to f64 leaves a mesh that is not a solid,
+    ///     where the surface and the solid agree only to rounding somewhere;
+    ///     ``report`` and ``mesh`` hold that part.
     ///
     /// Examples
     /// --------
@@ -332,6 +333,17 @@ impl PyMesh {
     /// -------
     /// tuple of (Mesh, Mesh)
     ///     ``(negative, positive)``, positive where ``(p - origin) . normal > 0``.
+    ///     When the mesh is a solid, both parts are solids; where the mesh
+    ///     touches the plane at a vertex or along an edge, such as a local
+    ///     minimum of a closed DTM at a contour level, the part on that side
+    ///     touches itself there.
+    ///
+    /// Raises
+    /// ------
+    /// KernelError
+    ///     When the mesh is a solid and rounding a part to f64 leaves a mesh
+    ///     that is not a solid, as where other vertices lie within an ulp of
+    ///     an inclined plane; ``report`` and ``mesh`` hold that part.
     ///
     /// Examples
     /// --------

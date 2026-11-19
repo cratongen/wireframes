@@ -63,7 +63,11 @@ def test_errors_subclass_builtins():
     assert issubclass(wf.InvalidInput, ValueError)
     assert issubclass(wf.FileError, OSError)
     assert issubclass(wf.MissingColumn, KeyError)
-    assert all(issubclass(e, wf.WireframesError) for e in (wf.InvalidInput, wf.FileError, wf.MissingColumn))
+    assert issubclass(wf.KernelError, RuntimeError) and not issubclass(wf.KernelError, ValueError)
+    assert all(
+        issubclass(e, wf.WireframesError)
+        for e in (wf.InvalidInput, wf.FileError, wf.MissingColumn, wf.KernelError)
+    )
 
 
 def test_each_rust_error_maps_to_its_class(tmp_path, box):

@@ -8,7 +8,7 @@ use wireframes_core::validate::degenerate_mask;
 use wireframes_core::{Column, EdgeMap, Error, Mesh, Polylines, Result, Table};
 
 use crate::hp::{self, Pt};
-use crate::ops::{Assembled, collapse_rounded, is_closed_result};
+use crate::ops::{Assembled, collapse_rounded, is_closed_result, solid_result};
 use crate::triangulate::{Geom, cdt, even_odd};
 
 /// A section point: an input vertex on the plane, or the exact crossing of an
@@ -278,14 +278,21 @@ pub fn split_by_plane(mesh: &Mesh, origin: [f64; 3], normal: [f64; 3]) -> Result
     }
     let mut touch_segs: Vec<[u32; 2]> = vec![];
     if closed {
-        let mut touch = on.clone();
+        let nv = mesh.n_vertices();
+        let (mut below, mut above, mut flat) = (vec![false; nv], vec![false; nv], vec![false; nv]);
         for t in mesh.triangles() {
-            if t.iter().any(|&v| sec.negative[v as usize]) || t.iter().all(|&v| on[v as usize]) {
-                for &v in t {
-                    touch[v as usize] = false;
+            let all_on = t.iter().all(|&v| on[v as usize]);
+            for &v in t {
+                flat[v as usize] |= all_on;
+                for &w in t {
+                    below[v as usize] |= sec.negative[w as usize];
+                    above[v as usize] |= !sec.negative[w as usize] && !on[w as usize];
                 }
             }
         }
+        let touch: Vec<bool> = (0..nv)
+            .map(|v| on[v] && !flat[v] && !(below[v] && above[v]))
+            .collect();
         let mut id = |v: u32| {
             let n = sec.keys.len() as u32;
             *sec.index.entry(Key::V(v)).or_insert_with(|| {
@@ -417,8 +424,11 @@ pub fn split_by_plane(mesh: &Mesh, origin: [f64; 3], normal: [f64; 3]) -> Result
             .map(|s| s.map(|i| local[&i]))
             .chain(touching.iter().map(|e| [e.0, e.1]))
             .collect();
-        let mut c = cdt(&CapGeom { pts: &upts, drop }, upts.len() as u32, &usegs)
-            .map_err(|e| Error::invalid(format!("cannot cap the section: {e}")))?;
+        let mut c =
+            cdt(&CapGeom { pts: &upts, drop }, upts.len() as u32, &usegs).map_err(|e| match e {
+                Error::Kernel { .. } => e,
+                e => Error::invalid(format!("cannot cap the section: {e}")),
+            })?;
         for e in &touching {
             c.constrained.remove(e);
         }
@@ -478,9 +488,17 @@ pub fn split_by_plane(mesh: &Mesh, origin: [f64; 3], normal: [f64; 3]) -> Result
             .with_length_unit(mesh.length_unit.clone()))
     };
     let parts = (build(&faces[0])?, build(&faces[1])?);
+    let solid =
+        |m: &Mesh| -> Result<bool> { Ok(m.is_empty() || m.validate(0.0)?.summary.is_solid()) };
+    if closed && !(solid(&parts.0)? && solid(&parts.1)?) && solid(mesh)? {
+        return Ok((
+            solid_result(parts.0, "the exact split")?,
+            solid_result(parts.1, "the exact split")?,
+        ));
+    }
     if closed && !(is_closed_result(&parts.0)? && is_closed_result(&parts.1)?) {
-        return Err(Error::invalid(
-            "internal: rounding the split to f64 left it open or non-manifold",
+        return Err(Error::kernel(
+            "rounding the split to f64 left it open or non-manifold",
         ));
     }
     Ok(parts)

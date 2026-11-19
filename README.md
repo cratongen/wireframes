@@ -91,9 +91,10 @@ tonnage without warning. `wireframes` enforces three rules:
    materializing the output `Mesh`.
 2. **Refuse dirty solids by default**: boolean operations (`union`,
    `intersection`, `difference`, `clip_by_surface`) validate their inputs first.
-   Valid closed inputs produce a closed output; where the inputs agree only to
-   rounding, rounding the result to `f64` can leave self-intersections that
-   `validate` reports (spec tolerance policy, item 5). If an input has boundary
+   Every result is a solid: where the inputs agree only to rounding, rounding
+   the exact result to `f64` can leave self-intersections, and the function then
+   raises `wf.KernelError` with the rounded result's `MeshReport` and mesh
+   instead of returning it (spec tolerance policy, item 5). If an input has boundary
    edges, non-manifold edges or vertices, degenerate or duplicate faces,
    inconsistent winding, inward shells, or self-intersections, the function
    raises `wf.InvalidMesh` carrying the full `MeshReport` (problem counts and
@@ -179,6 +180,17 @@ tonnage without warning. `wireframes` enforces three rules:
     compares booleans with Manifold, measures and queries with trimesh, and the
     DTM and convex solids with scipy (spec section 12).
   - The semi-static filter in front of the exact predicates is not written.
+  - Snap rounding is not implemented. Where the inputs agree only to rounding,
+    rounding the exact result to `f64` leaves self-intersections, and booleans,
+    `clip_by_surface` and `split_by_plane` raise `wf.KernelError` (with the
+    report and the rounded mesh) rather than return it. Cases that still raise:
+    booleans of pits and pushbacks each clipped by the same topography, prisms
+    whose caps differ by one ulp, unions of face-sharing stopes rotated to
+    strike, a drive united with crosscuts one at a time (union 11 of 12 in
+    example 07), 188 of 648 inclined splits of an icosphere through its
+    vertices, and clips of an octagonal pit by flat ground at UTM scale.
+    Seven Python acceptance tests stay skipped and one Rust
+    acceptance test stays ignored until snap rounding lands.
 
 ### M5: Spatial queries for drillholes and block models
 
@@ -239,7 +251,9 @@ and reporting medians with the load average. The table below gives Python median
 5 rounds in milliseconds, measured on 2026-11-19 on a 13th Gen Intel Core i9-13980HX
 (32 logical CPUs, wireframes on 32 threads) at commit `5d5ab30`. The
 [performance page](docs/performance.md) lists the commands, versions, ranges, load,
-the criterion results for every kernel and reader, and what each column times.
+the criterion results for every kernel and reader, and what each column times. Booleans,
+`clip_by_surface` and `split_by_plane` now run `validate` on each result; the boolean
+rows predate that, and its cost is not measured.
 
 | Operation | Dataset | wireframes | trimesh | PyVista / VTK | Manifold |
 |---|---|---|---|---|---|

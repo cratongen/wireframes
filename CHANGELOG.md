@@ -33,6 +33,9 @@ All notable changes to wireframes are listed here. The format follows
   against scipy, each with a stated bound and every disagreement settled by
   exact arithmetic. The oracles sit in the `oracle` dependency group.
 - `mise run compat`, which installs the wheel with pip, uv, pixi and conda.
+- `wf.KernelError` (`Error::Kernel` in Rust), a `RuntimeError` for limits of
+  the kernel on valid input. `report` and `mesh` hold the failed result when
+  there is one.
 - Solids of touching shells: `validate` counts contacts between closed shells
   in `touching_shell_edges` and `touching_shell_vertices` and keeps them
   solid; booleans and `clip_by_surface` accept and return such solids, so
@@ -40,6 +43,14 @@ All notable changes to wireframes are listed here. The format follows
   unless `weld_touching_shells=True`.
 
 ### Changed
+
+- Booleans, `clip_by_surface` and `split_by_plane` of a solid return only
+  solids. A result that rounding to f64 left self-intersecting raises
+  `wf.KernelError` with its report and mesh; before, it came back closed but
+  not solid, and only `validate` showed it.
+- Kernel failures (an arrangement triangulation, a classification, rounding a
+  result) raise `wf.KernelError` instead of `wf.InvalidInput` with an
+  `internal:` message, so they no longer blame the input.
 
 - Test names now match the README milestone acceptance filters.
 - `loft` takes an open line or a single point as its first or last section,
@@ -105,11 +116,13 @@ All notable changes to wireframes are listed here. The format follows
 
 ### Known issues
 
-- A boolean result can fail validation after its exact vertices are rounded to
-  f64: rounding can fold a sliver thinner than the float spacing onto a
-  neighbouring face that is not coplanar with it. Seen in chains of grid-box booleans and in booleans of
-  pits clipped by the same topography (their caps differ by about one ulp);
-  for pushbacks, clip the difference of the unclipped pits instead.
+- Snap rounding is not implemented, so a boolean, clip or split whose exact
+  result holds slivers thinner than the float spacing raises `wf.KernelError`:
+  rounding folds the slivers into self-intersections. Seen in chains of
+  booleans, in booleans of pits clipped by the same topography (their caps
+  differ by about one ulp), in unions of stopes rotated to strike, and in
+  inclined splits where other vertices lie within an ulp of the plane. For
+  pushbacks, clip the difference of the unclipped pits instead.
 - A cavity that touches its outer shell along an edge is refused as a
   self-intersection, while one that touches it at a vertex is a valid contact.
 - `loft` does not branch, `extrude` has no path sweep, and `offset` is not a

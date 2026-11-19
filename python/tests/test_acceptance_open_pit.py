@@ -341,8 +341,24 @@ def test_booleans_of_solids_whose_caps_differ_by_one_ulp():
     c[4, 2] = np.nextafter(c[4, 2], np.inf)
     b = b.with_vertices(c)
     assert a.is_solid and b.is_solid
-    for m in (a & b, a | b, a - b, b - a):
+    refused = 0
+    for x, y, op, v in (
+        (a, b, wf.intersection, b.volume),
+        (a, b, wf.union, a.volume),
+        (a, b, wf.difference, a.volume - b.volume),
+        (b, a, wf.difference, 0.0),
+    ):
+        try:
+            m = op(x, y)
+            assert m.n_faces == 0 or m.is_solid
+        except wf.KernelError as e:
+            refused += 1
+            m = e.mesh
+            assert not isinstance(e, wf.InvalidInput) and "not an input defect" in str(e)
+            assert e.report.summary["is_closed"] and not e.report.summary["is_solid"]
         assert m.n_faces == 0 or m.validate().summary["boundary_edges"] == 0
+        assert abs(m.volume - v) <= 1e-12 * a.volume
+    assert refused > 0, "rounding no longer breaks these booleans; unskip the acceptance tests"
 
 
 @pytest.mark.skip(reason="acceptance: rounding folds slivers of near-coplanar caps into self-intersections")

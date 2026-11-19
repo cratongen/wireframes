@@ -4,7 +4,7 @@ mod support;
 use support::closed_manifold;
 
 use wireframes_boolean::{BooleanOptions, Op, boolean, split_by_plane};
-use wireframes_core::{Mesh, fixtures};
+use wireframes_core::{Error, Mesh, fixtures};
 
 const BOX_FACES: [[u32; 3]; 12] = [
     [0, 2, 1],
@@ -53,6 +53,39 @@ fn booleans_of_prisms_whose_caps_differ_by_one_ulp_are_valid_solids() {
             assert!(m.is_empty() || s.is_solid(), "{op:?}: {s:?}");
         }
     }
+}
+
+#[test]
+fn booleans_of_prisms_whose_caps_differ_by_one_ulp_return_solids_or_kernel_errors() {
+    let a = prism(10.0, -10.0);
+    let exact = prism(6.0, -5.0);
+    let mut v = exact.vertices().to_vec();
+    v[4][2] = v[4][2].next_up();
+    let b = Mesh::new(v, exact.triangles().to_vec()).unwrap();
+    let mut refused = 0;
+    for op in [Op::Union, Op::Intersection, Op::Difference] {
+        for (x, y) in [(&a, &b), (&b, &a)] {
+            match boolean(x, y, op, &BooleanOptions::default()) {
+                Ok(r) => assert!(
+                    r.mesh.is_empty() || r.mesh.validate(0.0).unwrap().summary.is_solid(),
+                    "{op:?}"
+                ),
+                Err(Error::Kernel {
+                    report: Some(r),
+                    mesh: Some(m),
+                    ..
+                }) => {
+                    refused += 1;
+                    assert!(closed_manifold(&m) && !r.summary.is_solid(), "{op:?}");
+                }
+                Err(e) => panic!("{op:?}: {e}"),
+            }
+        }
+    }
+    assert!(
+        refused > 0,
+        "rounding no longer breaks these booleans; run the ignored test"
+    );
 }
 
 #[test]

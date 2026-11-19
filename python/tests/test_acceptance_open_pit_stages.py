@@ -388,7 +388,10 @@ import numpy as np
 import wireframes as wf
 z = np.load({path!r})
 a, b = wf.Mesh(z["av"], z["at"]), wf.Mesh(z["bv"], z["bt"])
-m = a & b
+try:
+    m = a & b
+except wf.KernelError as e:
+    m = e.mesh
 solid = m.n_faces == 0 or m.is_solid
 print(m.n_faces, solid, 0.0 if m.n_faces == 0 else m.volume if solid else float("nan"))
 """

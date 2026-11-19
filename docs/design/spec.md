@@ -184,7 +184,9 @@ No other dependency without a line in this table.
    happens whenever two input surfaces agree only to an ulp, so the exact result
    holds slivers thinner than `f64` can place. Stopes tessellated on different grids
    and rotated to strike are one case: their shared walls are planar only to
-   rounding, so the exact union keeps pockets an ulp thick between them. Open-pit work hits it often: booleans
+   rounding, so the exact union keeps pockets an ulp thick between them. Inclined
+   splits hit it where other vertices lie within an ulp of the plane: 188 of 648
+   splits of `fixtures::sphere(2)` through its vertices along four inclined normals. Open-pit work hits it often: booleans
    of a pit and its pushback after each was clipped by the topography (their shared
    walls and caps were computed separately and differ by ulps), and
    `clip_by_surface` of polygonal pits with many wall quads by a surface whose
@@ -192,12 +194,15 @@ No other dependency without a line in this table.
    measured 127 invalid clips in 200 seeded tilted planes for an octagonal pit at
    UTM coordinates). Prefer operations on the exact inputs: clip the difference
    (`(s2 - s1).clip_by_surface(topo)`) rather than taking the difference of clipped
-   pieces. The result is closed and manifold, and its volume is right to rounding,
-   but `validate` reports the self-intersections, so `is_solid` is false; a fix
-   needs snap rounding of the arrangement, which is not implemented. Output tests check
-   combinatorial closure and manifoldness, and `validate` on outputs is run in the
-   property tests with the failure rate reported, never hidden. The oracle suite
-   (section 12) counts closed results that `validate` does not pass as solids, out
+   pieces. The rounded mesh is closed and manifold, and its volume is right to
+   rounding, but `validate` reports the self-intersections. Booleans,
+   `clip_by_surface` and `split_by_plane` of a solid run `validate` on every result
+   and return it only when `is_solid` holds; otherwise they return
+   `Error::Kernel` with the report and the rounded mesh, never the mesh itself. A
+   fix needs snap rounding of the arrangement, which is not implemented. Tests that
+   meet the limit read the mesh from the error and keep their checks on it, and
+   report the failure rate, never hide it. The oracle suite
+   (section 12) counts results refused with `Error::Kernel`, out
    of 160 boolean results per arrangement of seeded pairs: 1 for overlapping pairs,
    24 for a solid and its copy halved about the origin, 1 at UTM coordinates and 13
    for pairs turned `1e-9` rad apart; every one had an input with two neighbouring
@@ -224,6 +229,8 @@ pub enum Error {
     InvalidInput(String),
     #[error("invalid mesh: {context}: {defects}; the error's report lists each problem ..., and mesh.repair() or repair=True fixes what repair can")]
     InvalidMesh { context: String, report: Box<MeshReport> },
+    #[error("kernel limitation, not an input defect: {message}{report_defects}")]
+    Kernel { message: String, report: Option<Box<MeshReport>>, mesh: Option<Box<Mesh>> },
     #[error("{}", format_location(path, line, message))]
     Format { path: Option<std::path::PathBuf>, line: Option<u64>, message: String },
     #[error(transparent)]
@@ -246,6 +253,14 @@ input that fails validation; `context` names the argument (`"a"`, `"b"`,
 is `MeshSummary::defects()`, the nonzero defect counts (`boundary_edges=18,
 self_intersections=29`, or `not closed`), followed by the pointer to the report
 and to repair, so `wf.union(topography, orebody)` says why it refuses.
+
+`Kernel` is the only way a function reports a failure of the kernel on valid
+input: a result that rounding to `f64` left short of a solid, an arrangement
+triangulation that fails, or a classification that finds no point to decide a
+patch. It never blames the input. `Error::kernel(message)` carries no report;
+`Error::kernel_result(message, mesh)` validates `mesh` and carries the report and
+the mesh, and `{report_defects}` is then `": {defects}; the error's report lists
+each problem and its mesh holds the result"`.
 
 ### 3.2 table.rs
 
@@ -1022,11 +1037,11 @@ Arrangement (`arrangement.rs`):
    exact point, the umbrellas found through the same radial pairs; where it touches
    itself along an edge whose ends it does not touch, that edge keeps its four faces
    on shared vertices. `clip_by_surface` uses the same split per piece. A result that
-   is not closed and manifold after rounding, or that keeps a face whose rounded
-   corners are collinear (which `validate` leaves out, so its edges are open), errors
-   with `InvalidInput("internal: rounding the result to f64 left it open or
-   non-manifold")` (`"... the clip result ..."` for `clip_by_surface`), never
-   returns it.
+   `validate` does not pass as a solid after rounding (self-intersections, open or
+   non-manifold edges, or a face whose rounded corners are collinear) errors with
+   `Error::Kernel` carrying its report and mesh (`"rounding the exact result to f64
+   left a mesh that is not a solid ..."`, `"... the exact clip ..."` for
+   `clip_by_surface`), never returns it.
 
 `clip_by_surface`: `above` is the part of the solid on the side the surface normals
 point to, `below` the other; both are closed and outward, capped by the pieces of
@@ -1054,9 +1069,12 @@ triangulation, represented by an input vertex when one of them is; each output
 shell then gets its own copy of such a point, so touching shells stay apart in
 both parts. Each part then gets the cleanup of section 6.2 item 7 (equal
 coordinates merge, repeated and cancelling faces go, collinear corners and folds
-are split away), repeated until nothing changes. A part of a closed mesh that is
-still not closed and manifold errors with `InvalidInput("internal: rounding the
-split to f64 left it open or non-manifold")`. Side tests use
+are split away), repeated until nothing changes. When a part of a closed mesh is
+not a solid, the input is validated: for a solid input the part errors with
+`Error::Kernel` carrying its report and mesh (`"rounding the exact split ..."`);
+for a closed input that is not a solid the parts return when they are closed and
+manifold, and error with `Error::Kernel("rounding the split to f64 left it open
+or non-manifold")` otherwise. Side tests use
 `exact::plane_side`, which evaluates the sign of `(p - origin) . normal` exactly with
 expansions, so `origin` and `normal` are taken as given f64 values. Closed meshes are
 capped: the cap is a CDT of the rounded section points in the dominant-axis
@@ -1310,6 +1328,11 @@ class InvalidInput(WireframesError, ValueError): ...
 
 class InvalidMesh(InvalidInput):
     report: MeshReport
+
+
+class KernelError(WireframesError, RuntimeError):  # Error::Kernel
+    report: MeshReport | None
+    mesh: Mesh | None
 
 
 class FileError(WireframesError, OSError): ...  # Error::Io and Error::Format
@@ -1653,7 +1676,7 @@ def surface3d(
 
 `__init__.py` exports: `Table, Mesh, Polylines, PointSet, UnstructuredGrid,
 Dataset, MeshReport, RepairReport, WireframesError, InvalidInput, InvalidMesh,
-FileError, MissingColumn, read, read_mesh, read_polylines, read_points, write,
+KernelError, FileError, MissingColumn, read, read_mesh, read_polylines, read_points, write,
 concat, union, intersection, difference, symmetric_difference, cut_fill, dtm,
 triangulate, loft, extrude, plot` (lazy attribute), `__version__`.
 
@@ -1842,8 +1865,9 @@ epsilon, `R` the largest coordinate magnitude, `n` the face count.
   `delta` changes volume by at most `delta` times its area and a triangle's area by
   at most `delta` times its perimeter. For the near-coincident pairs a plane shift
   of `delta` slides a crossing point by `delta / theta` along the surface, so the
-  area bound uses `delta / 1e-9`. All 960 results agree within these bounds. Every
-  result is closed; one that `validate` does not pass as a solid must come from the
+  area bound uses `delta / 1e-9`. All 960 results agree within these bounds, a
+  result refused with `Error::Kernel` measured on the mesh the error carries. Every
+  result is closed; a refused one must come from the
   near-coincident arrangement or an input with faces coplanar only to rounding
   (tolerance policy rule 5), and pairs without either must give solids.
 - trimesh: volume, area and centroid of 56 solids (turned shapes and boolean

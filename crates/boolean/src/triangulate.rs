@@ -116,13 +116,13 @@ fn ear_clip<G: Geom>(g: &G, poly: &[u32]) -> Result<Vec<[u32; 3]>> {
                         || g.orient(c, a, p) == Sign::Negative
                 })
         });
-        let i = ear.ok_or_else(|| Error::invalid("internal: no ear in a constraint cavity"))?;
+        let i = ear.ok_or_else(|| Error::kernel("no ear in a constraint cavity"))?;
         out.push([v[(i + n - 1) % n], v[i], v[(i + 1) % n]]);
         v.remove(i);
     }
     if v.len() == 3 {
         if g.orient(v[0], v[1], v[2]) != Sign::Positive {
-            return Err(Error::invalid("internal: flat constraint cavity"));
+            return Err(Error::kernel("flat constraint cavity"));
         }
         out.push([v[0], v[1], v[2]]);
     }
@@ -145,7 +145,7 @@ pub(crate) fn cdt<G: Geom>(g: &G, n: u32, segments: &[[u32; 2]]) -> Result<Cdt> 
         .windows(2)
         .any(|w| g.cmp(w[0], w[1]) == Ordering::Equal)
     {
-        return Err(Error::invalid("internal: duplicate point in triangulation"));
+        return Err(Error::kernel("duplicate point in triangulation"));
     }
     let mut constrained = HashSet::new();
     if n < 3 {
@@ -186,7 +186,7 @@ pub(crate) fn cdt<G: Geom>(g: &G, n: u32, segments: &[[u32; 2]]) -> Result<Cdt> 
             .collect();
         let s = (0..m)
             .find(|&i| vis[i] && !vis[(i + m - 1) % m])
-            .ok_or_else(|| Error::invalid("internal: point not outside hull"))?;
+            .ok_or_else(|| Error::kernel("point not outside hull"))?;
         let mut c = 0;
         while vis[(s + c) % m] {
             let i = (s + c) % m;
@@ -235,7 +235,7 @@ pub(crate) fn cdt<G: Geom>(g: &G, n: u32, segments: &[[u32; 2]]) -> Result<Cdt> 
             }
         }
         let (t0, mut r, mut l) = match start {
-            None => return Err(Error::invalid("internal: constraint leaves the hull")),
+            None => return Err(Error::kernel("constraint leaves the hull")),
             Some(Err(mid)) => {
                 constrained.insert(key(a, mid));
                 stack.push([mid, b]);
@@ -251,7 +251,7 @@ pub(crate) fn cdt<G: Geom>(g: &G, n: u32, segments: &[[u32; 2]]) -> Result<Cdt> 
             }
             let t = tm
                 .with_edge(l, r)
-                .ok_or_else(|| Error::invalid("internal: constraint leaves the hull"))?;
+                .ok_or_else(|| Error::kernel("constraint leaves the hull"))?;
             removed.push(t);
             let [_, _, z] = tm.rot(t, l);
             if z == b {

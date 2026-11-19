@@ -87,7 +87,11 @@ def compare(arrangement, seed):
         tally["pairs"] += 1
         tally["strict"] += not rounding_case
         for name, (ours, theirs) in OPS.items():
-            got = ours(a, b)
+            try:
+                got = ours(a, b)
+            except wf.KernelError as e:
+                got = e.mesh
+                assert rounding_case, f"{arrangement} {name}: {e}"
             ref = theirs(ma, mb)
             v, ar, per, dropped = solid_part(ref, delta)
             tally["sheets"] += dropped
@@ -116,7 +120,7 @@ def test_boolean_volumes_and_areas_agree_with_manifold(arrangement, seed):
         f"\noracle manifold {arrangement}: {t['pairs']} pairs, {t['comparisons']} op results compared, "
         f"{len(t['errors'])} outside the bound (largest |dV| {t['dv']:.1e}, |dA| {t['da']:.1e}), {t['sheets']} Manifold zero-volume sheets dropped, "
         f"{t['strict']} pairs without faces coplanar only to rounding (results must be solids), "
-        f"{t['not_solid']} wireframes results closed but not solid (tolerance policy rule 5)"
+        f"{t['not_solid']} wireframes results refused with KernelError, closed but not solid (tolerance policy rule 5)"
     )
     assert t["errors"] == []
 

@@ -26,7 +26,7 @@ from ._wireframes import (
     union,
     write,
 )
-from .errors import FileError, InvalidInput, InvalidMesh, MissingColumn, WireframesError
+from .errors import FileError, InvalidInput, InvalidMesh, KernelError, MissingColumn, WireframesError
 
 del _containers
 
@@ -35,6 +35,7 @@ __all__ = [
     "FileError",
     "InvalidInput",
     "InvalidMesh",
+    "KernelError",
     "Mesh",
     "MeshReport",
     "MissingColumn",
