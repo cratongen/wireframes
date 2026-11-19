@@ -91,7 +91,7 @@ fn malformed_inputs_are_errors() {
 
 #[test]
 fn short_faces_and_unknown_statements_warn() {
-    let d = obj::read(b"v 0 0 0\nv 1 0 0\nf 1 2\nl 1\ncurv 0 1\n").unwrap();
+    let d = obj::read(b"v 0 0 0\nv 1 0 0\nf 1 2\nl\ncurv 0 1\n").unwrap();
     assert_eq!(d.warnings.len(), 3, "{:?}", d.warnings);
     assert_eq!(d.mesh.unwrap().n_faces(), 0);
 }
@@ -254,4 +254,33 @@ fn comment_ending_in_backslash_does_not_swallow_next_line() {
     assert_eq!(d.mesh.unwrap().n_vertices(), 3);
     let d = obj::read(b"v 0 0 \\\n0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n").unwrap();
     assert_eq!(d.mesh.unwrap().n_vertices(), 3);
+}
+
+#[test]
+fn point_parts_round_trip() {
+    let pl = Polylines::from_parts(
+        vec![
+            vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [1.0, 1.0, 0.0]],
+            vec![[5.0, 5.0, 1.0]],
+            vec![[6.0, 5.0, 1.0], [7.0, 5.0, 1.0]],
+        ],
+        vec![true, false, false],
+        None,
+    )
+    .unwrap();
+    let data = Data {
+        polylines: Some(pl.clone()),
+        ..Data::default()
+    };
+    let back = obj::read(&obj::write(&data, &ascii()).unwrap())
+        .unwrap()
+        .polylines
+        .unwrap();
+    assert_eq!(back.n_parts(), 3);
+    for p in 0..3 {
+        assert_eq!(
+            (back.part(p), back.closed()[p]),
+            (pl.part(p), pl.closed()[p])
+        );
+    }
 }

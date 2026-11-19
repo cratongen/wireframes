@@ -102,7 +102,7 @@ impl Polylines {
         }
         for p in 0..n_parts {
             let n = (parts[p + 1] - parts[p]) as usize;
-            let need = if closed[p] { 3 } else { 2 };
+            let need = if closed[p] { 3 } else { 1 };
             if n < need {
                 return Err(Error::invalid(format!(
                     "part {p} has {n} vertices; {} parts need at least {need}",
@@ -475,6 +475,15 @@ mod tests {
         );
         assert!(p.clone().with_column("id", Column::i64(vec![1, 2])).is_ok());
         assert!(p.clone().with_column("id", Column::i64(vec![1])).is_err());
+    }
+
+    #[test]
+    fn an_open_part_may_be_a_single_point() {
+        let p = Polylines::from_parts(vec![vec![[1.0, 2.0, 3.0]]], vec![false], None).unwrap();
+        assert_eq!((p.n_parts(), p.part(0)), (1, &[[1.0, 2.0, 3.0]][..]));
+        assert_eq!(p.length(), vec![0.0]);
+        assert!(Polylines::from_parts(vec![vec![[0.0; 3]]], vec![true], None).is_err());
+        assert!(Polylines::from_parts(vec![vec![]], vec![false], None).is_err());
     }
 
     #[test]

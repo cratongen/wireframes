@@ -328,7 +328,7 @@ pub fn read(r: &[u8]) -> Result<Data> {
                         face_obj.extend(std::iter::repeat_n(obj, n));
                         face_grp.extend(std::iter::repeat_n(grp, n));
                     }
-                    b"l" if corners.len() < 2 => short_lines += 1,
+                    b"l" if corners.is_empty() => short_lines += 1,
                     b"l" => {
                         line_idx.extend_from_slice(&corners);
                         line_off.push(line_idx.len());
@@ -375,9 +375,7 @@ pub fn read(r: &[u8]) -> Result<Data> {
     let mut warnings = Vec::new();
     polys.warn(&mut warnings);
     if short_lines > 0 {
-        warnings.push(format!(
-            "skipped {short_lines} lines with fewer than 2 vertices"
-        ));
+        warnings.push(format!("skipped {short_lines} lines with no vertices"));
     }
     if unknown > 0 {
         warnings.push(format!("ignored {unknown} unknown statements"));

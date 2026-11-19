@@ -526,3 +526,31 @@ fn vtp_keeps_empty_features_and_valid_named_columns() {
         assert_eq!(round(&data, &opts, true).polylines, Some(pl.clone()));
     }
 }
+
+#[test]
+fn point_parts_round_trip_in_vtp() {
+    let pl = Polylines::from_parts(
+        vec![
+            vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [1.0, 1.0, 0.0]],
+            vec![[5.0, 5.0, 1.0]],
+            vec![[6.0, 5.0, 1.0], [7.0, 5.0, 1.0]],
+        ],
+        vec![true, false, false],
+        None,
+    )
+    .unwrap();
+    let data = Data {
+        polylines: Some(pl.clone()),
+        ..Data::default()
+    };
+    let back = round(&data, &WriteOptions::default(), true)
+        .polylines
+        .unwrap();
+    assert_eq!(back.n_parts(), 3);
+    for p in 0..3 {
+        assert_eq!(
+            (back.part(p), back.closed()[p]),
+            (pl.part(p), pl.closed()[p])
+        );
+    }
+}

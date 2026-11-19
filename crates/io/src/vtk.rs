@@ -512,11 +512,6 @@ pub(crate) fn poly_to_data(pd: PolyData) -> Result<Data> {
                 }
             }
             let ids = pd.lines.cell(c);
-            if ids.len() == 1 {
-                return Err(Error::format(format!(
-                    "line cell {c} has 1 point, needs 0 (an empty feature) or at least 2"
-                )));
-            }
             if ids.is_empty() {
                 continue;
             }

@@ -162,8 +162,9 @@ def test_polylines(rng):
     assert len(points) == 10 and "part" in points.column_names
     assert p.filter([False, True]).coords.tolist() == [[5, 5, 1], [6, 5, 2]]
     assert p.with_column("w", [1.0, 2.0]).attributes["w"].tolist() == [1.0, 2.0]
+    assert wf.Polylines([[[0, 0]]]).coords.tolist() == [[0, 0, 0]]
     with pytest.raises(wf.InvalidInput):
-        wf.Polylines([[[0, 0]]])
+        wf.Polylines([[[0, 0]]], closed=True)
     with pytest.raises(wf.InvalidInput):
         p.contains([[0, 0]], feature=7)
 

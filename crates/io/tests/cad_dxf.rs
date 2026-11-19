@@ -563,3 +563,32 @@ fn binary_mesh_is_skipped_with_a_warning() {
     assert!(d.mesh.is_none());
     assert_eq!(d.warnings, vec!["skipped 1 MESH entities".to_string()]);
 }
+
+#[test]
+fn point_parts_round_trip() {
+    let pl = Polylines::from_parts(
+        vec![
+            vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [1.0, 1.0, 0.0]],
+            vec![[5.0, 5.0, 1.0]],
+            vec![[6.0, 5.0, 1.0], [7.0, 5.0, 1.0]],
+        ],
+        vec![true, false, false],
+        None,
+    )
+    .unwrap();
+    let data = Data {
+        polylines: Some(pl.clone()),
+        ..Data::default()
+    };
+    let back = dxf::read(&dxf::write(&data, &Default::default()).unwrap())
+        .unwrap()
+        .polylines
+        .unwrap();
+    assert_eq!(back.n_parts(), 3);
+    for p in 0..3 {
+        assert_eq!(
+            (back.part(p), back.closed()[p]),
+            (pl.part(p), pl.closed()[p])
+        );
+    }
+}

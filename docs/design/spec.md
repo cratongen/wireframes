@@ -313,7 +313,8 @@ pub struct Polylines {
 ```
 
 Rules (boitata compatible): a closed part does not repeat its first vertex; a closed
-part has `>= 3` vertices, an open part `>= 2`; a feature has `>= 0` parts; holes and
+part has `>= 3` vertices, an open part `>= 1` (one vertex is a point, for example
+the pinch-out of a `loft`); a feature has `>= 0` parts; holes and
 multipart features are several parts of one feature; plan inside is even-odd over
 the feature's closed parts.
 

@@ -38,6 +38,9 @@ All notable changes to wireframes are listed here. The format follows
 ### Changed
 
 - Test names now match the README milestone acceptance filters.
+- An open polyline part may hold a single vertex (a point). OBJ `l`, DXF
+  polylines and VTK/VTP line cells with one vertex read as such parts instead
+  of being skipped or refused.
 - `symmetric_difference` of crossing solids is a valid solid: `a - b` and
   `b - a` are separate shells touching along the intersection curve.
 - Union of solids that share only an edge or a vertex, and differences that

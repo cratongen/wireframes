@@ -371,7 +371,7 @@ impl Out {
         if closed && v.len() < 3 {
             closed = false;
         }
-        if v.len() < 2 {
+        if v.is_empty() {
             self.short_parts += 1;
             return Ok(());
         }
@@ -747,7 +747,7 @@ pub fn read(r: &[u8]) -> Result<Data> {
     }
     if out.short_parts > 0 {
         warnings.push(format!(
-            "skipped {} polylines with fewer than 2 vertices",
+            "skipped {} polylines with no vertices",
             out.short_parts
         ));
     }
