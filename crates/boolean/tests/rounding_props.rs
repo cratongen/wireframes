@@ -1,7 +1,9 @@
-//! Chains of unions at UTM coordinates fed with the previous result. Every
-//! result must be a solid, satisfy the volume identities against exact
-//! rational volumes within the reported `volume_bound`s, and be the same on
-//! 1 and 8 threads.
+//! Seeded inputs built to hit each rounding mechanism of
+//! `docs/design/rounding.md`: walls and caps that agree only to a few ulps,
+//! solids rotated by tiny angles or to strike at UTM coordinates, and chains
+//! of unions fed with the previous result. Every result must be a solid,
+//! satisfy the volume identities against exact rational volumes within the
+//! reported `volume_bound`s, and be the same on 1 and 8 threads.
 
 use num_rational::BigRational as Q;
 use proptest::prelude::*;
@@ -39,6 +41,14 @@ fn turn(p: [f64; 3], c: [f64; 3], angle: f64) -> [f64; 3] {
     let (s, k) = angle.sin_cos();
     let (dx, dy) = (p[0] - c[0], p[1] - c[1]);
     [c[0] + k * dx - s * dy, c[1] + s * dx + k * dy, p[2]]
+}
+
+/// `x` moved by `n` ulps.
+fn nudge(mut x: f64, n: i32) -> f64 {
+    for _ in 0..n.abs() {
+        x = if n > 0 { x.next_up() } else { x.next_down() };
+    }
+    x
 }
 
 fn q(x: f64) -> Q {
@@ -112,6 +122,105 @@ fn check(a: &Mesh, b: &Mesh) -> std::result::Result<Mesh, TestCaseError> {
         "difference and intersection"
     );
     Ok(out.swap_remove(0).mesh)
+}
+
+fn utm() -> impl Strategy<Value = [f64; 3]> {
+    (0u32..4000, 0u32..4000, 0u32..400).prop_map(|(x, y, z)| {
+        [
+            700_000.0 + f64::from(x) * 0.37,
+            7_500_000.0 + f64::from(y) * 0.29,
+            f64::from(z) * 1.3 - 200.0,
+        ]
+    })
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig { cases: 12, ..ProptestConfig::default() })]
+
+    /// Two stopes sharing a wall whose vertices on one side lie a few ulps off
+    /// it, optionally rotated to strike, at UTM coordinates.
+    #[test]
+    fn stopes_sharing_a_wall_a_few_ulps_off(
+        o in utm(),
+        w in 4u32..16,
+        dy in -6i32..10,
+        dz in -8i32..12,
+        nudges in proptest::array::uniform4(-3i32..=3),
+        strike in prop_oneof![Just(0.0), 0.0..std::f64::consts::PI],
+    ) {
+        let (l, h, t) = (20.0, 16.0, 24.0);
+        let a: Vec<[f64; 3]> = corners(o, [o[0] + l, o[1] + h, o[2] + t]);
+        let lo = [o[0] + l, o[1] + f64::from(dy), o[2] + f64::from(dz)];
+        let mut b = corners(lo, [lo[0] + f64::from(w), lo[1] + h, lo[2] + t]);
+        for (k, i) in [0usize, 2, 4, 6].into_iter().enumerate() {
+            b[i][0] = nudge(b[i][0], nudges[k]);
+        }
+        let (a, b) = if strike == 0.0 {
+            (a, b)
+        } else {
+            (a.iter().map(|&p| turn(p, o, strike)).collect(), b.iter().map(|&p| turn(p, o, strike)).collect())
+        };
+        check(&mesh(a), &mesh(b))?;
+    }
+
+    /// Prisms whose tops lie on one sloping plane at UTM coordinates, the
+    /// smaller one's top corners a few ulps above or below it.
+    #[test]
+    fn prisms_whose_caps_agree_to_a_few_ulps(
+        o in utm(),
+        slope in (-0.3f64..0.3, -0.3f64..0.3),
+        bumps in proptest::array::uniform4(-2i32..=2),
+        shift in (-3.0f64..3.0, -3.0f64..3.0),
+    ) {
+        let top = |x: f64, y: f64| o[2] + 40.0 + slope.0 * (x - o[0]) + slope.1 * (y - o[1]);
+        let prism = |c: [f64; 2], half: f64, bottom: f64| -> Vec<[f64; 3]> {
+            (0..8)
+                .map(|i| {
+                    let x = c[0] + if i & 1 == 1 { half } else { -half };
+                    let y = c[1] + if i & 2 == 2 { half } else { -half };
+                    [x, y, if i & 4 == 4 { top(x, y) } else { bottom }]
+                })
+                .collect()
+        };
+        let a = prism([o[0], o[1]], 10.0, o[2] - 10.0);
+        let mut b = prism([o[0] + shift.0, o[1] + shift.1], 6.0, o[2] - 5.0);
+        for (k, i) in [4usize, 5, 6, 7].into_iter().enumerate() {
+            b[i][2] = nudge(b[i][2], bumps[k]);
+        }
+        check(&mesh(a), &mesh(b))?;
+    }
+
+    /// A box and its copy turned by a tiny angle about a vertical through
+    /// its centre, so every face of one lies within ulps of a face of the
+    /// other, at UTM coordinates.
+    #[test]
+    fn boxes_turned_by_tiny_angles(
+        o in utm(),
+        size in (5.0f64..30.0, 5.0f64..30.0, 5.0f64..30.0),
+        angle in prop_oneof![1e-15f64..1e-12, 1e-12f64..1e-9],
+        sign in prop_oneof![Just(1.0), Just(-1.0)],
+    ) {
+        let hi = [o[0] + size.0, o[1] + size.1, o[2] + size.2];
+        let a = corners(o, hi);
+        let c = [0, 1, 2].map(|k| (o[k] + hi[k]) / 2.0);
+        let b: Vec<[f64; 3]> = a.iter().map(|&p| turn(p, c, sign * angle)).collect();
+        check(&mesh(a), &mesh(b))?;
+    }
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig { cases: 2, ..ProptestConfig::default() })]
+
+    /// A drive at UTM coordinates turned to strike, united with twelve
+    /// crosscuts one at a time, each union fed with the previous result.
+    #[test]
+    fn chains_of_twelve_unions_stay_solid(
+        o in utm(),
+        strike in 0.0..std::f64::consts::PI,
+        offsets in proptest::collection::vec((0.0f64..1.0, -1.5f64..1.5), 12),
+    ) {
+        chain(o, strike, &offsets)?;
+    }
 }
 
 fn chain(
