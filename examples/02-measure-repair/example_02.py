@@ -105,6 +105,34 @@ print("soup faces dropped:", int((log.face_map < 0).sum()), "holes left:", fill_
 assert (log.face_map < 0).sum() == 6 and fill_log.holes_left == 0 and filled.is_solid
 
 # %% [markdown]
+# Two stopes that share a corner edge are one valid solid with two shells in contact. `repair` keeps each
+# shell's own vertices there; `weld_touching_shells=True` merges them, and repairing that output splits them
+# again with `vertex_split` actions.
+
+# %%
+stopes = wf.datasets.box([0, 0, 0], [10, 10, 20]) | wf.datasets.box([10, 10, 0], [20, 20, 20])
+contact = stopes.validate().summary
+print(
+    contact["shells"],
+    "shells,",
+    contact["touching_shell_edges"],
+    "touching edge, solid:",
+    contact["is_solid"],
+)
+kept, kept_log = stopes.repair()
+merged, merge_log = stopes.repair(weld_touching_shells=True)
+split, split_log = merged.repair()
+print(
+    len(kept_log),
+    "changes;",
+    merge_log.summary["vertex_merged"],
+    "merged;",
+    split_log.summary["vertex_split"],
+    "split",
+)
+assert len(kept_log) == 0 and merged.is_solid and split.n_vertices == stopes.n_vertices
+
+# %% [markdown]
 # ## Per-face measures
 #
 # `face_areas` add up to `area`. `face_normals` are unit normals per triangle, `vertex_normals` average them by
