@@ -5,3 +5,4 @@
 # It is recommended to check this file in to source control so that
 # everyone who runs the test benefits from these saved cases.
 cc 21c5527adf23b3aa52392a31a7944a8be491df824db3e6c087bb512ed8e3a20d # shrinks to o = [0.0, 0.981726445642584, 0.7596377723565166], n = [0.0, 1.0, 0.9190331232657712], which = 2
+cc 2182fd8a475c73eafb296a093d747df9a73ccbb4f71461a2a7261820912e62e9 # shrinks to o = [0.0, 0.0, 0.0], n = [0.0, 0.0, -0.11998096620065817], which = 0
