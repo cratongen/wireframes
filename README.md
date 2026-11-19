@@ -90,10 +90,14 @@ tonnage without warning. `wireframes` enforces three rules:
    materializing the output `Mesh`.
 2. **Refuse dirty solids by default**: boolean operations (`union`,
    `intersection`, `difference`, `clip_by_surface`) validate their inputs first.
-   Every result is a solid: where the inputs agree only to rounding, rounding
-   the exact result to `f64` can leave self-intersections, and the function then
-   raises `wf.KernelError` with the rounded result's `MeshReport` and mesh
-   instead of returning it (spec tolerance policy, item 5). If an input has boundary
+   Every result is a solid: the exact result is rounded to `f64` with exact
+   tests that collapse or snap what rounding cannot place, and where two inputs
+   agree only to rounding their faces are first made to coincide exactly
+   (`docs/design/rounding.md`). No vertex ends more than four ulps of its largest
+   coordinate from its exact position, and `rounding_report=True` returns how
+   far vertices moved and a proven bound on the volume change. A result these
+   operations cannot certify raises `wf.KernelError` with its `MeshReport` and
+   mesh (spec tolerance policy, item 5); no case known to the tests does. If an input has boundary
    edges, non-manifold edges or vertices, degenerate or duplicate faces,
    inconsistent winding, inward shells, or self-intersections, the function
    raises `wf.InvalidMesh` carrying the full `MeshReport` (problem counts and
@@ -184,18 +188,15 @@ tonnage without warning. `wireframes` enforces three rules:
     per face) or kept as separate meshes before any boolean. Accepting
     conforming face contacts would change the solid definition in the
     glossary and every boolean's classification; not started.
-  - Snap rounding is not implemented. Where the inputs agree only to rounding,
-    rounding the exact result to `f64` leaves self-intersections, and booleans,
-    `clip_by_surface` and `split_by_plane` raise `wf.KernelError` (with the
-    report and the rounded mesh) rather than return it. Cases that still raise:
-    booleans of pits and pushbacks each clipped by the same topography, prisms
-    whose caps differ by one ulp, unions of face-sharing stopes rotated to
-    strike, a drive united with crosscuts one at a time (union 11 of 12 in
-    example 07), 188 of 648 inclined splits of an icosphere through its
-    vertices, and clips of an octagonal pit by flat ground at UTM scale.
-    Six Python acceptance tests stay
-    skipped and one Rust acceptance test stays ignored until snap rounding
-    lands.
+  - Rounding exact results to `f64` follows `docs/design/rounding.md` (method C
+    with conforming of inputs that agree only to rounding). Every reduced case
+    from the old refusals (pits and pushbacks clipped by one topography, prisms
+    whose caps differ by one ulp, face-sharing stopes rotated to strike, the
+    crosscut chain of example 07, the 648 inclined splits of `sphere(2)`) now
+    gives solids within proven bounds, and the acceptance tests that were
+    skipped or ignored for it run. The method has no general 3D validity
+    theorem, so `wf.KernelError` (`uncertified`) stays possible for inputs the
+    tests have not met.
 
 ### M5: Spatial queries for drillholes and block models
 

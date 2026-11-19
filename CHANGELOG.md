@@ -8,6 +8,17 @@ All notable changes to wireframes are listed here. The format follows
 
 ### Added
 
+- Booleans, `clip_by_surface` and `split_by_plane` round exact results with
+  exact tests instead of refusing them (`docs/design/rounding.md`): vertices
+  that round together merge, vertices within rounding of a face are inserted
+  into it, flat runs and sub-ulp shells go, and inputs that agree only to
+  rounding are conformed so their faces coincide exactly. Each result carries a
+  `RoundingReport` (`wf.RoundingReport`, `rounding_report=True`) with the moved
+  vertices, the move bound and a proven volume bound. The 188 refused inclined
+  splits of `sphere(2)`, the pushback booleans, the rotated stopes and union 11
+  of example 07 now give solids, and the six skipped Python acceptance tests and
+  the ignored Rust one run.
+
 - Rust workspace with `core` (mesh, polylines, point sets, typed tables, exact
   predicates, validation), `io`, `ops` (measures, repair, components,
   transforms, thickness), `boolean`, `query`, `build` and `py` crates.
@@ -120,16 +131,9 @@ All notable changes to wireframes are listed here. The format follows
 
 ### Known issues
 
-- Snap rounding is not implemented, so a boolean, clip or split whose exact
-  result holds slivers thinner than the float spacing raises `wf.KernelError`:
-  rounding folds the slivers into self-intersections. Seen in chains of
-  booleans, in booleans of pits clipped by the same topography (their caps
-  differ by about one ulp), in unions of stopes rotated to strike, and in
-  inclined splits where other vertices lie within an ulp of the plane. For
-  pushbacks, clip the difference of the unclipped pits instead. Of 648
-  inclined splits of an icosphere through its vertices, 188 raise it. Six
-  Python acceptance tests stay skipped and one Rust acceptance test stays
-  ignored until snap rounding lands.
+- Rounding has no general 3D validity theorem: a boolean, clip or split the
+  rounding operations cannot certify raises `wf.KernelError` whose message
+  starts with `uncertified`. No case in the tests raises it.
 - `loft` does not branch, `extrude` has no path sweep, and `offset` is not a
   Minkowski offset.
 - No real Datamine Studio export is tested yet.
