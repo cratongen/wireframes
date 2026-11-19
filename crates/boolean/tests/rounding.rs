@@ -192,7 +192,6 @@ fn union_of_a_tessellated_stope_and_a_box_rotated_to_strike() {
 }
 
 #[test]
-#[ignore = "rounding: a drive that earlier unions rounded meets a crosscut within ulps of its walls"]
 fn union_of_a_rounded_drive_with_a_crosscut() {
     booleans_are_solids_with_exact_volumes("crosscut_chain");
 }
