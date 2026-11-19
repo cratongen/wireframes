@@ -294,6 +294,29 @@ pub(crate) fn unit_scale(normal: [f64; 3]) -> [f64; 3] {
     }
 }
 
+/// The exact coordinates of `p` as rationals, for tests.
+#[cfg(test)]
+pub(crate) fn rational(p: &Pt) -> [num_rational::BigRational; 3] {
+    use num_bigint::BigInt;
+    use num_rational::BigRational as Q;
+    let val = |e: &Expansion| {
+        let (neg, mag, exp) = e.to_dyadic();
+        let n = mag
+            .iter()
+            .rev()
+            .fold(BigInt::from(0), |acc, &l| (acc << 64) + BigInt::from(l));
+        let v = Q::from_integer(if neg { -n } else { n });
+        v * Q::from_integer(BigInt::from(2)).pow(i32::try_from(exp).expect("fits"))
+    };
+    match p {
+        Pt::E(v) => v.map(|x| Q::from_float(x).expect("finite")),
+        Pt::H(h) => {
+            let w = val(&h.w);
+            [0, 1, 2].map(|k| val(&h.x[k]) / &w)
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

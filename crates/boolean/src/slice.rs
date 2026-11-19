@@ -8,7 +8,8 @@ use wireframes_core::validate::degenerate_mask;
 use wireframes_core::{Column, EdgeMap, Error, Mesh, Polylines, Result, Table};
 
 use crate::hp::{self, Pt};
-use crate::ops::{Assembled, collapse_rounded, is_closed_result, solid_result};
+use crate::ops::{is_closed_result, solid_result};
+use crate::round::{Assembled, collapse_rounded};
 use crate::triangulate::{Geom, cdt, even_odd};
 
 /// A section point: an input vertex on the plane, or the exact crossing of an
@@ -189,10 +190,10 @@ fn clean(
             .collect(),
         normal: vec![],
     };
-    let (mut out, mut point) = collapse_rounded(asm, &ids);
+    let (mut out, mut point, _, _) = collapse_rounded(asm, &ids);
     loop {
         let n = out.triangles.len();
-        (out, point) = collapse_rounded(out, &point);
+        (out, point, _, _) = collapse_rounded(out, &point);
         if out.triangles.len() == n {
             break;
         }

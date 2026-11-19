@@ -7,11 +7,14 @@ use crate::arrangement;
 use crate::classify::{self, Sample, Target};
 use crate::hp::Pt;
 use crate::ops::{Piece, assemble, build_mesh, prepare, shells, solid_result};
+use crate::round::RoundingReport;
 
 pub struct ClipResult {
     pub below: Mesh,
     pub above: Mesh,
     pub repairs: [Option<RepairReport>; 2],
+    /// What rounding `below` and `above` to `f64` did.
+    pub rounding: [RoundingReport; 2],
 }
 
 fn prepare_surface(surface: &Mesh, fix: bool) -> Result<(Mesh, Option<RepairReport>)> {
@@ -148,8 +151,10 @@ pub fn clip_by_surface(solid: &Mesh, surface: &Mesh, opts: &BooleanOptions) -> R
         ));
     }
     let mut out = vec![];
+    let mut rounding = vec![];
     for piece in [below, above] {
-        let asm = assemble(&arr, &shells(&arr, &piece)?);
+        let (asm, r) = assemble(&arr, &shells(&arr, &piece)?)?;
+        rounding.push(r);
         let mesh = build_mesh(
             asm,
             (a.vertex_attributes(), b.vertex_attributes()),
@@ -160,9 +165,11 @@ pub fn clip_by_surface(solid: &Mesh, surface: &Mesh, opts: &BooleanOptions) -> R
     }
     let above = out.pop().expect("two pieces");
     let below = out.pop().expect("two pieces");
+    let rounding: [RoundingReport; 2] = rounding.try_into().expect("two pieces");
     Ok(ClipResult {
         below,
         above,
         repairs: [ra, rb],
+        rounding,
     })
 }

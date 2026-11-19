@@ -178,37 +178,35 @@ No other dependency without a line in this table.
 4. Tests compare measures with `close(a, b) := |a - b| <= 1e-9 * max(1, |a|, |b|)`
    unless a test states a different bound and the reason.
 5. Materialized intersection points round each exact coordinate to the nearest
-   `f64`. Repeated and collinear corners that rounding makes are removed per
-   output shell (section 6.2 item 7), and so is a sliver that rounding folds onto
-   the coplanar neighbour across its longest edge, such as the kink where a stope
-   wall cuts a drive wall quad that is planar only to rounding, a sliver that
-   rounding turns away from its own plane, and a sliver that rounding tilts into a
-   face of the other input when its neighbour comes from the same input face.
-   Rounding can still leave a self-intersection that the exact arrangement did not
-   have between faces of different inputs. This is not rare: it
-   happens whenever two input surfaces agree only to an ulp, so the exact result
-   holds slivers thinner than `f64` can place. Stopes tessellated on different grids
-   and rotated to strike are one case: their shared walls are planar only to
-   rounding, so the exact union keeps pockets an ulp thick between them. Inclined
-   splits hit it where other vertices lie within an ulp of the plane: 188 of 648
-   splits of `fixtures::sphere(2)` through its vertices along four inclined normals. Open-pit work hits it often: booleans
-   of a pit and its pushback after each was clipped by the topography (their shared
-   walls and caps were computed separately and differ by ulps), and
-   `clip_by_surface` of polygonal pits with many wall quads by a surface whose
-   faces cross the wall quads near their diagonals (the open-pit acceptance tests
-   measured 127 invalid clips in 200 seeded tilted planes for an octagonal pit at
-   UTM coordinates). Prefer operations on the exact inputs: clip the difference
-   (`(s2 - s1).clip_by_surface(topo)`) rather than taking the difference of clipped
-   pieces. The rounded mesh is closed and manifold, and its volume is right to
-   rounding, but `validate` reports the self-intersections. Booleans,
-   `clip_by_surface` and `split_by_plane` of a solid run `validate` on every result
-   and return it only when `is_solid` holds; otherwise they return
-   `Error::Kernel` with the report and the rounded mesh, never the mesh itself. A
-   fix needs snap rounding of the arrangement, which is not implemented;
-   `rounding.md` in this folder records the reduced cases and the chosen method.
-   Tests that
-   meet the limit read the mesh from the error and keep their checks on it, and
-   report the failure rate, never hide it.
+   `f64` (method C of `rounding.md` in this folder). Every output coordinate is the
+   rounding of an exact vertex of the result; nothing invents a coordinate. First
+   each output shell gets the cleanup of section 6.2 item 7. A result that
+   `validate` then passes as a solid is returned as it is. Otherwise the whole
+   result, all shells at once, goes through the operations of `rounding.md`: C1,
+   vertices of any shells with equal coordinates become one (never two copies of
+   one exact point); C4, opposite faces on the same three vertices cancel across
+   shells; C3, an edge-connected component whose rounded volume is zero, or
+   negative while `validate` reports it as an inward shell, is removed when that
+   volume is within the bound (V) gives for rounding its faces. Every decision is
+   an exact test on the rounded points. Each boolean, clip and split result
+   carries a `RoundingReport`: rounded, moved and moved input vertices, the
+   largest distance per axis from any exact vertex to where it ended
+   (`max_move`, with `move_bound`), counts per operation, the steps taken and the
+   step bound proven before the first, and `volume_bound`, a proven bound on
+   `|vol(output) - vol(exact)|`: the Steiner tube sum (V) for rounding plus the
+   exact signed-volume change of the operations on `f64` points. A result that is
+   still not a solid errors with `Error::Kernel` carrying the report and the
+   rounded mesh; its message starts with `uncertified` (the operations ended
+   within their bound and `validate` still finds a problem) or `non-finite` (an
+   exact coordinate rounds outside the `f64` range, which no `f64` mesh can
+   hold). Cases that still meet `uncertified` today are inputs that agree only to
+   an ulp: booleans of a pit and its pushback clipped by one topography, stopes
+   tessellated on different grids and rotated to strike, a drive that earlier
+   unions rounded, and inclined splits and clips where other vertices lie within an
+   ulp of the plane or surface. Prefer operations on the exact inputs: clip the
+   difference (`(s2 - s1).clip_by_surface(topo)`) rather than taking the
+   difference of clipped pieces. Tests that meet the limit read the mesh from the
+   error and keep their checks on it, and report the failure rate, never hide it.
 
 ## 3. wireframes-core
 
@@ -1041,11 +1039,13 @@ Arrangement (`arrangement.rs`):
    exact point, the umbrellas found through the same radial pairs; where it touches
    itself along an edge whose ends it does not touch, that edge keeps its four faces
    on shared vertices. `clip_by_surface` uses the same split per piece. A result that
-   `validate` does not pass as a solid after rounding (self-intersections, open or
-   non-manifold edges, or a face whose rounded corners are collinear) errors with
-   `Error::Kernel` carrying its report and mesh (`"rounding the exact result to f64
-   left a mesh that is not a solid ..."`, `"... the exact clip ..."` for
-   `clip_by_surface`), never returns it.
+   `validate` does not pass as a solid after the cleanup above and the operations
+   of tolerance rule 5 (self-intersections, open or non-manifold edges, or a face
+   whose rounded corners are collinear) errors with `Error::Kernel` carrying its
+   report and mesh (`"uncertified: rounding the exact result to f64 ..."`,
+   `"... the exact clip ..."` for `clip_by_surface`), never returns it.
+   `BooleanResult.rounding` and `ClipResult.rounding` (one per piece) hold the
+   `RoundingReport`.
 
 `clip_by_surface`: `above` is the part of the solid on the side the surface normals
 point to, `below` the other; both are closed and outward, capped by the pieces of

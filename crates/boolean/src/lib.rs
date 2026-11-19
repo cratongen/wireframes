@@ -6,6 +6,7 @@ pub mod clip;
 pub mod cutfill;
 mod hp;
 pub mod ops;
+mod round;
 pub mod slice;
 mod triangulate;
 
@@ -15,6 +16,7 @@ pub use ops::{
     BooleanOptions, BooleanResult, Op, boolean, difference, intersection, symmetric_difference,
     union,
 };
+pub use round::RoundingReport;
 pub use slice::{slice_by_plane, split_by_plane};
 
 /// Sub-triangle count of the arrangement of `a` and `b`, for benchmarks.

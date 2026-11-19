@@ -129,7 +129,6 @@ fn booleans_are_solids_with_exact_volumes(name: &str) {
 }
 
 #[test]
-#[ignore = "rounding: a sub-ulp shell, the difference of prisms whose caps differ by one ulp, rounds flat"]
 fn difference_of_prisms_whose_caps_differ_by_one_ulp_is_empty_or_a_solid() {
     let (a, b) = ulp_prisms();
     let m = difference(&b, &a, &BooleanOptions::default()).unwrap().mesh;

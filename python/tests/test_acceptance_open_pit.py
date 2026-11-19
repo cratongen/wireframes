@@ -358,7 +358,7 @@ def test_booleans_of_solids_whose_caps_differ_by_one_ulp():
             assert e.report.summary["is_closed"] and not e.report.summary["is_solid"]
         assert m.n_faces == 0 or m.validate().summary["boundary_edges"] == 0
         assert abs(m.volume - v) <= 1e-12 * a.volume
-    assert refused > 0, "rounding no longer breaks these booleans; unskip the acceptance tests"
+    assert refused == 0, "rounding left results that are not solids"
 
 
 @pytest.mark.skip(reason="acceptance: rounding folds slivers of near-coplanar caps into self-intersections")
