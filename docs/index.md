@@ -36,6 +36,7 @@ fig, ax = wf.plot.section([orebody, inside], wf.datasets.ORIGIN, [0, 1, 0])
 | [Construction](guide/construction.md) | DTM, polygons, extrusion, lofting, closing, decimation, smoothing, remeshing |
 | [Plotting](guide/plotting.md) | plan, section and 3D views |
 | [Open pit, worked example](examples/06-open-pit/README.md) | topography from contours, pit stages, bench tonnes, survey against design |
+| [Underground, worked example](examples/07-underground/README.md) | orebody from section strings, fault blocks, stopes and development, drillhole intercepts, block tonnage report |
 
 Each page ends with a numbered example from `examples/`. `mise run examples` reruns them all and rewrites their
 pages and figures; every example asserts the invariant it shows.

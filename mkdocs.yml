@@ -40,3 +40,4 @@ nav:
       - Points, rays, drillholes and blocks: examples/04-queries/README.md
       - Building surfaces and solids: examples/05-construct/README.md
       - "Open pit: topography to reconciliation": examples/06-open-pit/README.md
+      - "Underground: orebody to tonnage report": examples/07-underground/README.md
