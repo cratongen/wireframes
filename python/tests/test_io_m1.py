@@ -57,3 +57,15 @@ def test_read_labels_and_errors(tmp_path, solid):
         wf.write(tmp_path / "x.stl", wf.datasets.drillholes(n=2))
     with pytest.raises(wf.InvalidInput):
         wf.write(tmp_path / "x.obj", "not data")
+
+
+def test_binary_stl_warns_only_when_float32_moves_a_vertex(tmp_path):
+    import warnings
+
+    exact = wf.datasets.box([0, 0, 0], [1, 2, 3])
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        wf.write(tmp_path / "exact.stl", exact)
+        wf.write(tmp_path / "utm_ascii.stl", exact.translate([700000.1, 0, 0]), ascii=True)
+    with pytest.warns(UserWarning, match=r"8 of 8 vertices moved.*ascii=True"):
+        wf.write(tmp_path / "utm.stl", exact.translate([700000.1, 0, 0]))

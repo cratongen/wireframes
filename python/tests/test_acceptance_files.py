@@ -102,7 +102,6 @@ def test_3e5_faces_round_trip_and_stay_valid(tmp_path, name):
     assert np.array_equal(np.array(back.bounds[0]), lo) and np.array_equal(np.array(back.bounds[1]), hi)
 
 
-@pytest.mark.skip(reason="acceptance: binary stl rounds utm coordinates to f32 without a warning")
 def test_binary_stl_warns_when_utm_coordinates_round(tmp_path):
     m = wf.datasets.orebody(points=60, sections=40)
     assert m.is_solid

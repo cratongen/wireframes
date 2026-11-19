@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use pyo3::IntoPyObjectExt;
 use pyo3::prelude::*;
 use wireframes_core::units::length_factor;
-use wireframes_io::{Data, DxfEntity, ReadOptions, WriteOptions};
+use wireframes_io::{Data, DxfEntity, Format, ReadOptions, WriteOptions};
 
 use crate::containers::{PyMesh, PyPointSet, PyPolylines, PyUnstructuredGrid};
 use crate::errors::{invalid, to_py};
@@ -224,6 +224,12 @@ fn data_arg(data: &Bound<PyAny>) -> PyResult<Data> {
 ///     When the format cannot hold part of `data`.
 /// FileError
 ///     When the file cannot be written.
+///
+/// Warns
+/// -----
+/// UserWarning
+///     When binary STL rounds coordinates to float32 (UTM coordinates do), naming
+///     how many vertices moved and by how much.
 #[pyfunction]
 #[pyo3(signature = (path, data, *, ascii=false, dxf_entity="3dface", zlib=false, skip_unsupported_columns=false))]
 fn write(
@@ -252,7 +258,23 @@ fn write(
         skip_unsupported_columns,
     };
     py.detach(|| wireframes_io::write_with(&path, &data, &opts))
-        .map_err(to_py)
+        .map_err(to_py)?;
+    let binary_stl = !ascii && wireframes_io::detect(&path).ok() == Some(Format::Stl);
+    if let Some(m) = data.mesh.as_ref().filter(|_| binary_stl) {
+        let (moved, worst) = wireframes_io::stl::f32_rounding(m);
+        if moved > 0 {
+            let msg = format!(
+                "{}: binary stl stores coordinates as float32, so {moved} of {} vertices moved \
+                 by up to {worst:.3e} and the mesh may no longer be valid; write ascii=True, \
+                 or translate to a local origin first",
+                path.display(),
+                m.n_vertices()
+            );
+            let category = py.get_type::<pyo3::exceptions::PyUserWarning>();
+            PyErr::warn(py, &category, &std::ffi::CString::new(msg)?, 1)?;
+        }
+    }
+    Ok(())
 }
 
 pub(crate) fn register(m: &Bound<PyModule>) -> PyResult<()> {

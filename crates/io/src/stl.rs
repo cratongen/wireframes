@@ -363,6 +363,24 @@ fn write_ascii(m: &Mesh, solids: Option<(&[String], &Column)>) -> Result<Vec<u8>
     Ok(out)
 }
 
+/// How many vertices binary STL moves by storing them as f32, and the largest
+/// coordinate change.
+pub fn f32_rounding(m: &Mesh) -> (usize, f64) {
+    let mut moved = 0;
+    let mut worst = 0.0f64;
+    for p in m.vertices() {
+        let d = p
+            .iter()
+            .map(|&x| (x - x as f32 as f64).abs())
+            .fold(0.0, f64::max);
+        if d != 0.0 {
+            moved += 1;
+            worst = worst.max(d);
+        }
+    }
+    (moved, worst)
+}
+
 fn to_f32(x: f64) -> Result<f32> {
     let y = x as f32;
     if y.is_finite() {
@@ -421,4 +439,35 @@ fn write_binary(m: &Mesh, attr: Option<&Column>) -> Result<Vec<u8>> {
         out.extend_from_slice(&a.to_le_bytes());
     }
     Ok(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn f32_rounding_counts_the_vertices_binary_stl_moves() {
+        let m = Mesh::new(
+            vec![
+                [0.5, 1.0, 2.0],
+                [700_000.1, 7_500_000.0, 0.0],
+                [0.0, 7_500_000.3, 0.0],
+            ],
+            vec![[0, 1, 2]],
+        )
+        .unwrap();
+        let (moved, worst) = f32_rounding(&m);
+        assert_eq!(moved, 2);
+        let expect = (7_500_000.3f64 - 7_500_000.3f32 as f64).abs();
+        assert_eq!(
+            worst,
+            expect.max((700_000.1f64 - 700_000.1f32 as f64).abs())
+        );
+        let exact = Mesh::new(
+            vec![[0.0; 3], [1.0, 0.0, 0.0], [0.0, 0.25, 0.0]],
+            vec![[0, 1, 2]],
+        )
+        .unwrap();
+        assert_eq!(f32_rounding(&exact), (0, 0.0));
+    }
 }
