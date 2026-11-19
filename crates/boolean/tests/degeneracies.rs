@@ -1,10 +1,10 @@
 mod support;
 use support::closed_manifold;
 
-use drusa_boolean::{BooleanOptions, Op, boolean, split_by_plane};
-use drusa_core::Mesh;
-use drusa_core::fixtures;
 use proptest::prelude::*;
+use wireframes_boolean::{BooleanOptions, Op, boolean, split_by_plane};
+use wireframes_core::Mesh;
+use wireframes_core::fixtures;
 
 fn volume(m: &Mesh) -> f64 {
     let o = m.bounds().map_or([0.0; 3], |b| b.min);
@@ -436,7 +436,7 @@ proptest! {
 
 mod clipping_degeneracies {
     use super::*;
-    use drusa_boolean::{clip_by_surface, cut_fill, slice_by_plane};
+    use wireframes_boolean::{clip_by_surface, cut_fill, slice_by_plane};
 
     fn sheet(n: u32, lo: [f64; 2], hi: [f64; 2], z: impl Fn(f64, f64) -> f64) -> Mesh {
         let sx = (hi[0] - lo[0]) / (n - 1) as f64;
@@ -593,7 +593,7 @@ mod clipping_degeneracies {
 }
 
 fn tet(p: [[f64; 3]; 4]) -> Option<Mesh> {
-    use drusa_core::predicates::{Sign, side_of_plane};
+    use wireframes_core::predicates::{Sign, side_of_plane};
     let t = match side_of_plane(p[3], p[0], p[1], p[2]) {
         Sign::Zero => return None,
         Sign::Negative => vec![[0, 1, 2], [0, 3, 1], [1, 3, 2], [0, 2, 3]],
@@ -727,7 +727,7 @@ fn coplanar_heavy_results_do_not_depend_on_thread_count() {
 
 #[test]
 fn face_source_planes_contain_their_output_faces() {
-    use drusa_core::predicates::{Sign, side_of_plane};
+    use wireframes_core::predicates::{Sign, side_of_plane};
     let (a, b) = slab_case();
     for op in [
         Op::Union,
@@ -753,7 +753,7 @@ fn face_source_planes_contain_their_output_faces() {
 
 #[test]
 fn attributes_on_empty_and_coplanar_results() {
-    use drusa_core::{Column, ColumnData};
+    use wireframes_core::{Column, ColumnData};
     let a = fixtures::cube()
         .with_vertex_column("vid", Column::i64((0..8).collect()))
         .unwrap()

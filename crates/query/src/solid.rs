@@ -1,9 +1,9 @@
-use drusa_core::exact::Expansion;
-use drusa_core::intersect::point_in_triangle;
-use drusa_core::predicates::{Sign, orient2d};
-use drusa_core::topology::ray_crosses;
-use drusa_core::{Aabb, Error, Mesh, Result};
 use rayon::prelude::*;
+use wireframes_core::exact::Expansion;
+use wireframes_core::intersect::point_in_triangle;
+use wireframes_core::predicates::{Sign, orient2d};
+use wireframes_core::topology::ray_crosses;
+use wireframes_core::{Aabb, Error, Mesh, Result};
 
 use crate::ray::{Line, Param, V, dot, normal};
 use crate::{Blocks, Interval, SurfaceIndex, Trace};
@@ -162,9 +162,9 @@ impl SolidIndex {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use drusa_core::fixtures;
-    use drusa_core::topology::locate_point;
     use proptest::prelude::*;
+    use wireframes_core::fixtures;
+    use wireframes_core::topology::locate_point;
 
     #[test]
     fn locate_on_faces_edges_and_vertices() {

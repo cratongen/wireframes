@@ -1,9 +1,9 @@
 use std::cmp::Ordering;
 use std::collections::HashMap;
 
-use drusa_core::predicates::{Sign, orient2d_axis};
-use drusa_core::{Column, Error, Mesh, Polylines, Result, Table};
 use rayon::prelude::*;
+use wireframes_core::predicates::{Sign, orient2d_axis};
+use wireframes_core::{Column, Error, Mesh, Polylines, Result, Table};
 
 use crate::hp::{self, Pt};
 use crate::triangulate::{Geom, cdt, even_odd};
@@ -124,7 +124,7 @@ impl Geom for CapGeom<'_> {
     }
 
     fn approx(&self, a: u32) -> [f64; 2] {
-        let (i, j) = drusa_core::predicates::kept_axes(self.drop);
+        let (i, j) = wireframes_core::predicates::kept_axes(self.drop);
         let p = self.pts[a as usize].approx();
         [p[i], p[j]]
     }

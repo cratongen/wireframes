@@ -2,10 +2,10 @@
 
 | Call | Builds |
 |---|---|
-| `dr.dtm(points, breaklines=None, boundary=None, min_spacing=0.0, max_edge=None)` | surface by constrained Delaunay in plan |
-| `dr.triangulate(polygons)` | each feature's rings triangulated in their best-fit plane, holes by even-odd |
-| `dr.extrude(polygons, vector)` | solid swept by closed rings |
-| `dr.loft(sections, cap_ends=True)` | solid linking one ring per feature to the next |
+| `wf.dtm(points, breaklines=None, boundary=None, min_spacing=0.0, max_edge=None)` | surface by constrained Delaunay in plan |
+| `wf.triangulate(polygons)` | each feature's rings triangulated in their best-fit plane, holes by even-odd |
+| `wf.extrude(polygons, vector)` | solid swept by closed rings |
+| `wf.loft(sections, cap_ends=True)` | solid linking one ring per feature to the next |
 | `surface.close_to_elevation(z)` | solid between a height-field surface and a flat floor |
 | `mesh.contours(levels)` | contour lines with an `elevation` column |
 | `mesh.decimate(target_faces=None, max_error=None)` | fewer triangles by quadric edge collapse |
@@ -34,5 +34,5 @@ Every solid builder validates its output. The checks the test suite runs on them
 ??? example "examples/05-construct/example_05.py"
 
     ```python
-    --8<-- "examples/05-construct/example_05.py"
+    --8 < --"examples/05-construct/example_05.py"
     ```

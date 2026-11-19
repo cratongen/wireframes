@@ -1,10 +1,10 @@
-use drusa_core::fixtures::{self, Rng};
-use drusa_core::{Aabb, Mesh};
-use drusa_ops::{
+use proptest::prelude::*;
+use wireframes_core::fixtures::{self, Rng};
+use wireframes_core::{Aabb, Mesh};
+use wireframes_ops::{
     HoleFill, RepairOptions, RepairReport, ThicknessMode, area, box_volume, centroid, components,
     flip, repair, thickness, translate, volume, volume_by_elevation,
 };
-use proptest::prelude::*;
 
 fn close(a: f64, b: f64) -> bool {
     (a - b).abs() <= 1e-9 * 1f64.max(a.abs()).max(b.abs())

@@ -1,7 +1,7 @@
 use criterion::{Criterion, criterion_group, criterion_main};
-use drusa_boolean::{BooleanOptions, Op, boolean, slice_by_plane};
-use drusa_core::fixtures;
 use std::hint::black_box;
+use wireframes_boolean::{BooleanOptions, Op, boolean, slice_by_plane};
+use wireframes_core::fixtures;
 
 fn booleans(c: &mut Criterion) {
     let a = fixtures::sphere(4);

@@ -1,12 +1,12 @@
 use std::sync::OnceLock;
 
-use drusa_core::{Column, ColumnData, Error, Mesh, PointSet, Polylines, Table};
-use drusa_io::UnstructuredGrid;
-use drusa_query::{SolidIndex, SurfaceIndex};
 use numpy::ndarray::Array2;
 use numpy::{IntoPyArray, PyArray1, PyArray2, PyReadonlyArray1, PyReadonlyArray2};
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList, PyMapping};
+use wireframes_core::{Column, ColumnData, Error, Mesh, PointSet, Polylines, Table};
+use wireframes_io::UnstructuredGrid;
+use wireframes_query::{SolidIndex, SurfaceIndex};
 
 use crate::errors::{invalid, to_py};
 
@@ -110,7 +110,7 @@ pub(crate) fn array_n<'py, const N: usize>(
         .into_pyarray(py)
 }
 
-fn bounds_of(b: Option<drusa_core::Aabb>) -> Option<(Vec<f64>, Vec<f64>)> {
+fn bounds_of(b: Option<wireframes_core::Aabb>) -> Option<(Vec<f64>, Vec<f64>)> {
     b.map(|b| (b.min.to_vec(), b.max.to_vec()))
 }
 
@@ -121,11 +121,11 @@ pub(crate) fn missing(name: &str, available: &[String]) -> PyErr {
     })
 }
 
-/// `values` as a column, typed by `drusa._containers._column`.
+/// `values` as a column, typed by `wireframes._containers._column`.
 pub(crate) fn column_arg(values: &Bound<PyAny>, unit: Option<String>) -> PyResult<Column> {
     let py = values.py();
     let parsed = py
-        .import("drusa._containers")?
+        .import("wireframes._containers")?
         .call_method1("_column", (values,))?;
     let (kind, data, valid): (String, Bound<PyAny>, Option<Bound<PyAny>>) = parsed.extract()?;
     let column = match kind.as_str() {
@@ -223,7 +223,7 @@ fn mapping_table(obj: &Bound<PyAny>, rows: Option<usize>, what: &str) -> PyResul
 /// data : mapping of str to array_like, optional
 ///     Column name to values. Floats become float64 (NaN is null), integers
 ///     int64, booleans bool, strings utf8; None marks a null.
-#[pyclass(name = "Table", module = "drusa", frozen)]
+#[pyclass(name = "Table", module = "wireframes", frozen)]
 pub(crate) struct PyTable {
     pub(crate) inner: Table,
 }
@@ -408,7 +408,7 @@ impl PyTable {
 ///     geometries combine.
 /// length_unit : str, optional
 ///     Length unit label, such as ``"m"`` or ``"ft"``.
-#[pyclass(name = "Mesh", module = "drusa", frozen)]
+#[pyclass(name = "Mesh", module = "wireframes", frozen)]
 pub(crate) struct PyMesh {
     pub(crate) inner: Mesh,
     solid: OnceLock<SolidIndex>,
@@ -443,7 +443,7 @@ impl PyMesh {
         self.surface.get_or_init(|| index)
     }
 
-    fn with(&self, f: impl FnOnce(Mesh) -> drusa_core::Result<Mesh>) -> PyResult<PyMesh> {
+    fn with(&self, f: impl FnOnce(Mesh) -> wireframes_core::Result<Mesh>) -> PyResult<PyMesh> {
         Ok(f(self.inner.clone()).map_err(to_py)?.into())
     }
 }
@@ -753,7 +753,7 @@ impl PyMesh {
 ///     One row per vertex.
 /// crs, length_unit : str, optional
 ///     Labels.
-#[pyclass(name = "Polylines", module = "drusa", frozen)]
+#[pyclass(name = "Polylines", module = "wireframes", frozen)]
 pub(crate) struct PyPolylines {
     pub(crate) inner: Polylines,
 }
@@ -1069,7 +1069,7 @@ impl PyPolylines {
 ///     One row per point.
 /// crs, length_unit : str, optional
 ///     Labels.
-#[pyclass(name = "PointSet", module = "drusa", frozen)]
+#[pyclass(name = "PointSet", module = "wireframes", frozen)]
 pub(crate) struct PyPointSet {
     pub(crate) inner: PointSet,
 }
@@ -1186,7 +1186,7 @@ impl PyPointSet {
 
 /// Volume and mixed cells read from ``.vtu`` or ``.vtk``, kept as data so
 /// finite-element and reservoir meshes round-trip; not a modeling type.
-#[pyclass(name = "UnstructuredGrid", module = "drusa", frozen)]
+#[pyclass(name = "UnstructuredGrid", module = "wireframes", frozen)]
 pub(crate) struct PyUnstructuredGrid {
     pub(crate) inner: UnstructuredGrid,
 }

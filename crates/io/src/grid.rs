@@ -1,4 +1,4 @@
-use drusa_core::{Error, Mesh, Result, Table};
+use wireframes_core::{Error, Mesh, Result, Table};
 
 use crate::vtk::Fan;
 
@@ -67,7 +67,7 @@ impl UnstructuredGrid {
 
 #[cfg(test)]
 mod tests {
-    use drusa_core::Column;
+    use wireframes_core::Column;
 
     use super::*;
 
@@ -106,7 +106,10 @@ mod tests {
             &[[0, 1, 2], [0, 1, 2], [0, 2, 3], [0, 1, 3], [0, 3, 2]]
         );
         let ids = &m.face_attributes().column("id").unwrap().data;
-        assert_eq!(*ids, drusa_core::ColumnData::Int64(vec![1, 2, 2, 3, 3]));
+        assert_eq!(
+            *ids,
+            wireframes_core::ColumnData::Int64(vec![1, 2, 2, 3, 3])
+        );
     }
 
     #[test]

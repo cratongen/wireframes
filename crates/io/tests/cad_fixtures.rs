@@ -1,5 +1,5 @@
-use drusa_core::ColumnData;
-use drusa_io::{Data, DxfEntity, WriteOptions, datamine_csv, dxf, vtk, vtu};
+use wireframes_core::ColumnData;
+use wireframes_io::{Data, DxfEntity, WriteOptions, datamine_csv, dxf, vtk, vtu};
 
 fn fixture(name: &str) -> Vec<u8> {
     let path = format!("{}/tests/fixtures/{name}", env!("CARGO_MANIFEST_DIR"));
@@ -27,8 +27,8 @@ fn opts() -> [WriteOptions; 2] {
 
 fn read_write_read(
     name: &str,
-    read: impl Fn(&[u8]) -> drusa_core::Result<Data>,
-    write: impl Fn(&Data, &WriteOptions) -> drusa_core::Result<Vec<u8>>,
+    read: impl Fn(&[u8]) -> wireframes_core::Result<Data>,
+    write: impl Fn(&Data, &WriteOptions) -> wireframes_core::Result<Vec<u8>>,
 ) -> Data {
     let first = read(&fixture(name)).unwrap();
     for o in opts() {

@@ -1,4 +1,4 @@
-use drusa_core::{Aabb, Error, Mesh, Result};
+use wireframes_core::{Aabb, Error, Mesh, Result};
 
 use crate::measure::{check_closed_oriented, sub, sum_by};
 
@@ -93,8 +93,8 @@ pub fn volume_by_elevation(mesh: &Mesh, edges: &[f64]) -> Result<Vec<f64>> {
 mod tests {
     use super::*;
     use crate::measure::volume;
-    use drusa_core::fixtures;
     use proptest::prelude::*;
+    use wireframes_core::fixtures;
 
     fn close(a: f64, b: f64) -> bool {
         (a - b).abs() <= 1e-9 * 1f64.max(a.abs()).max(b.abs())

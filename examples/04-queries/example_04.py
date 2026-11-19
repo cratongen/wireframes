@@ -14,9 +14,9 @@ HERE = Path(__file__).parent if "__file__" in globals() else Path.cwd()
 sys.path.insert(0, str(HERE.parent))
 
 # %%
-import drusa as dr
 import matplotlib.pyplot as plt
 import numpy as np
+import wireframes as wf
 from common import HIGHLIGHT, save
 
 # %% [markdown]
@@ -26,8 +26,8 @@ from common import HIGHLIGHT, save
 # vertex of the mesh is on its surface.
 
 # %%
-o = dr.datasets.ORIGIN
-orebody = dr.datasets.orebody()
+o = wf.datasets.ORIGIN
+orebody = wf.datasets.orebody()
 rng = np.random.default_rng(3)
 points = o + rng.uniform([-220, -80, 160], [220, 80, 240], (2000, 3))
 where = orebody.locate(points)
@@ -55,7 +55,7 @@ print(f"furthest sample point is {gap.max():.1f} m from the orebody, nearest fac
 # blast holes, pierce a mesh.
 
 # %%
-topography = dr.datasets.topography()
+topography = wf.datasets.topography()
 collars = np.column_stack([o[:2] + rng.uniform(-300, 300, (5, 2)), np.full(5, 400.0)])
 ground = topography.surface_z(collars[:, :2])
 print("ground", np.round(ground, 2))
@@ -72,7 +72,7 @@ assert np.allclose(np.sort(hits["z"]), np.sort(ground))
 # enters and leaves. Depths interpolate along each trace segment.
 
 # %%
-holes = dr.datasets.drillholes()
+holes = wf.datasets.drillholes()
 rows = []
 for name, trace in zip(holes.attributes["hole"], holes.parts, strict=True):
     iv = orebody.trace_intervals(trace, [0.0, 350.0])

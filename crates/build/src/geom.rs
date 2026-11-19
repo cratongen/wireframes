@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 
-use drusa_core::predicates::{kept_axes, orient2d};
-use drusa_core::{Error, Result};
 use spade::handles::FixedVertexHandle;
 use spade::{ConstrainedDelaunayTriangulation, Point2, Triangulation};
+use wireframes_core::predicates::{kept_axes, orient2d};
+use wireframes_core::{Error, Result};
 
 pub fn sub(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
     [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
@@ -108,7 +108,7 @@ pub fn even_odd(rings: &[Vec<[f64; 2]>], p: [f64; 2]) -> bool {
 }
 
 fn key(p: [f64; 2]) -> (u64, u64) {
-    let c = drusa_core::tolerance::canonical;
+    let c = wireframes_core::tolerance::canonical;
     (c(p[0]).to_bits(), c(p[1]).to_bits())
 }
 

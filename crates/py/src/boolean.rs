@@ -1,7 +1,7 @@
-use drusa_boolean::{BooleanOptions, Op};
 use pyo3::IntoPyObjectExt;
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
+use wireframes_boolean::{BooleanOptions, Op};
 
 use crate::containers::{PyMesh, PyPolylines, floats, vec3};
 use crate::errors::to_py;
@@ -10,14 +10,14 @@ use crate::ops::PyRepairReport;
 fn run(py: Python, a: &PyMesh, b: &PyMesh, op: Op, repair: bool) -> PyResult<Py<PyAny>> {
     let opts = BooleanOptions { repair };
     let result = py
-        .detach(|| drusa_boolean::boolean(&a.inner, &b.inner, op, &opts))
+        .detach(|| wireframes_boolean::boolean(&a.inner, &b.inner, op, &opts))
         .map_err(to_py)?;
     let mesh = PyMesh::from(result.mesh);
     if !repair {
         return mesh.into_py_any(py);
     }
     let [ra, rb] = result.repairs;
-    let report = |r: Option<drusa_ops::RepairReport>| PyRepairReport {
+    let report = |r: Option<wireframes_ops::RepairReport>| PyRepairReport {
         inner: r.expect("repair=True repairs both inputs"),
     };
     (mesh, (report(ra), report(rb))).into_py_any(py)
@@ -113,7 +113,7 @@ fn cut_fill<'py>(
     let boundary = boundary.as_ref().map(|b| &b.inner);
     let (base, design) = (&base.inner, &design.inner);
     let r = py
-        .detach(|| drusa_boolean::cut_fill(base, design, boundary))
+        .detach(|| wireframes_boolean::cut_fill(base, design, boundary))
         .map_err(to_py)?;
     let d = PyDict::new(py);
     for (k, v) in [
@@ -131,25 +131,25 @@ fn cut_fill<'py>(
 
 #[pymethods]
 impl PyMesh {
-    /// ``drusa.union(self, other, repair=repair)``.
+    /// ``wireframes.union(self, other, repair=repair)``.
     #[pyo3(signature = (other, *, repair=false))]
     fn union(&self, py: Python, other: PyRef<PyMesh>, repair: bool) -> PyResult<Py<PyAny>> {
         run(py, self, &other, Op::Union, repair)
     }
 
-    /// ``drusa.intersection(self, other, repair=repair)``.
+    /// ``wireframes.intersection(self, other, repair=repair)``.
     #[pyo3(signature = (other, *, repair=false))]
     fn intersection(&self, py: Python, other: PyRef<PyMesh>, repair: bool) -> PyResult<Py<PyAny>> {
         run(py, self, &other, Op::Intersection, repair)
     }
 
-    /// ``drusa.difference(self, other, repair=repair)``.
+    /// ``wireframes.difference(self, other, repair=repair)``.
     #[pyo3(signature = (other, *, repair=false))]
     fn difference(&self, py: Python, other: PyRef<PyMesh>, repair: bool) -> PyResult<Py<PyAny>> {
         run(py, self, &other, Op::Difference, repair)
     }
 
-    /// ``drusa.symmetric_difference(self, other, repair=repair)``.
+    /// ``wireframes.symmetric_difference(self, other, repair=repair)``.
     #[pyo3(signature = (other, *, repair=false))]
     fn symmetric_difference(
         &self,
@@ -202,7 +202,7 @@ impl PyMesh {
         let opts = BooleanOptions { repair };
         let surface = &surface.inner;
         let r = py
-            .detach(|| drusa_boolean::clip_by_surface(&self.inner, surface, &opts))
+            .detach(|| wireframes_boolean::clip_by_surface(&self.inner, surface, &opts))
             .map_err(to_py)?;
         Ok((r.below.into(), r.above.into()))
     }
@@ -224,7 +224,7 @@ impl PyMesh {
     ) -> PyResult<(PyMesh, PyMesh)> {
         let (o, n) = (vec3(origin, "origin")?, vec3(normal, "normal")?);
         let (neg, pos) = py
-            .detach(|| drusa_boolean::split_by_plane(&self.inner, o, n))
+            .detach(|| wireframes_boolean::split_by_plane(&self.inner, o, n))
             .map_err(to_py)?;
         Ok((neg.into(), pos.into()))
     }
@@ -259,7 +259,7 @@ impl PyMesh {
             None => vec![],
         };
         let lines = py
-            .detach(|| drusa_boolean::slice_by_plane(&self.inner, o, n, &offsets))
+            .detach(|| wireframes_boolean::slice_by_plane(&self.inner, o, n, &offsets))
             .map_err(to_py)?;
         Ok(lines.into())
     }

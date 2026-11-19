@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 use std::ops::Range;
 
-use drusa_core::{Column, ColumnData, Error, Mesh, Result, Table};
+use wireframes_core::{Column, ColumnData, Error, Mesh, Result, Table};
 
 use crate::ply::{F64_EXACT_INT, regenerated_by_reader};
 use crate::{Data, Format, WriteOptions};

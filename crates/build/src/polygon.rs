@@ -1,4 +1,4 @@
-use drusa_core::{Column, Error, Mesh, Polylines, Result};
+use wireframes_core::{Column, Error, Mesh, Polylines, Result};
 
 use crate::geom::{check_finite, newell, triangulate_rings};
 
@@ -62,8 +62,8 @@ pub fn triangulate_polygons(polygons: &Polylines) -> Result<Mesh> {
 mod tests {
     use super::*;
     use crate::geom::{dot, face_normal};
-    use drusa_core::fixtures::Rng;
     use proptest::prelude::*;
+    use wireframes_core::fixtures::Rng;
 
     fn star(rng: &mut Rng, c: [f64; 2], r: f64, n: usize, ccw: bool) -> Vec<[f64; 3]> {
         let mut ring: Vec<[f64; 3]> = (0..n)

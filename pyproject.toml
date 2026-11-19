@@ -3,7 +3,7 @@ requires = ["maturin>=1.10,<2"]
 build-backend = "maturin"
 
 [project]
-name = "drusa"
+name = "wireframes"
 description = "Read, write, plot, measure and combine solids, surfaces and strings for mining, geology and petroleum"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -46,7 +46,7 @@ dev = [
 
 [tool.maturin]
 manifest-path = "crates/py/Cargo.toml"
-module-name = "drusa._drusa"
+module-name = "wireframes._wireframes"
 python-source = "python"
 locked = true
 

@@ -1,9 +1,9 @@
 mod plain_support;
 
-use drusa_core::{Column, Error, PointSet, Polylines};
-use drusa_io::{Data, obj};
 use plain_support::*;
 use proptest::prelude::*;
+use wireframes_core::{Column, Error, PointSet, Polylines};
+use wireframes_io::{Data, obj};
 
 #[test]
 fn fixture_with_negative_indices_and_forward_references() {
@@ -167,7 +167,7 @@ proptest! {
         ps in prop::option::of(points()),
     ) {
         let poly = m.face_attributes().column("polygon").cloned();
-        let (vt, ft) = (m.vertex_attributes().clone(), drusa_core::Table::new(m.n_faces()));
+        let (vt, ft) = (m.vertex_attributes().clone(), wireframes_core::Table::new(m.n_faces()));
         let mut m = m.with_attributes(vt, ft).unwrap();
         if m.n_faces() > 0 {
             if let Some(o) = objects {
@@ -214,8 +214,8 @@ fn points_only_file_has_no_mesh() {
     assert_eq!(empty, Data::default());
 }
 
-fn tri() -> drusa_core::Mesh {
-    drusa_core::Mesh::new(
+fn tri() -> wireframes_core::Mesh {
+    wireframes_core::Mesh::new(
         vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
         vec![[0, 1, 2]],
     )

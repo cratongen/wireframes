@@ -14,9 +14,9 @@ HERE = Path(__file__).parent if "__file__" in globals() else Path.cwd()
 sys.path.insert(0, str(HERE.parent))
 
 # %%
-import drusa as dr
 import matplotlib.pyplot as plt
 import numpy as np
+import wireframes as wf
 from common import ACCENT, HIGHLIGHT, LIGHT, save
 
 # %% [markdown]
@@ -26,9 +26,9 @@ from common import ACCENT, HIGHLIGHT, LIGHT, save
 # the results keep it on the faces that came from each side.
 
 # %%
-o = dr.datasets.ORIGIN
-orebody = dr.datasets.orebody().with_face_column("source", ["orebody"] * 428)
-block = dr.datasets.box(o + [-50, -80, 150], o + [50, 80, 250]).with_face_column("source", ["block"] * 12)
+o = wf.datasets.ORIGIN
+orebody = wf.datasets.orebody().with_face_column("source", ["orebody"] * 428)
+block = wf.datasets.box(o + [-50, -80, 150], o + [50, 80, 250]).with_face_column("source", ["block"] * 12)
 parts = {
     "a | b": orebody | block,
     "a & b": orebody & block,
@@ -56,7 +56,7 @@ assert abs(union + inter - a - b) <= 1e-9 * (a + b)
 # reports duplicate vertices there; compute `a - b` and `b - a` separately when you need solids.
 
 # %%
-same = [orebody.symmetric_difference(block), dr.symmetric_difference(orebody, block)]
+same = [orebody.symmetric_difference(block), wf.symmetric_difference(orebody, block)]
 assert all(np.array_equal(m.triangles, parts["a ^ b"].triangles) for m in same)
 print(parts["a ^ b"].validate().summary["duplicate_vertices"], "duplicate vertices along the curve")
 
@@ -90,7 +90,7 @@ save(fig, "booleans")
 # %%
 g = np.linspace(-300, 300, 7)
 gx, gy = np.meshgrid(g, g)
-fault = dr.dtm(o + np.column_stack([gx.ravel(), gy.ravel(), (200 + 0.4 * gx + 0.1 * gy).ravel()]))
+fault = wf.dtm(o + np.column_stack([gx.ravel(), gy.ravel(), (200 + 0.4 * gx + 0.1 * gy).ravel()]))
 below, above = orebody.clip_by_surface(fault)
 print(
     f"below {below.volume:,.0f} + above {above.volume:,.0f} - orebody = {below.volume + above.volume - a:+.2e} m3"
@@ -110,8 +110,8 @@ assert below.is_solid and above.is_solid
 # as fill.
 
 # %%
-topography = dr.datasets.topography()
-pit = dr.datasets.pit(topography)
-volumes = dr.cut_fill(topography, pit)
+topography = wf.datasets.topography()
+pit = wf.datasets.pit(topography)
+volumes = wf.cut_fill(topography, pit)
 print({k: round(v) for k, v in volumes.items()})
 assert abs(volumes["net"] - (volumes["fill"] - volumes["cut"])) <= 1e-6 * volumes["cut"]

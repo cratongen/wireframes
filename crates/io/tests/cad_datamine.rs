@@ -1,9 +1,9 @@
 mod cad_common;
 
 use cad_common::*;
-use drusa_core::{Column, ColumnData, Error, Mesh, Table};
-use drusa_io::{Data, WriteOptions, datamine_csv};
 use proptest::prelude::*;
+use wireframes_core::{Column, ColumnData, Error, Mesh, Table};
+use wireframes_io::{Data, WriteOptions, datamine_csv};
 
 fn utf8(v: &[&str]) -> Column {
     Column::utf8(v.iter().map(|s| s.to_string()).collect())

@@ -1,5 +1,5 @@
 [package]
-name = "drusa-core"
+name = "wireframes-core"
 description = "Mesh, polyline and point containers, exact predicates and validation"
 version.workspace = true
 edition.workspace = true

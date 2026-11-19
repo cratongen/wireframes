@@ -1,8 +1,8 @@
 # Files
 
-`dr.read(path)` returns a `Dataset` with `mesh`, `polylines`, `points`, `grid`, the `length_unit` the file
-declares and the reader's `warnings`. `dr.read_mesh`, `dr.read_polylines` and `dr.read_points` return one part
-and raise `InvalidInput` when the file has none. `dr.write(path, data)` takes a container, a grid or a `Dataset`;
+`wf.read(path)` returns a `Dataset` with `mesh`, `polylines`, `points`, `grid`, the `length_unit` the file
+declares and the reader's `warnings`. `wf.read_mesh`, `wf.read_polylines` and `wf.read_points` return one part
+and raise `InvalidInput` when the file has none. `wf.write(path, data)` takes a container, a grid or a `Dataset`;
 the extension picks the format.
 
 | Format | Extensions | Holds | Columns it stores |
@@ -22,10 +22,10 @@ coordinates. Readers fan polygons from their first corner and record a face colu
 polygons (OBJ, PLY, OFF, VTK, VTU) rebuild them.
 
 ```python
-data = dr.read("pit.dxf", crs="EPSG:31983")      # unit from $INSUNITS
-mesh = dr.read_mesh("lens_tr.csv")               # either file of a Datamine pair
-dr.write("lens.vtu", mesh, zlib=True)
-dr.write("lens.dxf", mesh, dxf_entity="polyface", skip_unsupported_columns=True)
+data = wf.read("pit.dxf", crs="EPSG:31983")  # unit from $INSUNITS
+mesh = wf.read_mesh("lens_tr.csv")  # either file of a Datamine pair
+wf.write("lens.vtu", mesh, zlib=True)
+wf.write("lens.dxf", mesh, dxf_entity="polyface", skip_unsupported_columns=True)
 ```
 
 Options of `write`:
@@ -45,5 +45,5 @@ A `length_unit` argument that disagrees with the unit a DXF declares raises `Inv
 ??? example "examples/01-files/example_01.py"
 
     ```python
-    --8<-- "examples/01-files/example_01.py"
+    --8 < --"examples/01-files/example_01.py"
     ```

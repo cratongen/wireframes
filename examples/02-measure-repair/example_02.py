@@ -1,7 +1,7 @@
 """
 # Measuring, validating and repairing
 
-Volumes decide tonnage, so `drusa` measures only meshes it can trust. `Mesh.volume` refuses a mesh that is not
+Volumes decide tonnage, so `wireframes` measures only meshes it can trust. `Mesh.volume` refuses a mesh that is not
 closed and consistently wound. `Mesh.validate` lists every problem with exact predicates, and `Mesh.repair`
 fixes what can be fixed without guessing, recording each change in a `RepairReport`.
 """
@@ -14,9 +14,9 @@ HERE = Path(__file__).parent if "__file__" in globals() else Path.cwd()
 sys.path.insert(0, str(HERE.parent))
 
 # %%
-import drusa as dr
 import matplotlib.pyplot as plt
 import numpy as np
+import wireframes as wf
 from common import ACCENT, save
 
 # %% [markdown]
@@ -27,9 +27,9 @@ from common import ACCENT, save
 # slabs add back to the volume.
 
 # %%
-orebody = dr.datasets.orebody()
+orebody = wf.datasets.orebody()
 print(f"volume {orebody.volume:,.0f} m3, area {orebody.area:,.0f} m2")
-print("centroid", np.round(orebody.centroid - dr.datasets.ORIGIN, 2))
+print("centroid", np.round(orebody.centroid - wf.datasets.ORIGIN, 2))
 lo, hi = orebody.bounds
 edges = np.arange(np.floor(lo[2] / 5) * 5, hi[2] + 5, 5.0)
 slabs = orebody.volume_by_elevation(edges)
@@ -49,12 +49,12 @@ triangles = np.arange(len(corners)).reshape(-1, 3)
 flip = rng.random(len(triangles)) < 0.25
 triangles[flip] = triangles[flip][:, ::-1]
 triangles = np.vstack([triangles, triangles[:6]])
-soup = dr.Mesh(corners, triangles[rng.permutation(len(triangles))], length_unit="m")
+soup = wf.Mesh(corners, triangles[rng.permutation(len(triangles))], length_unit="m")
 report = soup.validate()
 print(report)
 try:
     _ = soup.volume
-except dr.InvalidMesh as e:
+except wf.InvalidMesh as e:
     print("refused:", e)
 
 # %% [markdown]
@@ -87,7 +87,7 @@ print(fill_log.summary, f"volume change {filled.volume - orebody.volume:+.1f} m3
 
 fig = plt.figure(figsize=(10, 4.2), layout="constrained")
 ax1 = fig.add_subplot(1, 2, 1, projection="3d")
-dr.plot.surface3d(holed.translate(-dr.datasets.ORIGIN), ax=ax1, problems=problems, azim=-70, elev=55)
+wf.plot.surface3d(holed.translate(-wf.datasets.ORIGIN), ax=ax1, problems=problems, azim=-70, elev=55)
 ax1.set_title(f"{roof.sum()} triangles removed")
 ax2 = fig.add_subplot(1, 2, 2)
 ax2.barh(0.5 * (edges[1:] + edges[:-1]), slabs / 1e3, height=4.5, color=ACCENT)
@@ -130,7 +130,7 @@ mirror = np.diag([-1.0, 1.0, 1.0, 1.0])
 assert abs(orebody.transform(mirror).volume - orebody.volume) <= 1e-9 * orebody.volume
 in_feet = orebody.to_length_unit("ft")
 print(in_feet.length_unit, f"{in_feet.volume:,.0f} ft3")
-two = dr.concat([orebody, orebody.translate([500, 0, 0])])
+two = wf.concat([orebody, orebody.translate([500, 0, 0])])
 pieces = two.components()
 print(len(pieces), "components", np.bincount(two.component_labels()))
 assert abs(sum(p.volume for p in pieces) - two.volume) <= 1e-9 * two.volume
@@ -142,7 +142,7 @@ assert abs(sum(p.volume for p in pieces) - two.volume) <= 1e-9 * two.volume
 # lowered by 12 m is 12 m thick everywhere.
 
 # %%
-topography = dr.datasets.topography(n=60)
+topography = wf.datasets.topography(n=60)
 floor = topography.translate([0, 0, -12])
 probe = np.random.default_rng(3).uniform(topography.bounds[0][:2], topography.bounds[1][:2], (200, 2))
 depth = topography.thickness(floor, probe)

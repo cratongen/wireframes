@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
-use drusa_core::{Error, Mesh, Result, Table, units};
-use drusa_ops::{RepairOptions, RepairReport, repair};
+use wireframes_core::{Error, Mesh, Result, Table, units};
+use wireframes_ops::{RepairOptions, RepairReport, repair};
 
 use crate::arrangement::{self, Arrangement};
 use crate::classify::{self, Status};

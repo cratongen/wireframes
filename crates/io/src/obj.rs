@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::io::Write;
 
-use drusa_core::{Column, ColumnData, Error, Mesh, PointSet, Polylines, Result, Table};
+use wireframes_core::{Column, ColumnData, Error, Mesh, PointSet, Polylines, Result, Table};
 
 use crate::common::{decode_name, encode_name, polygon_corners, polygon_groups};
 use crate::{Data, WriteOptions};

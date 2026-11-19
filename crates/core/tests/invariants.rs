@@ -1,6 +1,6 @@
-use drusa_core::fixtures::{self, broken};
-use drusa_core::{Mesh, MeshProblemKind};
 use proptest::prelude::*;
+use wireframes_core::fixtures::{self, broken};
+use wireframes_core::{Mesh, MeshProblemKind};
 
 fn rotate(p: [f64; 3], a: [f64; 3]) -> [f64; 3] {
     let (s, c) = (a.map(f64::sin), a.map(f64::cos));

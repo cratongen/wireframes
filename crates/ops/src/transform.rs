@@ -1,4 +1,4 @@
-use drusa_core::{Error, Mesh, Result, units};
+use wireframes_core::{Error, Mesh, Result, units};
 
 fn with_geometry(mesh: &Mesh, vertices: Vec<[f64; 3]>, flip: bool) -> Result<Mesh> {
     let triangles = if flip {
@@ -78,7 +78,7 @@ pub fn flip(mesh: &Mesh) -> Mesh {
 mod tests {
     use super::*;
     use crate::measure::volume;
-    use drusa_core::fixtures;
+    use wireframes_core::fixtures;
 
     #[test]
     fn mirror_keeps_volume_positive() {

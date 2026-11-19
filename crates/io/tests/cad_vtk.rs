@@ -1,9 +1,9 @@
 mod cad_common;
 
 use cad_common::*;
-use drusa_core::{Column, ColumnData, Error, Mesh, PointSet, Polylines, Table};
-use drusa_io::{Data, UnstructuredGrid, WriteOptions, vtk};
 use proptest::prelude::*;
+use wireframes_core::{Column, ColumnData, Error, Mesh, PointSet, Polylines, Table};
+use wireframes_io::{Data, UnstructuredGrid, WriteOptions, vtk};
 
 pub fn volume_grid() -> UnstructuredGrid {
     let mut points: Vec<[f64; 3]> = Vec::new();
@@ -358,7 +358,7 @@ fn polylines_keep_empty_features() {
 fn reserved_feature_column_is_refused() {
     let pl = Polylines::from_parts(vec![vec![[0.0; 3], [1.0; 3]]], vec![false], None)
         .unwrap()
-        .with_column("drusa_feature", Column::i64(vec![7]))
+        .with_column("wireframes_feature", Column::i64(vec![7]))
         .unwrap();
     let data = Data {
         polylines: Some(pl),

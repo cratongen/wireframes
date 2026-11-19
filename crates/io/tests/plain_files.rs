@@ -2,15 +2,15 @@ mod plain_support;
 
 use std::path::{Path, PathBuf};
 
-use drusa_core::{Error, PointSet};
-use drusa_io::{
+use plain_support::*;
+use wireframes_core::{Error, PointSet};
+use wireframes_io::{
     Data, Format, ReadOptions, WriteOptions, canonicalize, detect, read, read_mesh, read_points,
     read_with, write, write_mesh, write_with,
 };
-use plain_support::*;
 
 fn scratch(test: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("drusa-io-{}-{test}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("wireframes-io-{}-{test}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     dir
 }

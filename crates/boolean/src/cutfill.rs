@@ -1,8 +1,8 @@
 use std::cmp::Ordering;
 
-use drusa_core::predicates::{Sign, orient2d};
-use drusa_core::{Aabb, Bvh, Error, Mesh, Polylines, Result, units};
 use rayon::prelude::*;
+use wireframes_core::predicates::{Sign, orient2d};
+use wireframes_core::{Aabb, Bvh, Error, Mesh, Polylines, Result, units};
 
 use crate::hp::{self, Plane, Pt};
 use crate::triangulate::{Geom, cdt, even_odd};

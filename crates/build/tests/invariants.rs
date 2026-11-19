@@ -1,13 +1,13 @@
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
-use drusa_build::{
+use proptest::prelude::*;
+use wireframes_build::{
     DecimateOptions, DtmOptions, LoftOptions, close_to_elevation, contours, decimate, dtm, loft,
     offset, remesh,
 };
-use drusa_core::fixtures::{box_mesh, cube, pit_surface, sphere, torus};
-use drusa_core::{Error, Mesh, Polylines};
-use drusa_query::SurfaceIndex;
-use proptest::prelude::*;
+use wireframes_core::fixtures::{box_mesh, cube, pit_surface, sphere, torus};
+use wireframes_core::{Error, Mesh, Polylines};
+use wireframes_query::SurfaceIndex;
 
 #[test]
 fn dtm_tiny_min_spacing_does_not_panic() {
@@ -162,8 +162,8 @@ fn close_to_elevation_volume_equals_cut_fill_against_flat_plane() {
     )
     .unwrap();
     let s = close_to_elevation(&top, 0.0).unwrap();
-    let vol = drusa_ops::volume(&s).unwrap();
-    let cf = drusa_boolean::cut_fill(&flat, &top, None).unwrap();
+    let vol = wireframes_ops::volume(&s).unwrap();
+    let cf = wireframes_boolean::cut_fill(&flat, &top, None).unwrap();
     let net = cf.net.abs();
     assert!(
         (vol - net).abs() <= 1e-9 * vol.max(1.0),
@@ -215,7 +215,7 @@ fn loft_squares_with_different_vertex_counts_is_a_box() {
     let sparse = vec![[0.0, 0.0, h], [a, 0.0, h], [a, a, h], [0.0, a, h]];
     let p = Polylines::from_parts(vec![dense, sparse], vec![true, true], None).unwrap();
     let m = loft(&p, &LoftOptions::default()).unwrap();
-    let got = drusa_ops::volume(&m).unwrap();
+    let got = wireframes_ops::volume(&m).unwrap();
     let want = a * a * h;
     assert!((got - want).abs() <= 1e-9 * want, "{got} vs {want}");
 }
@@ -312,8 +312,8 @@ fn remesh_thin_slab_keeps_its_corners_within_edge_length() {
         .into_iter()
         .fold(0.0, f64::max);
     let (v0, v1) = (
-        drusa_ops::volume(&m).unwrap(),
-        drusa_ops::volume(&r).unwrap(),
+        wireframes_ops::volume(&m).unwrap(),
+        wireframes_ops::volume(&r).unwrap(),
     );
     assert!(
         in_to_out < l,

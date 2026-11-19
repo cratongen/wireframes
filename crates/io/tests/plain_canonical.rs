@@ -1,13 +1,13 @@
 mod plain_support;
 
-use drusa_core::{Column, Mesh, Table};
-use drusa_io::{Data, Format, WriteOptions, canonicalize, obj, off, ply, stl};
 use plain_support::*;
 use proptest::prelude::*;
+use wireframes_core::{Column, Mesh, Table};
+use wireframes_io::{Data, Format, WriteOptions, canonicalize, obj, off, ply, stl};
 
 const PLAIN: [Format; 4] = [Format::Obj, Format::Ply, Format::Off, Format::Stl];
 
-fn write(f: Format, d: &Data, o: &WriteOptions) -> drusa_core::Result<Vec<u8>> {
+fn write(f: Format, d: &Data, o: &WriteOptions) -> wireframes_core::Result<Vec<u8>> {
     match f {
         Format::Obj => obj::write(d, o),
         Format::Ply => ply::write(d, o),
@@ -49,7 +49,15 @@ fn column(n: usize) -> impl Strategy<Value = Column> {
         Just(i64::MIN),
         0i64..70_000,
     ];
-    let names = prop::sample::select(vec!["", "a", "drusa", " pit ", "zone#2", "a  b", "%null"]);
+    let names = prop::sample::select(vec![
+        "",
+        "a",
+        "wireframes",
+        " pit ",
+        "zone#2",
+        "a  b",
+        "%null",
+    ]);
     prop_oneof![
         (
             prop::collection::vec(prop_oneof![coord(), Just(f64::NAN)], n),

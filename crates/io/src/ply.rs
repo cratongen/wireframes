@@ -1,6 +1,6 @@
 use std::io::Write;
 
-use drusa_core::{Column, ColumnData, Error, Mesh, Result, Table};
+use wireframes_core::{Column, ColumnData, Error, Mesh, Result, Table};
 
 use crate::common::{polygon_corners, polygon_groups};
 use crate::obj::{Polygons, as_str, push_f64, tokens, unsupported_column};
@@ -770,7 +770,7 @@ pub fn write(data: &Data, opts: &WriteOptions) -> Result<Vec<u8>> {
         Vec::with_capacity(256 + m.n_vertices() * (24 + 8 * vcols.len()) + groups.len() * 16);
     writeln!(
         out,
-        "ply\nformat {} 1.0\ncomment drusa\nelement vertex {}",
+        "ply\nformat {} 1.0\ncomment wireframes\nelement vertex {}",
         if ascii {
             "ascii"
         } else {

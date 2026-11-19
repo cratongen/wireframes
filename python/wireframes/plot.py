@@ -1,7 +1,7 @@
 """Static matplotlib views: plan, section and 3D surface.
 
 Every function takes ``ax=None``, creates a figure when it is omitted, and returns ``(fig, ax)``.
-Needs matplotlib: ``pip install "drusa[plot]"``.
+Needs matplotlib: ``pip install "wireframes[plot]"``.
 """
 
 from __future__ import annotations
@@ -17,9 +17,9 @@ try:
     from matplotlib.colors import Normalize
     from mpl_toolkits.mplot3d.art3d import Line3DCollection, Poly3DCollection
 except ImportError as e:
-    raise ImportError('drusa.plot needs matplotlib: pip install "drusa[plot]"') from e
+    raise ImportError('wireframes.plot needs matplotlib: pip install "wireframes[plot]"') from e
 
-from ._drusa import Mesh, MeshReport, PointSet, Polylines
+from ._wireframes import Mesh, MeshReport, PointSet, Polylines
 from .errors import InvalidInput
 
 __all__ = ["plan", "section", "surface3d"]

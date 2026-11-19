@@ -10,7 +10,7 @@ mod query;
 mod validate;
 
 #[pymodule]
-fn _drusa(m: &Bound<PyModule>) -> PyResult<()> {
+fn _wireframes(m: &Bound<PyModule>) -> PyResult<()> {
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
     containers::register(m)?;
     validate::register(m)?;

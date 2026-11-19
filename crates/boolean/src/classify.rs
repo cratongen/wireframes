@@ -6,8 +6,8 @@
 
 use std::collections::HashMap;
 
-use drusa_core::predicates::{Sign, kept_axes, orient2d};
-use drusa_core::{Aabb, Bvh, Error, Result};
+use wireframes_core::predicates::{Sign, kept_axes, orient2d};
+use wireframes_core::{Aabb, Bvh, Error, Result};
 
 use crate::arrangement::{Arrangement, Sub};
 use crate::hp::{self, Plane, Pt};

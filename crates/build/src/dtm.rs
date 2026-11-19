@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use drusa_core::{Error, Mesh, Polylines, Result, tolerance};
+use wireframes_core::{Error, Mesh, Polylines, Result, tolerance};
 
 use crate::geom::{Cdt, check_finite, ekey, even_odd};
 
@@ -212,10 +212,10 @@ fn peel_long_edges(verts: &[[f64; 3]], tris: &[[u32; 3]], keep: &mut [bool], max
 #[cfg(test)]
 mod tests {
     use super::*;
-    use drusa_core::fixtures::random_points;
-    use drusa_core::predicates::{incircle, orient2d};
     use proptest::prelude::*;
     use std::collections::HashSet;
+    use wireframes_core::fixtures::random_points;
+    use wireframes_core::predicates::{incircle, orient2d};
 
     fn xy(p: [f64; 3]) -> [f64; 2] {
         [p[0], p[1]]
@@ -299,7 +299,7 @@ mod tests {
     }
 
     fn strip_breaklines(seed: u64, k: usize) -> Polylines {
-        let mut rng = drusa_core::fixtures::Rng::new(seed);
+        let mut rng = wireframes_core::fixtures::Rng::new(seed);
         let parts = (0..k)
             .map(|s| {
                 let n = 2 + rng.below(4);

@@ -1,5 +1,5 @@
 [package]
-name = "drusa-boolean"
+name = "wireframes-boolean"
 description = "Exact mesh arrangements, booleans, clipping, slicing and cut and fill"
 version.workspace = true
 edition.workspace = true
@@ -8,8 +8,8 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
-drusa-core.workspace = true
-drusa-ops.workspace = true
+wireframes-core.workspace = true
+wireframes-ops.workspace = true
 rayon.workspace = true
 
 [dev-dependencies]

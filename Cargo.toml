@@ -21,12 +21,12 @@ rayon = "1"
 robust = "1.2"
 spade = "2"
 thiserror = "2"
-drusa-core = { path = "crates/core" }
-drusa-io = { path = "crates/io" }
-drusa-ops = { path = "crates/ops" }
-drusa-boolean = { path = "crates/boolean" }
-drusa-query = { path = "crates/query" }
-drusa-build = { path = "crates/build" }
+wireframes-core = { path = "crates/core" }
+wireframes-io = { path = "crates/io" }
+wireframes-ops = { path = "crates/ops" }
+wireframes-boolean = { path = "crates/boolean" }
+wireframes-query = { path = "crates/query" }
+wireframes-build = { path = "crates/build" }
 
 [workspace.lints.clippy]
 needless_range_loop = "allow"

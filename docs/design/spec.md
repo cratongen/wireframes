@@ -1,4 +1,4 @@
-# drusa API contract
+# wireframes API contract
 
 Status: binding contract for Milestones 1 to 6. Every parallel implementer follows
 the names, signatures and semantics in this file. If the code needs a change here,
@@ -12,13 +12,13 @@ for OBJ, PLY, OFF, STL, DXF, VTK legacy, VTK XML and Datamine CSV pairs.
 
 Each line: the decision, then why.
 
-1. Rust crates are named by this contract: `drusa-core`, `drusa-io`, `drusa-ops`,
-   `drusa-boolean`, `drusa-query`, `drusa-build`, `drusa-py`. The charter's
-   `construct` crate becomes `drusa-build`, and `measure`/`repair` move from core to
-   `drusa-ops`, so core stays a dependency-light kernel that every other crate needs.
-2. Attributes use a drusa-owned `Table` (typed columns with validity masks), not
+1. Rust crates are named by this contract: `wireframes-core`, `wireframes-io`, `wireframes-ops`,
+   `wireframes-boolean`, `wireframes-query`, `wireframes-build`, `wireframes-py`. The charter's
+   `construct` crate becomes `wireframes-build`, and `measure`/`repair` move from core to
+   `wireframes-ops`, so core stays a dependency-light kernel that every other crate needs.
+2. Attributes use a wireframes-owned `Table` (typed columns with validity masks), not
    Arrow `RecordBatch`: it keeps numpy the only Python runtime dependency and keeps
-   drusa free of an Arrow version that boitata would then have to match. boitata
+   wireframes free of an Arrow version that boitata would then have to match. boitata
    converts with a small adapter in M7.
 3. The Python `Table` drops boitata's `__arrow_c_*` capsule methods: they need an
    Arrow implementation. `to_pyarrow`, `to_polars` and `to_pandas` build from numpy
@@ -28,7 +28,7 @@ Each line: the decision, then why.
    support polygons (OBJ, PLY, OFF, VTK, VTU) rebuild the original polygons and
    round trips stay exact.
 5. Volume cells (tetra, hexa, wedge, pyramid, polyhedron) round-trip as data in
-   `drusa_io::UnstructuredGrid`, which is not a modeling type (charter).
+   `wireframes_io::UnstructuredGrid`, which is not a modeling type (charter).
 6. Boolean kernel: Cherchi et al. 2020 ("Fast and robust mesh arrangements using
    floating-point arithmetic") style implicit points (LPI, TPI) with a floating
    filter and Shewchuk expansion fallback, chosen over a bignum rational kernel
@@ -47,8 +47,8 @@ Each line: the decision, then why.
     CDT, because a correct CDT is thousands of lines.
 11. Self-intersection in validation is exact and includes touching between faces
     that share no vertex. boitata ignores touching, but touching solids break
-    booleans, so drusa reports it.
-12. drusa carries `crs` and `length_unit` as labels and checks them for equality.
+    booleans, so wireframes reports it.
+12. wireframes carries `crs` and `length_unit` as labels and checks them for equality.
     CRS transforms stay in boitata, which calls `Mesh::with_vertices`.
 13. DXF is read and written by hand: a group-code reader (ASCII and binary) and an
     ASCII R2000 writer with shortest round-trip floats. No DXF crate is used; the
@@ -70,20 +70,20 @@ Each line: the decision, then why.
 ## 1. Workspace
 
 ```
-drusa/
+wireframes/
   Cargo.toml                  workspace, members = ["crates/*"], resolver = "3", edition 2024
   rust-toolchain.toml         stable, pinned
   mise.toml                   tools and tasks (section 11)
-  pyproject.toml              maturin, module-name = "drusa._drusa", python-source = "python"
+  pyproject.toml              maturin, module-name = "wireframes._wireframes", python-source = "python"
   crates/
-    core/      package drusa-core
-    io/        package drusa-io
-    ops/       package drusa-ops
-    boolean/   package drusa-boolean
-    query/     package drusa-query
-    build/     package drusa-build
-    py/        package drusa-py (cdylib, lib name _drusa)
-  python/drusa/
+    core/      package wireframes-core
+    io/        package wireframes-io
+    ops/       package wireframes-ops
+    boolean/   package wireframes-boolean
+    query/     package wireframes-query
+    build/     package wireframes-build
+    py/        package wireframes-py (cdylib, lib name _wireframes)
+  python/wireframes/
   python/tests/
   examples/
   docs/
@@ -128,7 +128,7 @@ No other dependency without a line in this table.
   chunk partials sequentially in chunk order. Ties in priority queues break by the
   smaller index.
 - Memory: no fixed caps. Algorithms size buffers from the input.
-- Errors: every fallible function returns `drusa_core::Result<T>`. Messages are
+- Errors: every fallible function returns `wireframes_core::Result<T>`. Messages are
   lowercase and name the offending argument, for example
   `"triangles must index existing vertices: face 12 uses 9 of 8"`.
 - Immutability: every operation returns a new object; inputs are never modified.
@@ -163,7 +163,7 @@ No other dependency without a line in this table.
    manifoldness, and `validate` on outputs is run in the property tests with the
    failure rate reported, never hidden.
 
-## 3. drusa-core
+## 3. wireframes-core
 
 Files: `crates/core/src/{lib.rs, error.rs, table.rs, mesh.rs, polylines.rs,
 points.rs, units.rs, tolerance.rs, predicates.rs, exact.rs, intersect.rs, aabb.rs,
@@ -548,7 +548,7 @@ Semantics:
 - `problems` sorted by kind, then face, then vertex, then other.
 - `tolerance` invalid gives `InvalidInput`.
 
-## 4. drusa-io
+## 4. wireframes-io
 
 Files: `crates/io/src/{lib.rs, common.rs, grid.rs, obj.rs, ply.rs, off.rs, stl.rs,
 dxf.rs, vtk.rs, vtu.rs, datamine_csv.rs}`; fixtures in `crates/io/tests/fixtures/`
@@ -639,7 +639,7 @@ values and nulls, part and feature structure) for a canonical input as defined i
 | obj | .obj | `v` (first 3 values), `f` any size (first index field, 1-based and negative relative at parse time, forward references allowed), `o`, `g` (several names joined by one space), `l` as polylines, `p` as points, `\` continuation, CRLF; ignores `vt vn s mtllib usemtl` | `v`, `o`/`g` on change, `f` 1-based, polygons rebuilt from `polygon` | face `object`, `group` (Utf8); faces before the first `g` get `"default"` only if some `g` exists | yes |
 | ply | .ply | ascii, binary LE/BE; all 8 scalar types and aliases; `vertex_indices` or `vertex_index`; unknown elements read through; `tristrips` with -1 restart; int64/uint64 refused | `double x y z`, `list uchar int vertex_indices` (`list int int` above 255 corners), ascii or binary LE | numeric vertex and face properties; integer types read as Int64, float types as Float64; Float64 NaN reads as null; nulls write as NaN (Float64) or the column writes as double if Int64 has nulls; Bool writes as uchar and reads back as Int64; Utf8 unsupported | yes for Float64 without NaN and Int64 within i32 |
 | off | .off | `[ST][C][N][4][n]OFF`, counts on keyword line or next, comments, `4OFF` divide by w, `nOFF` dim 3 only, binary OFF refused with `Unsupported`; face colours ignored | `OFF`, then polygons | none | yes (vertices and faces) |
-| stl | .stl | binary first (`len >= 84 && 84 + 50*count == len`), fallback rules from the format notes with a warning, then ASCII tokens case-insensitive, several solids | binary header `drusa` padded, or ASCII `solid drusa` | face `solid` (Utf8, ASCII only), face `stl_attribute` (Int64, binary, only when any value is nonzero) | only for f32-representable vertices; corners are exact-welded on read |
+| stl | .stl | binary first (`len >= 84 && 84 + 50*count == len`), fallback rules from the format notes with a warning, then ASCII tokens case-insensitive, several solids | binary header `wireframes` padded, or ASCII `solid wireframes` | face `solid` (Utf8, ASCII only), face `stl_attribute` (Int64, binary, only when any value is nonzero) | only for f32-representable vertices; corners are exact-welded on read |
 | dxf | .dxf | `3DFACE` (tri, or quad fanned with `polygon`), polyface `POLYLINE` (flag 64), polygon mesh (flag 16, M x N with wrap flags, fitted vertices when 75 set), `MESH` level-0 cage (hand-parsed from ASCII; binary DXF reports skipped MESH in `warnings`), 3D `POLYLINE`, 2D `POLYLINE` and `LWPOLYLINE` (OCS to WCS by the arbitrary axis algorithm, bulge ignored with a warning when nonzero), `LINE`, `POINT`; `INSERT` skipped with a count in `warnings`; `$INSUNITS` to `length_unit` (1 in, 2 ft, 4 mm, 5 cm, 6 m, 7 km, else none); cp1252 fallback before AC1021 | hand-written ASCII R2000 with HEADER `$INSUNITS`, LAYER table for every layer used, faces as 3DFACE (default) or POLYFACE per layer split at 32767 vertices or faces; polylines as 3D POLYLINE (flag 8, closed flag 1); points as POINT | face, feature and point `layer` (Utf8, default `"0"`), `color` (Int64 ACI, absent when BYLAYER everywhere) | yes for mesh (canonical), polylines and points |
 | vtk | .vtk | legacy 2.0 to 5.1, ASCII and BINARY (big-endian), POLYDATA (VERTICES, LINES, POLYGONS, TRIANGLE_STRIPS in that cell order) and UNSTRUCTURED_GRID; SCALARS (with lookup table skipped), VECTORS, NORMALS, TENSORS, FIELD; `METADATA` skipped; `%20` names | version 5.1 OFFSETS/CONNECTIVITY vtktypeint64, BINARY unless `ascii`; POLYDATA for Mesh, Polylines and PointSet; UNSTRUCTURED_GRID for `grid` | numeric point and cell data; component arrays as `<name>_0..`; nulls as `<name>_valid` UInt8 companion | yes |
 | vtu | .vtu, .vtp | XML; ascii, inline base64, appended raw or base64, zlib, UInt32/UInt64 headers, BigEndian; several Pieces concatenated with id offsets; vtp cell order Verts, Lines, Polys, Strips (fixes boitata bug 1); integer arrays read as i64/u64 (fixes bug 2); polyhedron faces (both legacy and VTK 9.4 names) kept in `faces`; LZ4/LZMA refused | appended raw, UInt64 headers, LittleEndian; zlib when `opts.zlib`; `.vtu` writes a mesh as triangle cells or the `grid`; `.vtp` writes mesh, polylines, points | as vtk | yes |
@@ -650,11 +650,11 @@ values and nulls, part and feature structure) for a canonical input as defined i
 A mesh is canonical for a format when: (STL, DXF 3DFACE) no two vertices have equal
 coordinates, no vertex is unused, and vertices appear in first-use order over
 faces; (STL) every coordinate is f32-representable; (all) column types are ones the
-format stores. `drusa_io::canonicalize(mesh: &Mesh, format: Format) -> Mesh` exists
+format stores. `wireframes_io::canonicalize(mesh: &Mesh, format: Format) -> Mesh` exists
 in `common.rs` as a test helper (`pub` under `#[doc(hidden)]`) so property tests
 generate any mesh and compare against its canonical form.
 
-## 5. drusa-ops
+## 5. wireframes-ops
 
 Files: `crates/ops/src/{lib.rs, measure.rs, slices.rs, thickness.rs, repair.rs,
 components.rs, transform.rs}`.
@@ -776,7 +776,7 @@ pub fn to_length_unit(mesh: &Mesh, unit: &str) -> Result<Mesh>; // InvalidInput 
 pub fn flip(mesh: &Mesh) -> Mesh;
 ```
 
-## 6. drusa-boolean
+## 6. wireframes-boolean
 
 Files: `crates/boolean/src/{lib.rs, arrangement.rs, triangulate.rs, classify.rs,
 ops.rs, clip.rs, slice.rs, cutfill.rs}`.
@@ -890,7 +890,7 @@ edges) is built with exact `orient2d` on implicit 2D points; on each overlay cel
 `-d` where `d < 0`, `fill` integrates `d` where `d > 0`, `net = fill - cut`, areas are
 the plan areas of each sign and of the whole domain.
 
-## 7. drusa-query
+## 7. wireframes-query
 
 Files: `crates/query/src/{lib.rs, solid.rs, distance.rs, ray.rs, trace.rs,
 fraction.rs}`.
@@ -969,7 +969,7 @@ pub struct Interval { pub from: f64, pub to: f64, pub inside: bool, pub entry_fa
   `signed_distance(solid, points)`, `block_fraction(solid, blocks)`,
   `trace_intervals(solid, trace)`, `closest(mesh, points)`, `ray_hits(mesh, o, d)`.
 
-## 8. drusa-build
+## 8. wireframes-build
 
 Files: `crates/build/src/{lib.rs, dtm.rs, polygon.rs, loft.rs, extrude.rs, close.rs,
 decimate.rs, smooth.rs, offset.rs, remesh.rs, contour.rs}`.
@@ -1050,11 +1050,11 @@ before use. Every crate has a test that runs one function with
 `rayon::ThreadPoolBuilder::new().num_threads(1)` and with 4 threads and asserts
 bitwise equal results.
 
-## 10. drusa-py and the Python API
+## 10. wireframes-py and the Python API
 
 ### 10.1 Rust binding layout
 
-`crates/py/Cargo.toml`: `crate-type = ["cdylib"]`, lib name `_drusa`, pyo3
+`crates/py/Cargo.toml`: `crate-type = ["cdylib"]`, lib name `_wireframes`, pyo3
 features `abi3-py311`, `extension-module`, `multiple-pymethods`. Each area adds its
 methods to the shared pyclasses in its own file with a separate `#[pymethods]`
 block. `lib.rs` declares every module and registers every class and function.
@@ -1062,30 +1062,38 @@ block. `lib.rs` declares every module and registers every class and function.
 Files: `crates/py/src/{lib.rs, errors.rs, containers.rs, validate.rs, io.rs, ops.rs,
 boolean.rs, query.rs, build.rs}`.
 
-- `containers.rs`: `PyTable` (`drusa.Table`), `PyMesh` (`drusa.Mesh`),
+- `containers.rs`: `PyTable` (`wireframes.Table`), `PyMesh` (`wireframes.Mesh`),
   `PyPolylines`, `PyPointSet`, `PyUnstructuredGrid`, numpy conversion helpers
   (`points_arg` accepts `(n, 3)` or `(n, 2)` with z = 0 where stated, a `PointSet`, or
   a `Mesh` meaning its vertices). Caches `SolidIndex` and `SurfaceIndex` lazily on
   `PyMesh` (`OnceLock`).
 - `errors.rs`: maps `Error` to Python exceptions created in Rust and re-exported by
-  `python/drusa/errors.py`.
+  `python/wireframes/errors.py`.
 - All long-running calls release the GIL (`py.detach` or `allow_threads`, whichever
   the pinned pyo3 provides).
 
 ### 10.2 Python package
 
-Files: `python/drusa/{__init__.py, _drusa.pyi, errors.py, _containers.py, plot.py,
-py.typed}`. `import drusa as dr`; flat exports listed in `__all__`.
+Files: `python/wireframes/{__init__.py, _wireframes.pyi, errors.py, _containers.py, plot.py,
+py.typed}`. `import wireframes as wf`; flat exports listed in `__all__`.
 
 `errors.py`:
 
 ```python
-class DrusaError(Exception): ...
-class InvalidInput(DrusaError, ValueError): ...
+class WireframesError(Exception): ...
+
+
+class InvalidInput(WireframesError, ValueError): ...
+
+
 class InvalidMesh(InvalidInput):
     report: MeshReport
-class FileError(DrusaError, OSError): ...          # Error::Io and Error::Format
-class MissingColumn(DrusaError, KeyError): ...
+
+
+class FileError(WireframesError, OSError): ...  # Error::Io and Error::Format
+
+
+class MissingColumn(WireframesError, KeyError): ...
 ```
 
 `Unsupported`, `CrsMismatch` and `UnitMismatch` raise `InvalidInput`.
@@ -1111,10 +1119,12 @@ Floats = npt.NDArray[np.float64]
 ```python
 class Table:
     def __init__(self, data: Mapping[str, Values] | None = None) -> None: ...
-    num_rows: int                     # property
+
+    num_rows: int  # property
     column_names: list[str]
     units: dict[str, str]
-    def column(self, name: str) -> np.ndarray: ...   # float64 (NaN null), int64, bool, object (None null)
+
+    def column(self, name: str) -> np.ndarray: ...  # float64 (NaN null), int64, bool, object (None null)
     def __getitem__(self, name: str) -> np.ndarray: ...
     def mask(self, name: str) -> npt.NDArray[np.bool_]: ...  # True where valid
     def filter(self, mask: ArrayLike) -> Table: ...
@@ -1136,77 +1146,131 @@ mask as nulls.
 
 ```python
 class Mesh:
-    def __init__(self, vertices: ArrayLike, triangles: ArrayLike, *,
-                 vertex_attributes: Mapping[str, Values] | Table | None = None,
-                 face_attributes: Mapping[str, Values] | Table | None = None,
-                 crs: str | None = None, length_unit: str | None = None) -> None: ...
+    def __init__(
+        self,
+        vertices: ArrayLike,
+        triangles: ArrayLike,
+        *,
+        vertex_attributes: Mapping[str, Values] | Table | None = None,
+        face_attributes: Mapping[str, Values] | Table | None = None,
+        crs: str | None = None,
+        length_unit: str | None = None,
+    ) -> None: ...
+
     # properties
-    coords: Floats            # (n, 3)
-    x: Floats; y: Floats; z: Floats
+    coords: Floats  # (n, 3)
+    x: Floats
+    y: Floats
+    z: Floats
     triangles: npt.NDArray[np.int64]  # (m, 3)
-    n_vertices: int; n_faces: int
+    n_vertices: int
+    n_faces: int
     bounds: tuple[list[float], list[float]] | None
-    column_names: list[str]   # vertex columns, then face columns
-    vertex_attributes: Table; face_attributes: Table
-    crs: str | None; length_unit: str | None
+    column_names: list[str]  # vertex columns, then face columns
+    vertex_attributes: Table
+    face_attributes: Table
+    crs: str | None
+    length_unit: str | None
     is_closed: bool
-    is_solid: bool            # validate(tolerance=0).summary["is_solid"]
+    is_solid: bool  # validate(tolerance=0).summary["is_solid"]
     area: float
-    volume: float             # raises InvalidMesh when not closed and consistently wound
-    centroid: Floats          # volume centroid, same rule
-    face_areas: Floats; face_normals: Floats; face_centroids: Floats; vertex_normals: Floats
-    dip: Floats               # (m, 2) dip, dip direction in degrees
-    def __len__(self) -> int: ...                 # number of vertices (boitata)
-    def __getitem__(self, name: str) -> np.ndarray: ...  # vertex column, else face column; a name in both raises InvalidInput
+    volume: float  # raises InvalidMesh when not closed and consistently wound
+    centroid: Floats  # volume centroid, same rule
+    face_areas: Floats
+    face_normals: Floats
+    face_centroids: Floats
+    vertex_normals: Floats
+    dip: Floats  # (m, 2) dip, dip direction in degrees
+
+    def __len__(self) -> int: ...  # number of vertices (boitata)
+    def __getitem__(
+        self, name: str
+    ) -> np.ndarray: ...  # vertex column, else face column; a name in both raises InvalidInput
     # attributes and editing (containers.rs, ops.rs)
     def with_vertex_column(self, name: str, values: Values, *, unit: str | None = None) -> Mesh: ...
     def with_face_column(self, name: str, values: Values, *, unit: str | None = None) -> Mesh: ...
-    def with_attributes(self, *, vertex: Table | Mapping | None = None, face: Table | Mapping | None = None) -> Mesh: ...
+    def with_attributes(
+        self, *, vertex: Table | Mapping | None = None, face: Table | Mapping | None = None
+    ) -> Mesh: ...
     def with_vertices(self, vertices: ArrayLike) -> Mesh: ...
     def filter_faces(self, mask: ArrayLike) -> Mesh: ...
-    def to_table(self, *, on: Literal["vertices", "faces"] = "vertices") -> Table: ...  # vertices: x, y, z + vertex columns; faces: v0, v1, v2 + face columns
+    def to_table(
+        self, *, on: Literal["vertices", "faces"] = "vertices"
+    ) -> Table: ...  # vertices: x, y, z + vertex columns; faces: v0, v1, v2 + face columns
     def to_polars(self, *, on: Literal["vertices", "faces"] = "vertices") -> Any: ...
     def to_pandas(self, *, on: Literal["vertices", "faces"] = "vertices") -> Any: ...
     def to_pyarrow(self, *, on: Literal["vertices", "faces"] = "vertices") -> Any: ...
-    def transform(self, matrix: ArrayLike) -> Mesh: ...        # (4, 4)
+    def transform(self, matrix: ArrayLike) -> Mesh: ...  # (4, 4)
     def translate(self, offset: ArrayLike) -> Mesh: ...
     def flip(self) -> Mesh: ...
     def to_length_unit(self, unit: str) -> Mesh: ...
     # validation and repair (validate.rs, ops.rs)
     def validate(self, *, tolerance: float = 0.0) -> MeshReport: ...
-    def repair(self, *, weld: float | None = 0.0, remove_degenerate: bool = True,
-               remove_duplicate_faces: bool = True, remove_unused_vertices: bool = True,
-               orient: bool = True, fill_holes: Literal["fan", "min_area"] | None = None
-               ) -> tuple[Mesh, RepairReport]: ...
+    def repair(
+        self,
+        *,
+        weld: float | None = 0.0,
+        remove_degenerate: bool = True,
+        remove_duplicate_faces: bool = True,
+        remove_unused_vertices: bool = True,
+        orient: bool = True,
+        fill_holes: Literal["fan", "min_area"] | None = None,
+    ) -> tuple[Mesh, RepairReport]: ...
     def components(self) -> list[Mesh]: ...
     def component_labels(self) -> npt.NDArray[np.int64]: ...
     # measures (ops.rs)
     def volume_by_elevation(self, edges: ArrayLike) -> Floats: ...
-    def surface_z(self, points: Points) -> Floats: ...           # (n,2) or (n,3), z ignored
+    def surface_z(self, points: Points) -> Floats: ...  # (n,2) or (n,3), z ignored
     def vertical_distance(self, points: Points) -> Floats: ...
-    def thickness(self, bottom: Mesh, points: Points, *, mode: Literal["vertical", "normal"] = "vertical") -> Floats: ...
+    def thickness(
+        self, bottom: Mesh, points: Points, *, mode: Literal["vertical", "normal"] = "vertical"
+    ) -> Floats: ...
     # booleans (boolean.rs)
     @overload
     def union(self, other: Mesh, *, repair: Literal[False] = False) -> Mesh: ...
     @overload
-    def union(self, other: Mesh, *, repair: Literal[True]) -> tuple[Mesh, tuple[RepairReport, RepairReport]]: ...
+    def union(
+        self, other: Mesh, *, repair: Literal[True]
+    ) -> tuple[Mesh, tuple[RepairReport, RepairReport]]: ...
     # intersection, difference, symmetric_difference: same two overloads
-    def clip_by_surface(self, surface: Mesh, *, repair: bool = False) -> tuple[Mesh, Mesh]: ...  # (below, above)
-    def split_by_plane(self, origin: ArrayLike, normal: ArrayLike) -> tuple[Mesh, Mesh]: ...   # (negative, positive)
-    def slice_by_plane(self, origin: ArrayLike, normal: ArrayLike, *, offsets: ArrayLike | None = None) -> Polylines: ...
+    def clip_by_surface(
+        self, surface: Mesh, *, repair: bool = False
+    ) -> tuple[Mesh, Mesh]: ...  # (below, above)
+    def split_by_plane(
+        self, origin: ArrayLike, normal: ArrayLike
+    ) -> tuple[Mesh, Mesh]: ...  # (negative, positive)
+    def slice_by_plane(
+        self, origin: ArrayLike, normal: ArrayLike, *, offsets: ArrayLike | None = None
+    ) -> Polylines: ...
     # queries (query.rs)
     def locate(self, points: Points) -> npt.NDArray[np.int8]: ...  # -1 inside, 0 boundary, 1 outside
     def contains(self, points: Points, *, boundary: bool = True) -> npt.NDArray[np.bool_]: ...
     def signed_distance(self, points: Points) -> Floats: ...
     def distance(self, points: Points) -> Floats: ...
-    def closest_point(self, points: Points) -> tuple[Floats, npt.NDArray[np.int64], Floats]: ...  # points, face, distance
-    def ray_hits(self, origins: ArrayLike, directions: ArrayLike) -> Table: ...  # ray, t, face, x, y, z, kind, entering (null when open)
-    def segment_hits(self, starts: ArrayLike, ends: ArrayLike) -> Table: ...   # segment, t, face, x, y, z, kind, entering
-    def trace_intervals(self, trace: ArrayLike, depths: ArrayLike) -> Table: ...  # from, to, inside, entry_face, exit_face
-    def block_fraction(self, centroids: Points, size: ArrayLike, *, rotation: ArrayLike | None = None) -> Floats: ...
+    def closest_point(
+        self, points: Points
+    ) -> tuple[Floats, npt.NDArray[np.int64], Floats]: ...  # points, face, distance
+    def ray_hits(
+        self, origins: ArrayLike, directions: ArrayLike
+    ) -> Table: ...  # ray, t, face, x, y, z, kind, entering (null when open)
+    def segment_hits(
+        self, starts: ArrayLike, ends: ArrayLike
+    ) -> Table: ...  # segment, t, face, x, y, z, kind, entering
+    def trace_intervals(
+        self, trace: ArrayLike, depths: ArrayLike
+    ) -> Table: ...  # from, to, inside, entry_face, exit_face
+    def block_fraction(
+        self, centroids: Points, size: ArrayLike, *, rotation: ArrayLike | None = None
+    ) -> Floats: ...
     # construction and editing (build.rs)
     def close_to_elevation(self, z: float) -> Mesh: ...
-    def decimate(self, *, target_faces: int | None = None, max_error: float | None = None, preserve_boundary: bool = True) -> Mesh: ...
+    def decimate(
+        self,
+        *,
+        target_faces: int | None = None,
+        max_error: float | None = None,
+        preserve_boundary: bool = True,
+    ) -> Mesh: ...
     def smooth(self, *, iterations: int = 10, lambda_: float = 0.5, mu: float = -0.53) -> Mesh: ...
     def offset(self, distance: float) -> Mesh: ...
     def remesh(self, edge_length: float, *, iterations: int = 5) -> Mesh: ...
@@ -1306,17 +1370,37 @@ def extrude(polygons: Polylines, vector: ArrayLike) -> Mesh: ...
 used when the argument is `None`, and an argument that disagrees with the file unit
 raises `InvalidInput`.
 
-#### plot.py (matplotlib, gated behind `drusa[plot]`)
+#### plot.py (matplotlib, gated behind `wireframes[plot]`)
 
 ```python
-def plan(data: Mesh | Polylines | PointSet | Sequence[Mesh | Polylines | PointSet],
-         values: str | ArrayLike | None = None, *, ax=None, cmap: str = "viridis",
-         edges: bool = False, label: bool = False) -> tuple[Figure, Axes]: ...
-def section(data: Mesh | Polylines | PointSet | Sequence[...], origin: ArrayLike, normal: ArrayLike, *,
-            thickness: float | None = None, values: str | None = None, ax=None) -> tuple[Figure, Axes]: ...
-def surface3d(data: Mesh | Polylines | PointSet | Sequence[...], values: str | ArrayLike | None = None, *,
-              ax=None, cmap: str = "viridis", problems: MeshReport | None = None,
-              azim: float = -60.0, elev: float = 30.0) -> tuple[Figure, Axes]: ...
+def plan(
+    data: Mesh | Polylines | PointSet | Sequence[Mesh | Polylines | PointSet],
+    values: str | ArrayLike | None = None,
+    *,
+    ax=None,
+    cmap: str = "viridis",
+    edges: bool = False,
+    label: bool = False,
+) -> tuple[Figure, Axes]: ...
+def section(
+    data: Mesh | Polylines | PointSet | Sequence[...],
+    origin: ArrayLike,
+    normal: ArrayLike,
+    *,
+    thickness: float | None = None,
+    values: str | None = None,
+    ax=None,
+) -> tuple[Figure, Axes]: ...
+def surface3d(
+    data: Mesh | Polylines | PointSet | Sequence[...],
+    values: str | ArrayLike | None = None,
+    *,
+    ax=None,
+    cmap: str = "viridis",
+    problems: MeshReport | None = None,
+    azim: float = -60.0,
+    elev: float = 30.0,
+) -> tuple[Figure, Axes]: ...
 ```
 
 - `plan`: meshes as `tripcolor` (face column or vertex column, else z), polylines as
@@ -1329,11 +1413,11 @@ def surface3d(data: Mesh | Polylines | PointSet | Sequence[...], values: str | A
   `problems` draws boundary and non-manifold edges in red and problem faces in
   orange; equal box aspect.
 - Each returns `(fig, ax)`; with `ax` given, `fig = ax.figure`. Importing
-  `drusa.plot` without matplotlib raises `ImportError` with the install hint
-  `pip install "drusa[plot]"`.
+  `wireframes.plot` without matplotlib raises `ImportError` with the install hint
+  `pip install "wireframes[plot]"`.
 
 `__init__.py` exports: `Table, Mesh, Polylines, PointSet, UnstructuredGrid,
-Dataset, MeshReport, RepairReport, DrusaError, InvalidInput, InvalidMesh,
+Dataset, MeshReport, RepairReport, WireframesError, InvalidInput, InvalidMesh,
 FileError, MissingColumn, read, read_mesh, read_polylines, read_points, write,
 concat, union, intersection, difference, symmetric_difference, cut_fill, dtm,
 triangulate, loft, extrude, plot` (lazy attribute), `__version__`.
@@ -1346,7 +1430,7 @@ triangulate, loft, extrude, plot` (lazy attribute), `__version__`.
 |---|---|
 | `build` | `cargo build --workspace` |
 | `py:sync`, `py:build` | `uv sync`; `maturin develop --release` inside the uv venv |
-| `test` | `py:build` first, then `cargo test --workspace --exclude drusa-py`, then `pytest python/tests` |
+| `test` | `py:build` first, then `cargo test --workspace --exclude wireframes-py`, then `pytest python/tests` |
 | `lint` | `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `ruff check`, `ruff format --check` |
 | `verify` | `lint` then `test` |
 | `bench` | `cargo bench` (criterion), interleaved rounds, medians |
@@ -1360,7 +1444,7 @@ fixed in CI via `proptest-regressions` files committed.
 Standing tests, by crate. Each is a Rust test (`tests/invariants.rs` per crate) and,
 where a Python API exists, a pytest twin. "P" marks a proptest.
 
-drusa-core
+wireframes-core
 - P `Table::take` then `concat` of the parts in order equals the original table.
 - P `Mesh::new` rejects every out-of-range index and every non-finite coordinate.
 - P `predicates` signs agree with a `num-rational` exact oracle on random and
@@ -1376,7 +1460,7 @@ drusa-core
 - A unit cube and an icosphere report `is_solid`; removing one face gives exactly 3
   boundary edges.
 
-drusa-io
+wireframes-io
 - P write then read is identity for canonical meshes, per format, ascii and binary.
 - P read then write then read is identity on every fixture.
 - Fixtures: binary STL whose header starts with "solid"; VTP with both Polys and
@@ -1388,7 +1472,7 @@ drusa-io
   with identical types, offsets, connectivity and cell data.
 - Polygon faces read from OBJ/PLY/OFF write back as the same polygons.
 
-drusa-ops
+wireframes-ops
 - P `volume` of a closed mesh is invariant under translation (within `close`) and
   changes sign under `flip`.
 - P `volume` of an axis-aligned box mesh equals `dx * dy * dz`; `area` equals the
@@ -1403,7 +1487,7 @@ drusa-ops
   input volume.
 - P `thickness(top, bottom, Vertical)` equals the analytic difference for two planes.
 
-drusa-boolean
+wireframes-boolean
 - P `vol(A union B) + vol(A intersection B) == vol(A) + vol(B)`.
 - P `vol(A difference B) == vol(A) - vol(A intersection B)`.
 - P `vol(A symmetric_difference B) == vol(A union B) - vol(A intersection B)`.
@@ -1428,7 +1512,7 @@ drusa-boolean
   report; `repair=True` on a mesh with duplicate vertices succeeds and returns the
   report.
 
-drusa-query
+wireframes-query
 - P sign of `signed_distance(p)` equals `locate(p)` value.
 - P `locate` agrees with the winding number (rational oracle on small meshes) for
   points off the surface, including points sharing x or y with vertices.
@@ -1445,7 +1529,7 @@ drusa-query
 - P `ray_hits` count parity from an outside origin matches `locate` of the ray end.
 - Thread count: `locate_all` and `block_fraction` equal bitwise for 1 and 4 threads.
 
-drusa-build
+wireframes-build
 - P `dtm` output is Delaunay away from constraints (exact `incircle` on every
   unconstrained edge) and contains every breakline segment as a chain of edges.
 - P `dtm` vertices are exactly the input points minus merged duplicates; faces wind
@@ -1462,8 +1546,8 @@ drusa-build
 - P `contours` of a plane `z = ax + by + c` at level L are straight lines lying on
   the plane.
 
-drusa-py
-- Every name in `_drusa.pyi` exists at runtime and every public runtime name is in
+wireframes-py
+- Every name in `_wireframes.pyi` exists at runtime and every public runtime name is in
   the stub (`python/tests/test_api.py`).
 - Error mapping: each Rust `Error` variant raises the mapped Python class.
 - numpy dtypes and shapes of every property match the stub.
@@ -1473,25 +1557,25 @@ drusa-py
 
 Each area edits only its files. The lead creates the skeleton first (workspace,
 empty crates with the module files below declared, `pyproject.toml`, `mise.toml`,
-`python/drusa/__init__.py` exporting every name, `crates/py/src/lib.rs` registering
+`python/wireframes/__init__.py` exporting every name, `crates/py/src/lib.rs` registering
 every module) so areas never touch shared files. A needed change to a shared file
 or to this spec goes to the lead.
 
 | area | owner of | files |
 |---|---|---|
-| L lead | workspace and contract | `Cargo.toml`, `Cargo.lock`, `rust-toolchain.toml`, `mise.toml`, `pyproject.toml`, `README.md`, `AGENTS.md`, `CLAUDE.md`, `docs/design/**`, `docs/mkdocs.yml`, `crates/*/Cargo.toml`, `crates/py/src/lib.rs`, `python/drusa/__init__.py` |
+| L lead | workspace and contract | `Cargo.toml`, `Cargo.lock`, `rust-toolchain.toml`, `mise.toml`, `pyproject.toml`, `README.md`, `AGENTS.md`, `CLAUDE.md`, `docs/design/**`, `docs/mkdocs.yml`, `crates/*/Cargo.toml`, `crates/py/src/lib.rs`, `python/wireframes/__init__.py` |
 | A core | kernel | `crates/core/src/**`, `crates/core/tests/**`, `crates/core/benches/**`, `crates/py/src/validate.rs`, `python/tests/test_validate.py` |
 | B io | formats | `crates/io/src/**`, `crates/io/tests/**` (fixtures included), `crates/io/benches/**`, `crates/py/src/io.rs`, `python/tests/test_io_m1.py`, `python/tests/test_io_m2.py`, `examples/01-files/**` |
 | C ops | measure, repair | `crates/ops/src/**`, `crates/ops/tests/**`, `crates/ops/benches/**`, `crates/py/src/ops.rs`, `python/tests/test_measure_repair_plot.py`, `examples/02-measure-repair/**` |
 | D boolean | arrangements | `crates/boolean/src/**`, `crates/boolean/tests/**`, `crates/boolean/benches/**`, `crates/py/src/boolean.rs`, `python/tests/test_booleans.py`, `examples/03-booleans/**` |
 | E query | queries | `crates/query/src/**`, `crates/query/tests/**`, `crates/query/benches/**`, `crates/py/src/query.rs`, `python/tests/test_queries.py`, `examples/04-queries/**` |
 | F build | construction | `crates/build/src/**`, `crates/build/tests/**`, `crates/build/benches/**`, `crates/py/src/build.rs`, `python/tests/test_construct.py`, `examples/05-construct/**` |
-| G python | bindings shell and Python package | `crates/py/src/{errors.rs, containers.rs}`, `python/drusa/{_drusa.pyi, errors.py, _containers.py, plot.py, py.typed}`, `python/tests/{test_containers.py, test_api.py, conftest.py}`, `examples/00-basics/**`, `docs/**` except `docs/design/**` |
+| G python | bindings shell and Python package | `crates/py/src/{errors.rs, containers.rs}`, `python/wireframes/{_wireframes.pyi, errors.py, _containers.py, plot.py, py.typed}`, `python/tests/{test_containers.py, test_api.py, conftest.py}`, `examples/00-basics/**`, `docs/**` except `docs/design/**` |
 
 Rules for cross-area work:
-- `test_measure_repair_plot.py` (C) calls `dr.plot.*` through the API in 10.2; G
+- `test_measure_repair_plot.py` (C) calls `wf.plot.*` through the API in 10.2; G
   implements it.
-- G writes the full `_drusa.pyi` from this spec at the start, docstrings included,
+- G writes the full `_wireframes.pyi` from this spec at the start, docstrings included,
   so areas never edit it; an area that finds a stub mismatch reports it to G.
 - Areas depend only on the published signatures of lower crates. Until a lower crate
   lands, an area may write a local test double inside its own `tests/` folder, never
@@ -1507,7 +1591,7 @@ These refine the sections above; where they differ, this section wins.
   `lib.rs` calls; an area adds its functions and classes there, so `lib.rs` stays
   untouched. `lib.rs` carries `#![allow(dead_code)]` until G lands the containers;
   G removes it. `errors::to_py` maps `Error` to the Python classes (done).
-- `drusa.read` is `_containers.read` (G), which wraps `_drusa._read` (B) returning
+- `wireframes.read` is `_containers.read` (G), which wraps `_wireframes._read` (B) returning
   `(mesh, polylines, points, grid, length_unit, warnings)` in a `Dataset`.
 - Unimplemented Rust bodies are `todo!()`; unimplemented Python functions raise
   `NotImplementedError`. Stub crates carry `#![allow(unused_variables)]` in
@@ -1537,7 +1621,7 @@ These refine the sections above; where they differ, this section wins.
   boundary edges but no self-intersections. Coplanar overlaps are reported for
   any pair except two faces with the same corner indices (`DuplicateFace`
   covers those), so coincident faces of touching solids are caught.
-- `drusa_core::fixtures` (public, used by every crate's tests): `Rng`
+- `wireframes_core::fixtures` (public, used by every crate's tests): `Rng`
   (SplitMix64), `box_mesh`, `cube`, `tetrahedron`, `sphere(subdivisions)`,
   `torus(major, minor)`, `flipped`, `translated`, `nested_shells`, `soup`,
   `open_cube`, `pit_surface(n, seed)`, `random_points`, `coplanar_pairs` (the
@@ -1556,4 +1640,4 @@ lines as Polylines (falls out of the arrangement; add as `intersection_lines` in
 later revision); drape of polylines onto a surface; polygon booleans on
 Polylines; polyline simplify, resample, buffer; GOCAD, OMF, LAS/LAZ, RESQML,
 GRDECL, ZMAP readers; tetrahedralization; marching tetrahedra (stays in boitata
-until it can return a drusa `Mesh`).
+until it can return a wireframes `Mesh`).

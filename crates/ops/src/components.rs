@@ -1,4 +1,4 @@
-use drusa_core::{EdgeMap, Mesh, Result};
+use wireframes_core::{EdgeMap, Mesh, Result};
 
 /// Edge-connected component label per face, numbered by first face.
 pub fn component_labels(mesh: &Mesh) -> Vec<u32> {
@@ -69,7 +69,7 @@ pub fn components(mesh: &Mesh) -> Result<Vec<Mesh>> {
 mod tests {
     use super::*;
     use crate::measure::volume;
-    use drusa_core::fixtures::{self, broken};
+    use wireframes_core::fixtures::{self, broken};
 
     #[test]
     fn components_split_shells_and_keep_volume() {

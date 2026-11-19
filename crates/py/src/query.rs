@@ -1,7 +1,7 @@
-use drusa_core::{Column, Table};
-use drusa_query::{Blocks, Hit, HitKind, Trace};
 use numpy::{PyArray1, PyArray2, PyReadonlyArray2};
 use pyo3::prelude::*;
+use wireframes_core::{Column, Table};
+use wireframes_query::{Blocks, Hit, HitKind, Trace};
 
 use crate::containers::{PyMesh, PyTable, array_n, array1, floats, numpy, points_arg, rows3};
 use crate::errors::{invalid, to_py};

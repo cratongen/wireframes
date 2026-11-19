@@ -1,5 +1,7 @@
-use drusa_core::fixtures;
-use drusa_io::{Data, DxfEntity, WriteOptions, datamine_csv, dxf, obj, off, ply, stl, vtk, vtu};
+use wireframes_core::fixtures;
+use wireframes_io::{
+    Data, DxfEntity, WriteOptions, datamine_csv, dxf, obj, off, ply, stl, vtk, vtu,
+};
 
 fn round_trips() -> Vec<Vec<u8>> {
     let data = Data {

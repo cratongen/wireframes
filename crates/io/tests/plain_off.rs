@@ -1,9 +1,9 @@
 mod plain_support;
 
-use drusa_core::{Column, Error, Mesh};
-use drusa_io::{Data, off};
 use plain_support::*;
 use proptest::prelude::*;
+use wireframes_core::{Column, Error, Mesh};
+use wireframes_io::{Data, off};
 
 #[test]
 fn coloured_off_with_comments_and_counts_on_next_line() {
@@ -99,7 +99,7 @@ fn writer_refuses_what_off_cannot_hold() {
     let back = off::read(&off::write(&mesh_data(m), &skipping(true)).unwrap()).unwrap();
     assert_eq!(back, mesh_data(cube()));
     let d = Data {
-        points: Some(drusa_core::PointSet::new(vec![[0.0; 3]]).unwrap()),
+        points: Some(wireframes_core::PointSet::new(vec![[0.0; 3]]).unwrap()),
         ..Data::default()
     };
     assert!(matches!(

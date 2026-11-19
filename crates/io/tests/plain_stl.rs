@@ -1,9 +1,9 @@
 mod plain_support;
 
-use drusa_core::{Column, Error, Mesh, Polylines};
-use drusa_io::{Data, stl};
 use plain_support::*;
 use proptest::prelude::*;
+use wireframes_core::{Column, Error, Mesh, Polylines};
+use wireframes_io::{Data, stl};
 
 #[test]
 fn binary_whose_header_starts_with_solid() {
@@ -127,15 +127,15 @@ fn solid_names() -> impl Strategy<Value = Option<String>> {
     let s = prop::sample::select(vec![
         "a",
         "rock 2",
-        "drusa ore",
+        "wireframes ore",
         "x",
         "",
-        "drusa",
+        "wireframes",
         " pit ",
         "a  b",
         "%null",
         "%empty",
-        "%64rusa",
+        "%77ireframes",
         "50%",
         "tab\t",
         "line\nbreak",
@@ -200,8 +200,8 @@ fn ascii_solid_round_trip(col: Column) {
 }
 
 #[test]
-fn ascii_solid_named_drusa_round_trips() {
-    ascii_solid_round_trip(Column::utf8(vec!["drusa".into()]));
+fn ascii_solid_named_wireframes_round_trips() {
+    ascii_solid_round_trip(Column::utf8(vec!["wireframes".into()]));
     ascii_solid_round_trip(Column::utf8(vec![String::new()]));
 }
 

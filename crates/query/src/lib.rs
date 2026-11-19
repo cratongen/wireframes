@@ -6,7 +6,7 @@ pub mod ray;
 pub mod solid;
 pub mod trace;
 
-use drusa_core::{Mesh, Result};
+use wireframes_core::{Mesh, Result};
 
 pub use distance::{Closest, SurfaceIndex};
 pub use fraction::Blocks;

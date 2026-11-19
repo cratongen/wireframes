@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use drusa_core::{Column, Error, Mesh, Polylines, Result};
+use wireframes_core::{Column, Error, Mesh, Polylines, Result};
 
 use crate::geom::{add, check_finite, dist, dot, ekey, newell};
 use crate::polygon::triangulate_region;
@@ -90,8 +90,8 @@ pub fn extrude(polygons: &Polylines, vector: [f64; 3]) -> Result<Mesh> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use drusa_core::fixtures::Rng;
     use proptest::prelude::*;
+    use wireframes_core::fixtures::Rng;
 
     fn ring(seed: u64, n: usize) -> Vec<[f64; 3]> {
         let mut rng = Rng::new(seed);
@@ -116,7 +116,7 @@ mod tests {
             let report = m.validate(0.0).unwrap();
             prop_assert!(report.summary.is_solid(), "{:?}", report.summary);
             let want = p.area()[0] * h.abs();
-            let got = drusa_ops::volume(&m).unwrap();
+            let got = wireframes_ops::volume(&m).unwrap();
             prop_assert!((got - want).abs() <= 1e-9 * want.max(1.0), "{} vs {}", got, want);
         }
     }

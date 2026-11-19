@@ -1,7 +1,7 @@
-use drusa_core::predicates::Sign;
-use drusa_core::validate::degenerate_mask;
-use drusa_core::{Aabb, Bvh, Error, Mesh, Result};
 use rayon::prelude::*;
+use wireframes_core::predicates::Sign;
+use wireframes_core::validate::degenerate_mask;
+use wireframes_core::{Aabb, Bvh, Error, Mesh, Result};
 
 use crate::Hit;
 use crate::ray::{Line, RawHit, face_hit, hit_point, sort_and_collapse};
@@ -230,8 +230,8 @@ impl SurfaceIndex {
 mod tests {
     use super::*;
     use crate::HitKind;
-    use drusa_core::fixtures;
     use proptest::prelude::*;
+    use wireframes_core::fixtures;
 
     fn brute(mesh: &Mesh, p: [f64; 3]) -> (u32, f64) {
         let deg = degenerate_mask(mesh);

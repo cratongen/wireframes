@@ -1,8 +1,8 @@
 use std::collections::HashSet;
 
-use drusa_core::{Error, HalfEdges, Mesh, Result, Table, tolerance};
+use wireframes_core::{Error, HalfEdges, Mesh, Result, Table, tolerance};
 
-use drusa_query::SurfaceIndex;
+use wireframes_query::SurfaceIndex;
 
 use crate::geom::{
     add, centroid, check_distinct_corners, check_finite, dist, dot, ekey, face_normal, norm, scale,
@@ -157,7 +157,7 @@ impl Work {
             let t =
                 self.faces[f as usize].map(|v| if v == x { target } else { self.pos[v as usize] });
             let after = face_normal(t);
-            dot(before, after) > 0.0 && !drusa_core::predicates::collinear3(t[0], t[1], t[2])
+            dot(before, after) > 0.0 && !wireframes_core::predicates::collinear3(t[0], t[1], t[2])
         })
     }
 
@@ -279,7 +279,7 @@ impl Work {
         let n2 = [d, b, c];
         for t in [n1, n2] {
             let p = t.map(|v| self.pos[v as usize]);
-            if drusa_core::predicates::collinear3(p[0], p[1], p[2])
+            if wireframes_core::predicates::collinear3(p[0], p[1], p[2])
                 || dot(face_normal(p), ref_n) <= 0.0
             {
                 return false;
@@ -418,8 +418,8 @@ pub fn remesh(mesh: &Mesh, edge_length: f64, iterations: usize) -> Result<Mesh> 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use drusa_core::Column;
-    use drusa_core::fixtures::{pit_surface, sphere};
+    use wireframes_core::Column;
+    use wireframes_core::fixtures::{pit_surface, sphere};
 
     fn hausdorff_sampled(a: &Mesh, b: &Mesh) -> f64 {
         let ia = SurfaceIndex::new(a);

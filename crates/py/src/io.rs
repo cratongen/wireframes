@@ -1,9 +1,9 @@
 use std::path::PathBuf;
 
-use drusa_core::units::length_factor;
-use drusa_io::{Data, DxfEntity, ReadOptions, WriteOptions};
 use pyo3::IntoPyObjectExt;
 use pyo3::prelude::*;
+use wireframes_core::units::length_factor;
+use wireframes_io::{Data, DxfEntity, ReadOptions, WriteOptions};
 
 use crate::containers::{PyMesh, PyPointSet, PyPolylines, PyUnstructuredGrid};
 use crate::errors::{invalid, to_py};
@@ -15,7 +15,7 @@ fn load(
     length_unit: Option<String>,
 ) -> PyResult<Data> {
     let data = py
-        .detach(|| drusa_io::read_with(path, &ReadOptions::default()))
+        .detach(|| wireframes_io::read_with(path, &ReadOptions::default()))
         .map_err(to_py)?;
     let unit = match (length_unit, data.length_unit.clone()) {
         (Some(given), Some(file)) => {
@@ -47,7 +47,7 @@ fn load(
     })
 }
 
-/// ``(mesh, polylines, points, grid, length_unit, warnings)``; ``drusa.read``
+/// ``(mesh, polylines, points, grid, length_unit, warnings)``; ``wireframes.read``
 /// wraps it in a ``Dataset``.
 #[pyfunction]
 #[pyo3(signature = (path, *, crs=None, length_unit=None))]
@@ -78,7 +78,7 @@ fn none_in(path: &std::path::Path, what: &str) -> PyErr {
 /// Parameters
 /// ----------
 /// path : str or PathLike
-///     File to read; see ``drusa.read`` for the formats.
+///     File to read; see ``wireframes.read`` for the formats.
 /// crs, length_unit : str, optional
 ///     Labels of the result; None takes the unit the file declares.
 ///
@@ -251,7 +251,7 @@ fn write(
         zlib,
         skip_unsupported_columns,
     };
-    py.detach(|| drusa_io::write_with(&path, &data, &opts))
+    py.detach(|| wireframes_io::write_with(&path, &data, &opts))
         .map_err(to_py)
 }
 

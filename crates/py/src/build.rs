@@ -1,5 +1,5 @@
-use drusa_build::{DecimateOptions, DtmOptions, LoftOptions};
 use pyo3::prelude::*;
+use wireframes_build::{DecimateOptions, DtmOptions, LoftOptions};
 
 use crate::containers::{PyMesh, PyPolylines, floats, labels_of, vec3};
 use crate::errors::to_py;
@@ -45,7 +45,7 @@ fn dtm(
     };
     let (crs, unit) = labels_of(points);
     Ok(py
-        .detach(|| drusa_build::dtm(&p, &opts))
+        .detach(|| wireframes_build::dtm(&p, &opts))
         .map_err(to_py)?
         .with_crs(crs)
         .with_length_unit(unit)
@@ -68,7 +68,7 @@ fn dtm(
 fn triangulate(py: Python, polygons: PyRef<PyPolylines>) -> PyResult<PyMesh> {
     let p = &polygons.inner;
     Ok(py
-        .detach(|| drusa_build::triangulate_polygons(p))
+        .detach(|| wireframes_build::triangulate_polygons(p))
         .map_err(to_py)?
         .into())
 }
@@ -93,7 +93,7 @@ fn loft(py: Python, sections: PyRef<PyPolylines>, cap_ends: bool) -> PyResult<Py
     let s = &sections.inner;
     let opts = LoftOptions { cap_ends };
     Ok(py
-        .detach(|| drusa_build::loft(s, &opts))
+        .detach(|| wireframes_build::loft(s, &opts))
         .map_err(to_py)?
         .into())
 }
@@ -116,7 +116,7 @@ fn extrude(py: Python, polygons: PyRef<PyPolylines>, vector: &Bound<PyAny>) -> P
     let v = vec3(vector, "vector")?;
     let p = &polygons.inner;
     Ok(py
-        .detach(|| drusa_build::extrude(p, v))
+        .detach(|| wireframes_build::extrude(p, v))
         .map_err(to_py)?
         .into())
 }
@@ -130,7 +130,7 @@ impl PyMesh {
     /// below `z`.
     fn close_to_elevation(&self, py: Python, z: f64) -> PyResult<PyMesh> {
         Ok(py
-            .detach(|| drusa_build::close_to_elevation(&self.inner, z))
+            .detach(|| wireframes_build::close_to_elevation(&self.inner, z))
             .map_err(to_py)?
             .into())
     }
@@ -159,7 +159,7 @@ impl PyMesh {
             preserve_boundary,
         };
         Ok(py
-            .detach(|| drusa_build::decimate(&self.inner, &opts))
+            .detach(|| wireframes_build::decimate(&self.inner, &opts))
             .map_err(to_py)?
             .into())
     }
@@ -177,7 +177,7 @@ impl PyMesh {
     #[pyo3(signature = (*, iterations=10, lambda_=0.5, mu=-0.53))]
     fn smooth(&self, py: Python, iterations: usize, lambda_: f64, mu: f64) -> PyResult<PyMesh> {
         Ok(py
-            .detach(|| drusa_build::smooth_taubin(&self.inner, iterations, lambda_, mu))
+            .detach(|| wireframes_build::smooth_taubin(&self.inner, iterations, lambda_, mu))
             .map_err(to_py)?
             .into())
     }
@@ -191,7 +191,7 @@ impl PyMesh {
     ///     When the result self-intersects.
     fn offset(&self, py: Python, distance: f64) -> PyResult<PyMesh> {
         Ok(py
-            .detach(|| drusa_build::offset(&self.inner, distance))
+            .detach(|| wireframes_build::offset(&self.inner, distance))
             .map_err(to_py)?
             .into())
     }
@@ -203,7 +203,7 @@ impl PyMesh {
     #[pyo3(signature = (edge_length, *, iterations=5))]
     fn remesh(&self, py: Python, edge_length: f64, iterations: usize) -> PyResult<PyMesh> {
         Ok(py
-            .detach(|| drusa_build::remesh(&self.inner, edge_length, iterations))
+            .detach(|| wireframes_build::remesh(&self.inner, edge_length, iterations))
             .map_err(to_py)?
             .into())
     }
@@ -217,7 +217,7 @@ impl PyMesh {
     fn contours(&self, py: Python, levels: &Bound<PyAny>) -> PyResult<PyPolylines> {
         let l = floats(levels, "levels")?;
         Ok(py
-            .detach(|| drusa_build::contours(&self.inner, &l))
+            .detach(|| wireframes_build::contours(&self.inner, &l))
             .map_err(to_py)?
             .into())
     }

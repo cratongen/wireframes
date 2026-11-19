@@ -1,4 +1,4 @@
-use drusa_core::{Error, Mesh, Result};
+use wireframes_core::{Error, Mesh, Result};
 
 use crate::geom::{add, cross, dot, norm, normalize, scale, sub};
 
@@ -51,17 +51,17 @@ pub fn offset(mesh: &Mesh, distance: f64) -> Result<Mesh> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use drusa_core::fixtures::{cube, sphere};
+    use wireframes_core::fixtures::{cube, sphere};
 
     #[test]
     fn sphere_grows_and_shrinks() {
         let m = sphere(3);
-        let v0 = drusa_ops::volume(&m).unwrap();
+        let v0 = wireframes_ops::volume(&m).unwrap();
         let big = offset(&m, 0.1).unwrap();
         let small = offset(&m, -0.1).unwrap();
         let r = |d: f64| (1.0f64 + d).powi(3);
-        assert!((drusa_ops::volume(&big).unwrap() / v0 / r(0.1) - 1.0).abs() < 0.01);
-        assert!((drusa_ops::volume(&small).unwrap() / v0 / r(-0.1) - 1.0).abs() < 0.01);
+        assert!((wireframes_ops::volume(&big).unwrap() / v0 / r(0.1) - 1.0).abs() < 0.01);
+        assert!((wireframes_ops::volume(&small).unwrap() / v0 / r(-0.1) - 1.0).abs() < 0.01);
         assert!(big.validate(0.0).unwrap().summary.is_solid());
     }
 

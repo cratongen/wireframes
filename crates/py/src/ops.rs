@@ -1,8 +1,8 @@
-use drusa_core::{Column, Table};
-use drusa_ops::{HoleFill, RepairAction, RepairOptions, RepairReport, ThicknessMode};
 use numpy::{PyArray1, PyArray2, PyReadonlyArray2};
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
+use wireframes_core::{Column, Table};
+use wireframes_ops::{HoleFill, RepairAction, RepairOptions, RepairReport, ThicknessMode};
 
 use crate::containers::{PyMesh, PyTable, array_n, array1, floats, plan_arg, points_arg, vec3};
 use crate::errors::{invalid, to_py};
@@ -10,7 +10,7 @@ use crate::validate::{nullable_i64, nullable_utf8, summary_dict};
 
 /// What ``Mesh.repair`` changed, step by step, and how input vertices and
 /// faces map to the output.
-#[pyclass(name = "RepairReport", module = "drusa", frozen)]
+#[pyclass(name = "RepairReport", module = "wireframes", frozen)]
 pub(crate) struct PyRepairReport {
     pub(crate) inner: RepairReport,
 }
@@ -177,7 +177,7 @@ impl PyMesh {
     /// Total triangle area.
     #[getter]
     fn area(&self) -> f64 {
-        drusa_ops::area(&self.inner)
+        wireframes_ops::area(&self.inner)
     }
 
     /// Signed enclosed volume, positive for an outward solid.
@@ -188,7 +188,7 @@ impl PyMesh {
     ///     When the mesh is not closed and consistently wound.
     #[getter]
     fn volume(&self) -> PyResult<f64> {
-        drusa_ops::volume(&self.inner).map_err(to_py)
+        wireframes_ops::volume(&self.inner).map_err(to_py)
     }
 
     /// Volume centroid, under the same rule as ``volume``.
@@ -196,39 +196,41 @@ impl PyMesh {
     fn centroid<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyArray1<f64>>> {
         Ok(array1(
             py,
-            drusa_ops::centroid(&self.inner).map_err(to_py)?.to_vec(),
+            wireframes_ops::centroid(&self.inner)
+                .map_err(to_py)?
+                .to_vec(),
         ))
     }
 
     /// Area of each triangle.
     #[getter]
     fn face_areas<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray1<f64>> {
-        array1(py, drusa_ops::face_areas(&self.inner))
+        array1(py, wireframes_ops::face_areas(&self.inner))
     }
 
     /// ``(m, 3)`` unit normal of each triangle, zero for degenerate ones.
     #[getter]
     fn face_normals<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray2<f64>> {
-        array_n(py, &drusa_ops::face_normals(&self.inner))
+        array_n(py, &wireframes_ops::face_normals(&self.inner))
     }
 
     /// ``(m, 3)`` centroid of each triangle.
     #[getter]
     fn face_centroids<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray2<f64>> {
-        array_n(py, &drusa_ops::face_centroids(&self.inner))
+        array_n(py, &wireframes_ops::face_centroids(&self.inner))
     }
 
     /// ``(n, 3)`` angle-weighted unit normal of each vertex, zero for isolated ones.
     #[getter]
     fn vertex_normals<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray2<f64>> {
-        array_n(py, &drusa_ops::vertex_normals(&self.inner))
+        array_n(py, &wireframes_ops::vertex_normals(&self.inner))
     }
 
     /// ``(m, 2)`` dip (0 to 90 degrees) and dip direction (0 to 360 degrees
     /// clockwise from +y) of each triangle; NaN dip direction when horizontal.
     #[getter]
     fn dip<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray2<f64>> {
-        let d: Vec<[f64; 2]> = drusa_ops::dip(&self.inner)
+        let d: Vec<[f64; 2]> = wireframes_ops::dip(&self.inner)
             .into_iter()
             .map(|(a, b)| [a, b])
             .collect();
@@ -244,18 +246,22 @@ impl PyMesh {
     ///     ``(4, 4)`` row-major matrix applied to column vectors.
     fn transform(&self, matrix: &Bound<PyAny>) -> PyResult<PyMesh> {
         let m = matrix4(matrix)?;
-        Ok(drusa_ops::transform(&self.inner, m).map_err(to_py)?.into())
+        Ok(wireframes_ops::transform(&self.inner, m)
+            .map_err(to_py)?
+            .into())
     }
 
     /// A copy moved by `offset`.
     fn translate(&self, offset: &Bound<PyAny>) -> PyResult<PyMesh> {
         let d = vec3(offset, "offset")?;
-        Ok(drusa_ops::translate(&self.inner, d).map_err(to_py)?.into())
+        Ok(wireframes_ops::translate(&self.inner, d)
+            .map_err(to_py)?
+            .into())
     }
 
     /// A copy with every triangle wound the other way.
     fn flip(&self) -> PyMesh {
-        drusa_ops::flip(&self.inner).into()
+        wireframes_ops::flip(&self.inner).into()
     }
 
     /// A copy with coordinates rescaled to `unit`.
@@ -265,7 +271,7 @@ impl PyMesh {
     /// InvalidInput
     ///     When the mesh declares no length unit, or `unit` is unknown.
     fn to_length_unit(&self, unit: &str) -> PyResult<PyMesh> {
-        Ok(drusa_ops::to_length_unit(&self.inner, unit)
+        Ok(wireframes_ops::to_length_unit(&self.inner, unit)
             .map_err(to_py)?
             .into())
     }
@@ -312,14 +318,14 @@ impl PyMesh {
             fill_holes: hole_fill(fill_holes)?,
         };
         let (mesh, report) = py
-            .detach(|| drusa_ops::repair(&self.inner, &opts))
+            .detach(|| wireframes_ops::repair(&self.inner, &opts))
             .map_err(to_py)?;
         Ok((mesh.into(), PyRepairReport { inner: report }))
     }
 
     /// One mesh per edge-connected component, in order of first face.
     fn components(&self) -> PyResult<Vec<PyMesh>> {
-        Ok(drusa_ops::components(&self.inner)
+        Ok(wireframes_ops::components(&self.inner)
             .map_err(to_py)?
             .into_iter()
             .map(PyMesh::from)
@@ -330,7 +336,7 @@ impl PyMesh {
     fn component_labels<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray1<i64>> {
         PyArray1::from_vec(
             py,
-            drusa_ops::component_labels(&self.inner)
+            wireframes_ops::component_labels(&self.inner)
                 .into_iter()
                 .map(i64::from)
                 .collect(),
@@ -356,7 +362,7 @@ impl PyMesh {
     ) -> PyResult<Bound<'py, PyArray1<f64>>> {
         let e = floats(edges, "edges")?;
         let v = py
-            .detach(|| drusa_ops::volume_by_elevation(&self.inner, &e))
+            .detach(|| wireframes_ops::volume_by_elevation(&self.inner, &e))
             .map_err(to_py)?;
         Ok(array1(py, v))
     }
@@ -373,7 +379,7 @@ impl PyMesh {
         points: &Bound<PyAny>,
     ) -> PyResult<Bound<'py, PyArray1<f64>>> {
         let xy = plan_arg(points, "points")?;
-        let z = py.detach(|| drusa_ops::surface_z(&self.inner, &xy));
+        let z = py.detach(|| wireframes_ops::surface_z(&self.inner, &xy));
         Ok(array1(py, z))
     }
 
@@ -384,7 +390,7 @@ impl PyMesh {
         points: &Bound<PyAny>,
     ) -> PyResult<Bound<'py, PyArray1<f64>>> {
         let p = points_arg(points, "points", false)?;
-        let d = py.detach(|| drusa_ops::vertical_distance(&self.inner, &p));
+        let d = py.detach(|| wireframes_ops::vertical_distance(&self.inner, &p));
         Ok(array1(py, d))
     }
 
@@ -425,7 +431,7 @@ impl PyMesh {
         let xy = plan_arg(points, "points")?;
         let bottom = &bottom.inner;
         let t = py
-            .detach(|| drusa_ops::thickness(&self.inner, bottom, &xy, mode))
+            .detach(|| wireframes_ops::thickness(&self.inner, bottom, &xy, mode))
             .map_err(to_py)?;
         Ok(array1(py, t))
     }

@@ -1,4 +1,4 @@
-//! Seeded synthetic meshes for tests in every drusa crate. Solids wind
+//! Seeded synthetic meshes for tests in every wireframes crate. Solids wind
 //! counter-clockwise seen from outside.
 
 use crate::Mesh;

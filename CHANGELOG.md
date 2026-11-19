@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to drusa are listed here. The format follows
+All notable changes to wireframes are listed here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/).
 
@@ -19,12 +19,12 @@ All notable changes to drusa are listed here. The format follows
   `segment_hits`, `trace_intervals` and exact `block_fraction`.
 - Construction: `dtm` with breaklines, `triangulate`, `extrude`, `loft`,
   `close_to_elevation`, `contours`, `decimate`, `smooth`, `offset`, `remesh`.
-- Python package `drusa` with a full `.pyi` stub, seeded datasets, matplotlib
+- Python package `wireframes` with a full `.pyi` stub, seeded datasets, matplotlib
   plots and `to_polars`/`to_pandas`/`to_pyarrow` conversions.
 - Numbered examples for every public capability, and an mkdocs guide.
 - Criterion benches for I/O, booleans, slicing, validation and queries (not
   timed yet).
-- Tests: boitata's validate and repair fixtures ported to `drusa-ops`,
+- Tests: boitata's validate and repair fixtures ported to `wireframes-ops`,
   thread-count determinism tests for `io` and `build`, commutativity of union
   and intersection in `locate`, a Datamine triangle-id alias test, and
   DataFrame conversion tests that check null handling.

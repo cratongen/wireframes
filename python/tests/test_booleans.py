@@ -1,6 +1,6 @@
-import drusa as dr
 import numpy as np
 import pytest
+import wireframes as wf
 from conftest import close
 
 
@@ -42,7 +42,7 @@ def test_methods_and_functions_agree(box):
     a, b = box([0, 0, 0], [2, 2, 2]), box([1, 1, 1], [3, 3, 3])
     for name, op in [("union", "__or__"), ("intersection", "__and__"), ("difference", "__sub__"),
                      ("symmetric_difference", "__xor__")]:  # fmt: skip
-        v = getattr(dr, name)(a, b).volume
+        v = getattr(wf, name)(a, b).volume
         assert getattr(a, name)(b).volume == v == getattr(a, op)(b).volume
     assert (a | b).volume == pytest.approx(15.0)
     assert (a & b).volume == pytest.approx(1.0)
@@ -57,7 +57,7 @@ def test_self_operations(orebody):
 
 
 def test_orebody_against_a_block_at_utm_scale(orebody, box):
-    o = dr.datasets.ORIGIN
+    o = wf.datasets.ORIGIN
     block = box(o + [-50, -80, 150], o + [50, 80, 250], name="block")
     inside, outside, union = orebody & block, orebody - block, orebody | block
     assert close(inside.volume + outside.volume, orebody.volume, rel=1e-8)
@@ -93,15 +93,15 @@ def test_coplanar_cases(box):
 def test_invalid_inputs_raise_with_the_report(box):
     a = box([0, 0, 0], [1, 1, 1])
     holed = a.filter_faces(np.arange(12) != 0)
-    with pytest.raises(dr.InvalidMesh, match="a") as e:
+    with pytest.raises(wf.InvalidMesh, match="a") as e:
         holed | a
     assert e.value.report.summary["boundary_edges"] == 3
-    with pytest.raises(dr.InvalidMesh):
-        dr.union(a, holed)
-    welded = dr.Mesh(np.vstack([a.coords, a.coords]), np.vstack([a.triangles[:6], a.triangles[6:] + 8]))
-    with pytest.raises(dr.InvalidMesh):
+    with pytest.raises(wf.InvalidMesh):
+        wf.union(a, holed)
+    welded = wf.Mesh(np.vstack([a.coords, a.coords]), np.vstack([a.triangles[:6], a.triangles[6:] + 8]))
+    with pytest.raises(wf.InvalidMesh):
         welded | box([0.5, 0.5, 0.5], [2, 2, 2])
-    mesh, (ra, rb) = dr.union(welded, box([0.5, 0.5, 0.5], [2, 2, 2]), repair=True)
+    mesh, (ra, rb) = wf.union(welded, box([0.5, 0.5, 0.5], [2, 2, 2]), repair=True)
     assert mesh.volume == pytest.approx(1 + 1.5**3 - 0.125)
     assert ra.summary["vertex_merged"] == 8 and len(rb) == 0
     with pytest.raises(TypeError):
@@ -109,11 +109,11 @@ def test_invalid_inputs_raise_with_the_report(box):
 
 
 def test_clip_by_surface_splits_volume(orebody):
-    o = dr.datasets.ORIGIN
+    o = wf.datasets.ORIGIN
     g = np.linspace(-300, 300, 7)
     gx, gy = np.meshgrid(g, g)
     z = 200 + 0.05 * gx + 0.03 * gy
-    surface = dr.dtm(o + np.column_stack([gx.ravel(), gy.ravel(), z.ravel()]))
+    surface = wf.dtm(o + np.column_stack([gx.ravel(), gy.ravel(), z.ravel()]))
     below, above = orebody.clip_by_surface(surface)
     assert below.is_solid and above.is_solid
     assert close(below.volume + above.volume, orebody.volume, rel=1e-8)
@@ -121,7 +121,7 @@ def test_clip_by_surface_splits_volume(orebody):
 
 
 def test_split_and_slice_by_plane(orebody, box):
-    o = dr.datasets.ORIGIN + [13.0, 0, 200]
+    o = wf.datasets.ORIGIN + [13.0, 0, 200]
     neg, pos = orebody.split_by_plane(o, [1, 0.2, 0.1])
     assert neg.is_solid and pos.is_solid
     assert close(neg.volume + pos.volume, orebody.volume, rel=1e-8)
@@ -136,19 +136,19 @@ def test_split_and_slice_by_plane(orebody, box):
 
 
 def test_cut_fill_identities():
-    t = dr.datasets.topography(n=120)
-    zero = dr.cut_fill(t, t)
+    t = wf.datasets.topography(n=120)
+    zero = wf.cut_fill(t, t)
     assert zero["cut"] == 0 and zero["fill"] == 0
     h = 2.5
-    up = dr.cut_fill(t, t.translate([0, 0, h]))
+    up = wf.cut_fill(t, t.translate([0, 0, h]))
     assert close(up["fill"], h * up["area"], rel=1e-8) and up["cut"] == 0
-    down = dr.cut_fill(t.translate([0, 0, h]), t)
+    down = wf.cut_fill(t.translate([0, 0, h]), t)
     assert close(down["cut"], up["fill"], rel=1e-8) and down["fill"] == up["cut"]
-    pit = dr.datasets.pit(t, n=21)
-    result = dr.cut_fill(t, pit)
+    pit = wf.datasets.pit(t, n=21)
+    result = wf.cut_fill(t, pit)
     assert all(np.isfinite(v) for v in result.values())
     assert close(result["net"], result["fill"] - result["cut"])
-    o = dr.datasets.ORIGIN
-    ring = dr.Polylines([o[:2] + [[-100, -100], [100, -100], [100, 100], [-100, 100]]], closed=True)
-    inside = dr.cut_fill(t, t.translate([0, 0, 1.0]), boundary=ring)
+    o = wf.datasets.ORIGIN
+    ring = wf.Polylines([o[:2] + [[-100, -100], [100, -100], [100, 100], [-100, 100]]], closed=True)
+    inside = wf.cut_fill(t, t.translate([0, 0, 1.0]), boundary=ring)
     assert close(inside["area"], 40_000.0, rel=1e-9) and close(inside["fill"], 40_000.0, rel=1e-8)

@@ -1,5 +1,5 @@
-use drusa_core::predicates::orient2d;
-use drusa_core::{Error, HalfEdges, Mesh, Result};
+use wireframes_core::predicates::orient2d;
+use wireframes_core::{Error, HalfEdges, Mesh, Result};
 
 use crate::extrude::boundary_half_edges;
 use crate::geom::triangulate_rings;
@@ -135,14 +135,14 @@ mod tests {
             let l = (n - 1) as f64;
             let mean = a * l / 2.0 + b * l / 2.0 + c;
             let want = l * l * (mean - z).abs();
-            let got = drusa_ops::volume(&s).unwrap();
+            let got = wireframes_ops::volume(&s).unwrap();
             prop_assert!((got - want).abs() <= 1e-9 * want.max(1.0), "{} vs {}", got, want);
         }
     }
 
     #[test]
     fn pit_surface_closes_to_a_solid() {
-        let m = drusa_core::fixtures::pit_surface(12, 3);
+        let m = wireframes_core::fixtures::pit_surface(12, 3);
         let s = close_to_elevation(&m, 0.0).unwrap();
         assert!(s.validate(0.0).unwrap().summary.is_solid());
         assert!(

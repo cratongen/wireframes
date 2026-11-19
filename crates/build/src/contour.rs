@@ -1,5 +1,5 @@
-use drusa_boolean::slice_by_plane;
-use drusa_core::{Error, Mesh, Polylines, Result};
+use wireframes_boolean::slice_by_plane;
+use wireframes_core::{Error, Mesh, Polylines, Result};
 
 /// `slice_by_plane` through the origin with normal `+z` at offsets `levels`,
 /// the `offset` column renamed `elevation`.
@@ -24,9 +24,9 @@ pub fn contours(surface: &Mesh, levels: &[f64]) -> Result<Polylines> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use drusa_core::Column;
-    use drusa_core::fixtures::{box_mesh, sphere};
     use proptest::prelude::*;
+    use wireframes_core::Column;
+    use wireframes_core::fixtures::{box_mesh, sphere};
 
     fn plane(n: u32, a: f64, b: f64, c: f64) -> Mesh {
         let mut v = vec![];

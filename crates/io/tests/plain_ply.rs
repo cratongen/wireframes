@@ -1,9 +1,9 @@
 mod plain_support;
 
-use drusa_core::{Column, ColumnData, Error, Mesh, Table};
-use drusa_io::{Data, ply};
 use plain_support::*;
 use proptest::prelude::*;
+use wireframes_core::{Column, ColumnData, Error, Mesh, Table};
+use wireframes_io::{Data, ply};
 
 #[test]
 fn unknown_element_between_vertex_and_face() {
@@ -239,8 +239,8 @@ proptest! {
     }
 }
 
-fn tri() -> drusa_core::Mesh {
-    drusa_core::Mesh::new(
+fn tri() -> wireframes_core::Mesh {
+    wireframes_core::Mesh::new(
         vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
         vec![[0, 1, 2]],
     )
@@ -273,7 +273,7 @@ fn face_property_named_polygon_is_not_overwritten() {
 
 #[test]
 fn polygon_ids_with_nulls_and_gaps_round_trip() {
-    let m = drusa_core::Mesh::new(
+    let m = wireframes_core::Mesh::new(
         vec![
             [0.0, 0.0, 0.0],
             [1.0, 0.0, 0.0],

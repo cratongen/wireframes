@@ -34,5 +34,5 @@ inside = iv.filter(iv["inside"])
 ??? example "examples/04-queries/example_04.py"
 
     ```python
-    --8<-- "examples/04-queries/example_04.py"
+    --8 < --"examples/04-queries/example_04.py"
     ```

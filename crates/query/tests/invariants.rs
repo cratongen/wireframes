@@ -1,8 +1,8 @@
-use drusa_core::intersect::point_in_triangle;
-use drusa_core::predicates::{Sign, orient3d};
-use drusa_core::{Mesh, fixtures};
-use drusa_query::{Blocks, HitKind, Location, SolidIndex, SurfaceIndex, Trace};
 use proptest::prelude::*;
+use wireframes_core::intersect::point_in_triangle;
+use wireframes_core::predicates::{Sign, orient3d};
+use wireframes_core::{Mesh, fixtures};
+use wireframes_query::{Blocks, HitKind, Location, SolidIndex, SurfaceIndex, Trace};
 
 /// Float solid-angle winding number of `m` around `p`.
 fn winding(m: &Mesh, p: [f64; 3]) -> f64 {

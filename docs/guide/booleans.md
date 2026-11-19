@@ -2,13 +2,13 @@
 
 | Operator | Function | Keeps |
 |---|---|---|
-| `a \| b` | `dr.union(a, b)` | inside `a` or `b` |
-| `a & b` | `dr.intersection(a, b)` | inside both |
-| `a - b` | `dr.difference(a, b)` | inside `a`, outside `b` |
-| `a ^ b` | `dr.symmetric_difference(a, b)` | inside exactly one |
+| `a \| b` | `wf.union(a, b)` | inside `a` or `b` |
+| `a & b` | `wf.intersection(a, b)` | inside both |
+| `a - b` | `wf.difference(a, b)` | inside `a`, outside `b` |
+| `a ^ b` | `wf.symmetric_difference(a, b)` | inside exactly one |
 
 The methods `a.union(b)` and so on do the same. Each input must be a solid (`is_solid`); otherwise the call
-raises `dr.InvalidMesh` with the report. Pass `repair=True` to repair both inputs first; the call then returns
+raises `wf.InvalidMesh` with the report. Pass `repair=True` to repair both inputs first; the call then returns
 `(mesh, (report_a, report_b))`.
 
 The arrangement splits every pair of crossing triangles along their exact intersection, using implicit
@@ -31,8 +31,8 @@ Solids that touch only along an edge or at a vertex give a non-manifold result, 
 ## Cutting
 
 ```python
-below, above = solid.clip_by_surface(fault)                 # both capped; above is where the normals point
-negative, positive = mesh.split_by_plane(origin, normal)    # exact side test; on-plane points go positive
+below, above = solid.clip_by_surface(fault)  # both capped; above is where the normals point
+negative, positive = mesh.split_by_plane(origin, normal)  # exact side test; on-plane points go positive
 lines = mesh.slice_by_plane(origin, normal, offsets=[0, 10, 20])
 ```
 
@@ -42,7 +42,7 @@ change.
 
 ## Cut and fill
 
-`dr.cut_fill(base, design, boundary=None)` overlays two height-field surfaces in plan and integrates
+`wf.cut_fill(base, design, boundary=None)` overlays two height-field surfaces in plan and integrates
 `design - base` exactly over each overlay cell. It returns `cut`, `fill`, `net`, `cut_area`, `fill_area` and
 `area`. Swapping the surfaces swaps cut and fill.
 
@@ -53,5 +53,5 @@ change.
 ??? example "examples/03-booleans/example_03.py"
 
     ```python
-    --8<-- "examples/03-booleans/example_03.py"
+    --8 < --"examples/03-booleans/example_03.py"
     ```

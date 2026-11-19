@@ -1,6 +1,6 @@
 //! VTK legacy files, plus the cell, array and polygon model that `vtu` and `dxf` share.
 
-use drusa_core::{Column, ColumnData, Error, Mesh, PointSet, Polylines, Result, Table};
+use wireframes_core::{Column, ColumnData, Error, Mesh, PointSet, Polylines, Result, Table};
 
 use crate::common::polygons;
 use crate::{Data, UnstructuredGrid, WriteOptions};
@@ -427,7 +427,7 @@ impl PolyData {
     }
 }
 
-const FEATURE: &str = "drusa_feature";
+const FEATURE: &str = "wireframes_feature";
 
 /// Splits poly data into points (verts), polylines (lines) and a mesh (polys
 /// and strips). The mesh keeps the points that faces use or that no cell uses.
@@ -589,7 +589,7 @@ pub(crate) fn poly_to_data(pd: PolyData) -> Result<Data> {
 
 /// Mesh vertices, then polyline vertices, then points; cells as verts (one per
 /// point), lines (closed parts repeat their first id) and polygons. Features
-/// with several parts carry a `drusa_feature` line column.
+/// with several parts carry a `wireframes_feature` line column.
 pub(crate) fn data_to_poly(data: &Data) -> Result<PolyData> {
     let mut points: Vec<[f64; 3]> = Vec::new();
     let mut vtables = Vec::new();
@@ -1336,7 +1336,7 @@ pub fn write(data: &Data, opts: &WriteOptions) -> Result<Vec<u8>> {
         out: Vec::new(),
         binary: !opts.ascii,
     };
-    w.text("# vtk DataFile Version 5.1\ndrusa\n");
+    w.text("# vtk DataFile Version 5.1\nwireframes\n");
     w.text(if w.binary { "BINARY\n" } else { "ASCII\n" });
     if let Some(g) = &data.grid {
         if data.mesh.is_some() || data.polylines.is_some() || data.points.is_some() {

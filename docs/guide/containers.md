@@ -1,15 +1,15 @@
 # Containers and tables
 
-`drusa` has three geometry containers and one table type.
+`wireframes` has three geometry containers and one table type.
 
 | Type | Holds | Row tables |
 |---|---|---|
-| `dr.Mesh` | triangles: an open surface (topography, fault, pit shell) or a closed solid (orebody, stope) | `vertex_attributes`, `face_attributes` |
-| `dr.Polylines` | 3D strings: open lines and closed rings, grouped into features | `attributes` (per feature), `vertex_attributes` |
-| `dr.PointSet` | points | `attributes` |
-| `dr.Table` | typed columns with validity masks and units | |
+| `wf.Mesh` | triangles: an open surface (topography, fault, pit shell) or a closed solid (orebody, stope) | `vertex_attributes`, `face_attributes` |
+| `wf.Polylines` | 3D strings: open lines and closed rings, grouped into features | `attributes` (per feature), `vertex_attributes` |
+| `wf.PointSet` | points | `attributes` |
+| `wf.Table` | typed columns with validity masks and units | |
 
-`dr.UnstructuredGrid` holds the volume cells of a `.vtu` or `.vtk` file so they survive a round trip; it is data,
+`wf.UnstructuredGrid` holds the volume cells of a `.vtu` or `.vtk` file so they survive a round trip; it is data,
 and `grid.surface()` turns its surface cells into a `Mesh`. Its members are `points`, `cell_types` (VTK type ids),
 `connectivity` with `offsets` (`n_cells + 1` entries), `n_cells`, and the `point_data` and `cell_data` tables.
 
@@ -23,18 +23,20 @@ Objects never change. `with_vertex_column`, `with_face_column`, `with_vertices`,
 and the rest return new objects, and the arrays you get back are copies.
 
 ```python
-import drusa as dr
+import wireframes as wf
 import numpy as np
 
-mesh = dr.Mesh(vertices, triangles, face_attributes={"rock": ["ox"] * len(triangles)}, crs="EPSG:31983", length_unit="m")
+mesh = wf.Mesh(
+    vertices, triangles, face_attributes={"rock": ["ox"] * len(triangles)}, crs="EPSG:31983", length_unit="m"
+)
 mesh = mesh.with_vertex_column("grade", np.random.default_rng(0).random(mesh.n_vertices), unit="g/t")
-mesh["rock"]                  # a vertex column, else a face column
-mesh.to_table(on="faces")     # v0, v1, v2 and the face columns
+mesh["rock"]  # a vertex column, else a face column
+mesh.to_table(on="faces")  # v0, v1, v2 and the face columns
 ```
 
 A `Mesh` winds a solid's triangles counter-clockwise seen from outside, so its signed volume is positive.
 `mesh.with_attributes(vertex=..., face=...)` replaces whole attribute tables (`None` keeps one), and
-`dr.concat([a, b])` appends meshes in order without welding; a column missing from one mesh is null there.
+`wf.concat([a, b])` appends meshes in order without welding; a column missing from one mesh is null there.
 
 ## Polylines
 
@@ -43,20 +45,20 @@ hole is one feature with two rings. Inside is even-odd over a feature's rings, a
 inside.
 
 ```python
-pad = dr.Polylines([outer, hole], closed=True, features=[0, 0], attributes={"name": ["pad 3"]})
+pad = wf.Polylines([outer, hole], closed=True, features=[0, 0], attributes={"name": ["pad 3"]})
 pad.area(), pad.length()
-pad.contains(points)                    # exact, in plan
-pad.distance(points, signed=True)       # negative inside
-dr.Polylines.from_table(table, feature="ID", x="X", y="Y", z="Z")
-pad.to_points()                         # every vertex, with feature, part and vertex columns
+pad.contains(points)  # exact, in plan
+pad.distance(points, signed=True)  # negative inside
+wf.Polylines.from_table(table, feature="ID", x="X", y="Y", z="Z")
+pad.to_points()  # every vertex, with feature, part and vertex columns
 ```
 
 ## Tables
 
 ```python
-t = dr.Table({"hole": ["DH1", None], "depth": [120.0, np.nan], "n": [3, None]})
-t["depth"]          # float64 with NaN for null
-t["n"], t.mask("n") # int64 payload and validity
+t = wf.Table({"hole": ["DH1", None], "depth": [120.0, np.nan], "n": [3, None]})
+t["depth"]  # float64 with NaN for null
+t["n"], t.mask("n")  # int64 payload and validity
 t.with_column("au", [1.2, 0.4], unit="g/t").units
 t.with_columns({"lab": ["A", "B"], "batch": [1, 2]})
 t.drop_null()
@@ -69,17 +71,17 @@ column) marks a null.
 
 `crs` and `length_unit` are labels. Operations that combine two geometries check that declared labels match and
 raise `InvalidInput` when they differ; an undeclared label matches anything. `mesh.to_length_unit("ft")`
-rescales coordinates, and CRS transforms stay outside `drusa`.
+rescales coordinates, and CRS transforms stay outside `wireframes`.
 
 ## Errors
 
 | Class | Also a | Raised for |
 |---|---|---|
-| `dr.DrusaError` | `Exception` | base of every drusa error |
-| `dr.InvalidInput` | `ValueError` | bad shapes or values, unsupported content, CRS or unit mismatch |
-| `dr.InvalidMesh` | `InvalidInput` | a mesh that fails validation; `.report` holds the `MeshReport` |
-| `dr.FileError` | `OSError` | unreadable files and malformed content |
-| `dr.MissingColumn` | `KeyError` | an unknown column name; the message lists the columns |
+| `wf.WireframesError` | `Exception` | base of every wireframes error |
+| `wf.InvalidInput` | `ValueError` | bad shapes or values, unsupported content, CRS or unit mismatch |
+| `wf.InvalidMesh` | `InvalidInput` | a mesh that fails validation; `.report` holds the `MeshReport` |
+| `wf.FileError` | `OSError` | unreadable files and malformed content |
+| `wf.MissingColumn` | `KeyError` | an unknown column name; the message lists the columns |
 
 ## Example
 
@@ -88,5 +90,5 @@ rescales coordinates, and CRS transforms stay outside `drusa`.
 ??? example "examples/00-basics/example_00.py"
 
     ```python
-    --8<-- "examples/00-basics/example_00.py"
+    --8 < --"examples/00-basics/example_00.py"
     ```

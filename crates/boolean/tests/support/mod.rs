@@ -1,4 +1,4 @@
-use drusa_core::Mesh;
+use wireframes_core::Mesh;
 
 /// Combinatorial closure: every directed edge once with its reverse, and one
 /// fan per vertex. Geometric checks are reported separately (rounding to f64

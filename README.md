@@ -1,14 +1,14 @@
-# drusa
+# wireframes
 
-`drusa` is a Rust-core, Python-exposed library to read, write, plot, measure,
+`wireframes` is a Rust-core, Python-exposed library to read, write, plot, measure,
 and combine 3D solids, surfaces, and strings for mining, geology, and petroleum.
 
-> A druse (*drusa* in Portuguese) is a rock cavity lined with crystal faces.
+> A druse (*wireframes* in Portuguese) is a rock cavity lined with crystal faces.
 
 ## Scope and relationship to boitata
 
-`drusa` is a standalone geometry package with zero dependency on `boitata`.
-Once `drusa` reaches Milestone 7, `boitata` will depend on `drusa` and delete
+`wireframes` is a standalone geometry package with zero dependency on `boitata`.
+Once `wireframes` reaches Milestone 7, `boitata` will depend on `wireframes` and delete
 its internal mesh type (`crates/core/src/mesh.rs`) and mesh readers
 (`crates/io`: PLY, VTK, Gmsh `.msh`, Medit `.mesh`). Grids, block models,
 drillholes, variograms, kriging, and simulation stay in `boitata`.
@@ -22,24 +22,24 @@ drillholes, variograms, kriging, and simulation stay in `boitata`.
   arrangements.
 - **Python bindings**: `pyo3` (`abi3-py311`) built with `maturin`.
 - **Runtime dependencies**: `numpy` is the only required Python dependency.
-  `matplotlib` is an optional extra (`pip install "drusa[plot]"`).
+  `matplotlib` is an optional extra (`pip install "wireframes[plot]"`).
 - **Tooling and testing**: `mise` for task execution and toolchain pinning,
   `uv` for Python environments, `proptest` for property-based invariants,
   `criterion` for benchmarks, and `mkdocs` for documentation.
 
 ## First-class types and Python API
 
-The Python package is imported as `import drusa as dr` and follows `boitata`'s
+The Python package is imported as `import wireframes as wf` and follows `boitata`'s
 container conventions:
 
-- **`dr.Mesh`**: triangle surface mesh representing either an open surface
+- **`wf.Mesh`**: triangle surface mesh representing either an open surface
   (topography, fault, horizon, pit shell) or a closed solid (orebody, stope,
   lithological wireframe), carrying per-vertex and per-face attribute tables,
   `crs`, and `length_unit`.
-- **`dr.Polylines`**: 3D strings (open paths and closed polygons) with per-line
+- **`wf.Polylines`**: 3D strings (open paths and closed polygons) with per-line
   and per-vertex attributes for pit crests, toes, section interpretations, and
   survey breaklines.
-- **`dr.PointSet`**: 3D point cloud with per-point attributes (collar surveys,
+- **`wf.PointSet`**: 3D point cloud with per-point attributes (collar surveys,
   LiDAR pickups, blast-hole pickups).
 - **VTU cell data**: tetrahedra and hexahedra in `.vtu` files are read and
   written as cell arrays and attributes so finite-element and reservoir meshes
@@ -49,7 +49,7 @@ container conventions:
 Every container exposes `.coords` as a `(n, 3)` `float64` NumPy array, `.x`,
 `.y`, and `.z` 1D views, `.bounds`, `.column_names`, `to_table()`, and zero-copy
 or thin conversions via `.to_polars()`, `.to_pandas()`, and `.to_pyarrow()`.
-Plotting functions in `dr.plot` take `ax=None`, create a figure when `ax` is
+Plotting functions in `wf.plot` take `ax=None`, create a figure when `ax` is
 omitted, and return `(fig, ax)`.
 
 ## Supported formats
@@ -70,18 +70,18 @@ omitted, and return `(fig, ax)`.
 - **Proprietary binary formats**: AutoCAD `.dwg` and binary Datamine `.dm` files
   are closed specifications and will not be read or written. Export DXF or
   `_tr.csv`/`_pt.csv` from the source package instead.
-- **Interactive 3D viewers**: `drusa` renders static publication and check plots
-  through `matplotlib` (`drusa[plot]`). Interactive WebGL or desktop viewers are
+- **Interactive 3D viewers**: `wireframes` renders static publication and check plots
+  through `matplotlib` (`wireframes[plot]`). Interactive WebGL or desktop viewers are
   out of scope.
 - **Grids and block models**: regular, masked, and sub-blocked grids live in
-  `boitata.BlockModel`; `drusa` provides the geometric queries (`block_fraction`,
+  `boitata.BlockModel`; `wireframes` provides the geometric queries (`block_fraction`,
   `contains`, `signed_distance`) that `boitata` calls.
 
 ## Exact booleans and validation contract
 
 Mine planning and resource estimation depend on conservation of volume. A silent
 vertex shift or an unreported hole fill during a boolean operation changes
-tonnage without warning. `drusa` enforces three rules:
+tonnage without warning. `wireframes` enforces three rules:
 
 1. **Exact predicates and implicit points**: triangle-triangle intersections and
    arrangement cell classifications use exact adaptive-precision predicates
@@ -94,7 +94,7 @@ tonnage without warning. `drusa` enforces three rules:
    Valid closed inputs produce a valid closed output. If an input has boundary
    edges, non-manifold edges or vertices, degenerate or duplicate faces,
    inconsistent winding, inward shells, or self-intersections, the function
-   raises `dr.InvalidMesh` carrying the full `MeshReport` (problem counts and
+   raises `wf.InvalidMesh` carrying the full `MeshReport` (problem counts and
    exact face/vertex indices).
 3. **Explicit, audited repair**: nothing is modified silently. Calling
    `mesh.repair(...)` or passing `repair=True` to a boolean operation runs only
@@ -105,14 +105,14 @@ tonnage without warning. `drusa` enforces three rules:
    `vol(A union B) + vol(A intersect B) = vol(A) + vol(B)` within `f64`
    materialization rounding, alongside `Mesh.validate().summary.is_closed`. The
    C++ `Manifold` library is used in CI as an external test oracle and benchmark
-   baseline, never as a dependency of `drusa`.
+   baseline, never as a dependency of `wireframes`.
 
 ## Roadmap
 
 ### M1: Core types, validation report, and OBJ/PLY/OFF/STL I/O
 
 - **Scope**: initialize the Rust workspace (`crates/core`, `crates/io`,
-  `crates/py`), `mise.toml`, `pyproject.toml`, and `python/drusa/`. Implement
+  `crates/py`), `mise.toml`, `pyproject.toml`, and `python/wireframes/`. Implement
   `Mesh`, `Polylines`, `PointSet`, attribute tables, and `Mesh.validate()`
   producing `MeshReport` (`MeshSummary` and `MeshProblem` list covering
   degenerate faces, duplicate faces, duplicate vertices, boundary edges,
@@ -145,8 +145,8 @@ tonnage without warning. `drusa` enforces three rules:
   normals, bounding boxes, and area/volume centroids. Explicit `Mesh.repair()`
   (vertex welding within tolerance, degenerate/duplicate face removal, consistent
   winding and outward shell orientation, planar and minimal-area hole filling)
-  returning `(repaired_mesh, repair_log)`. Implement `dr.plot.plan`,
-  `dr.plot.section`, and `dr.plot.surface3d` on `matplotlib`.
+  returning `(repaired_mesh, repair_log)`. Implement `wf.plot.plan`,
+  `wf.plot.section`, and `wf.plot.surface3d` on `matplotlib`.
 - **Acceptance check**:
   ```sh
   mise exec -- uv run --no-sync pytest python/tests/test_measure_repair_plot.py
@@ -215,18 +215,18 @@ tonnage without warning. `drusa` enforces three rules:
   - `smooth` runs Taubin smoothing, which does not preserve volume exactly: in
     example 05 the orebody's volume changes by 0.16 percent.
 
-### M7: Boitata adopts drusa
+### M7: Boitata adopts wireframes
 
-- **Scope**: publish `drusa` wheels, add `drusa` as a dependency of `boitata`,
+- **Scope**: publish `wireframes` wheels, add `wireframes` as a dependency of `boitata`,
   replace `boitata`'s `Mesh` (`crates/core/src/mesh.rs`) and mesh readers
-  (`crates/io`: PLY, VTK, `.msh`, `.mesh`) with `drusa`, and pass `boitata`'s
+  (`crates/io`: PLY, VTK, `.msh`, `.mesh`) with `wireframes`, and pass `boitata`'s
   entire verification and example suite.
 - **Acceptance check**:
   ```sh
   mise -C /home/user/Projects/boitata run verify
   ```
 - **Status**: not started. No wheels are published and boitata does not depend
-  on drusa yet. `mise run compat` checks that the wheel installs with pip, uv,
+  on wireframes yet. `mise run compat` checks that the wheel installs with pip, uv,
   pixi and conda.
 
 ## Performance
@@ -234,14 +234,14 @@ tonnage without warning. `drusa` enforces three rules:
 No performance numbers are stated before the code exists. Every number in this
 table will come from reproducible benchmarks we run on the same machine and in
 the same session using `criterion` (Rust) and interleaved multi-round timings
-reporting medians (Python), with system load recorded, comparing `drusa` against
+reporting medians (Python), with system load recorded, comparing `wireframes` against
 `trimesh`, `PyVista`/VTK, and `Manifold`. Criterion benches exist for I/O
 (`crates/io/benches/io.rs`, a 500k-triangle pit surface), booleans, slicing and
 validation (`crates/boolean/benches/booleans.rs`, on 5k- and 20k-triangle spheres,
 smaller than the datasets below) and queries (`crates/query/benches`). No timing has
 been recorded here yet:
 
-| Operation | Dataset | drusa | trimesh | PyVista / VTK | Manifold |
+| Operation | Dataset | wireframes | trimesh | PyVista / VTK | Manifold |
 |---|---|---|---|---|---|
 | STL / PLY binary read & write | 500k-triangle pit shell | not measured | not measured | not measured | not measured |
 | Mesh validation (`validate`) | 250k-triangle geological solid | not measured | not measured | not measured | not measured |

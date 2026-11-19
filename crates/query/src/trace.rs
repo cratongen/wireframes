@@ -1,4 +1,4 @@
-use drusa_core::{Error, Result};
+use wireframes_core::{Error, Result};
 
 use crate::distance::check_finite;
 use crate::ray::{HitKind, Line, Param};
@@ -131,7 +131,7 @@ pub(crate) fn intervals(index: &SolidIndex, trace: &Trace) -> Result<Vec<Interva
 #[cfg(test)]
 mod tests {
     use super::*;
-    use drusa_core::fixtures;
+    use wireframes_core::fixtures;
 
     fn straight(a: [f64; 3], b: [f64; 3], d: [f64; 2]) -> Trace {
         Trace {

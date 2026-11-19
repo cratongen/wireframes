@@ -1,5 +1,5 @@
 [package]
-name = "drusa-build"
+name = "wireframes-build"
 description = "Surface and solid construction and mesh editing"
 version.workspace = true
 edition.workspace = true
@@ -8,10 +8,10 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
-drusa-boolean.workspace = true
-drusa-core.workspace = true
-drusa-ops.workspace = true
-drusa-query.workspace = true
+wireframes-boolean.workspace = true
+wireframes-core.workspace = true
+wireframes-ops.workspace = true
+wireframes-query.workspace = true
 spade.workspace = true
 
 [dev-dependencies]

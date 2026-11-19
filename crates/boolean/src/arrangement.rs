@@ -5,10 +5,10 @@
 use std::cmp::Ordering;
 use std::collections::HashMap;
 
-use drusa_core::predicates::{Sign, kept_axes, projection_axis, side_of_plane};
-use drusa_core::tolerance::canonical;
-use drusa_core::{Bvh, Error, Mesh, Result};
 use rayon::prelude::*;
+use wireframes_core::predicates::{Sign, kept_axes, projection_axis, side_of_plane};
+use wireframes_core::tolerance::canonical;
+use wireframes_core::{Bvh, Error, Mesh, Result};
 
 use crate::hp::{self, Plane, Pt};
 use crate::triangulate::{Geom, cdt};
@@ -76,7 +76,7 @@ fn inside_closed(p: &Pt, c: &[[f64; 3]; 3], drop: usize, s: Sign) -> bool {
 }
 
 fn orient_of(c: &[[f64; 3]; 3], drop: usize) -> Sign {
-    Sign::of(drusa_core::predicates::orient2d_axis(
+    Sign::of(wireframes_core::predicates::orient2d_axis(
         c[0], c[1], c[2], drop,
     ))
 }
@@ -111,7 +111,7 @@ fn pair(t: &Face, g: &Face, pt: &Plane, pg: &Plane) -> Option<PairOut> {
     }
     let nt = pt.normal_exp();
     let ng = pg.normal_exp();
-    let dir: Vec<drusa_core::exact::Expansion> = (0..3)
+    let dir: Vec<wireframes_core::exact::Expansion> = (0..3)
         .map(|k| {
             let (i, j) = kept_axes(k);
             nt[i].product(&ng[j]).diff(&nt[j].product(&ng[i]))

@@ -1,8 +1,8 @@
 import math
 
-import drusa as dr
 import numpy as np
 import pytest
+import wireframes as wf
 
 
 def close(a, b, rel=1e-9):
@@ -12,17 +12,17 @@ def close(a, b, rel=1e-9):
 
 @pytest.fixture
 def box():
-    return dr.datasets.box
+    return wf.datasets.box
 
 
 @pytest.fixture(scope="session")
 def orebody():
-    return dr.datasets.orebody()
+    return wf.datasets.orebody()
 
 
 @pytest.fixture(scope="session")
 def topography():
-    return dr.datasets.topography(n=150)
+    return wf.datasets.topography(n=150)
 
 
 @pytest.fixture

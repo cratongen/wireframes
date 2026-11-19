@@ -3,9 +3,9 @@
 use std::collections::HashSet;
 use std::path::PathBuf;
 
-use drusa_core::{Column, Mesh, PointSet, Polylines};
-use drusa_io::{Data, WriteOptions};
 use proptest::prelude::*;
+use wireframes_core::{Column, Mesh, PointSet, Polylines};
+use wireframes_io::{Data, WriteOptions};
 
 pub fn fixture(name: &str) -> Vec<u8> {
     let p = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -161,5 +161,5 @@ pub fn stl_mesh(max_f: usize) -> impl Strategy<Value = Mesh> {
 }
 
 pub fn cube() -> Mesh {
-    drusa_core::fixtures::cube()
+    wireframes_core::fixtures::cube()
 }

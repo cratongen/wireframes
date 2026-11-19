@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from ._drusa import Mesh, PointSet, Polylines, dtm, loft
+from ._wireframes import Mesh, PointSet, Polylines, dtm, loft
 
 ORIGIN = np.array([700_000.0, 7_500_000.0, 0.0])
 

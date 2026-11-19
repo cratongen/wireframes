@@ -1,7 +1,7 @@
 """
 # Meshes, strings, points and tables
 
-`drusa` has three geometry containers. A `Mesh` holds triangles: an open surface such as topography, or a closed
+`wireframes` has three geometry containers. A `Mesh` holds triangles: an open surface such as topography, or a closed
 solid such as an orebody. `Polylines` holds 3D strings grouped into features, and `PointSet` holds points. Each
 carries attribute tables, a `crs` label and a `length_unit` label, and never changes once built: every method
 returns a new object.
@@ -17,8 +17,8 @@ sys.path.insert(0, str(HERE.parent))
 # %%
 import importlib.util
 
-import drusa as dr
 import numpy as np
+import wireframes as wf
 from common import save
 
 # %% [markdown]
@@ -29,9 +29,9 @@ from common import save
 
 # %%
 corners = np.array([[x, y, z] for z in (0, 20) for y in (0, 20) for x in (0, 20)], float)
-faces = dr.datasets.box([0, 0, 0], [1, 1, 1]).triangles
+faces = wf.datasets.box([0, 0, 0], [1, 1, 1]).triangles
 sides = ["bottom", "bottom", "top", "top", "south", "south", "north", "north", "west", "west", "east", "east"]
-cube = dr.Mesh(corners, faces, face_attributes={"side": sides}, crs="EPSG:31983", length_unit="m")
+cube = wf.Mesh(corners, faces, face_attributes={"side": sides}, crs="EPSG:31983", length_unit="m")
 print(cube)
 print(f"volume {cube.volume:.1f} m3, area {cube.area:.1f} m2, solid: {cube.is_solid}")
 print(cube.to_table(on="faces").to_dict()["side"][:4])
@@ -43,7 +43,7 @@ print(cube.to_table(on="faces").to_dict()["side"][:4])
 # NaN, and `mask` tells which rows hold a value.
 
 # %%
-table = dr.Table({"hole": ["DH1", "DH2", None], "depth": [120.0, None, 80.5], "assayed": [True, False, True]})
+table = wf.Table({"hole": ["DH1", "DH2", None], "depth": [120.0, None, 80.5], "assayed": [True, False, True]})
 print(table)
 print(table["depth"], table.mask("hole"))
 print(table.drop_null().num_rows, "rows without nulls")
@@ -51,20 +51,20 @@ print(table.drop_null().num_rows, "rows without nulls")
 # %% [markdown]
 # ## The synthetic deposit
 #
-# `dr.datasets` builds a seeded synthetic deposit at UTM scale: a lens-shaped orebody, a rolling topography and a
+# `wf.datasets` builds a seeded synthetic deposit at UTM scale: a lens-shaped orebody, a rolling topography and a
 # fan of drillholes. The plan view draws the topography by elevation, the orebody outline at 200 m and the holes.
 
 # %%
-orebody = dr.datasets.orebody()
-topography = dr.datasets.topography()
-holes = dr.datasets.drillholes()
-collars = dr.PointSet(
+orebody = wf.datasets.orebody()
+topography = wf.datasets.topography()
+holes = wf.datasets.drillholes()
+collars = wf.PointSet(
     np.array([p[0] for p in holes.parts]), {"hole": holes.attributes["hole"]}, length_unit="m"
 )
 print(orebody, holes, collars, sep="\n")
 
-outline = orebody.slice_by_plane(dr.datasets.ORIGIN + [0, 0, 200], [0, 0, 1])
-fig, ax = dr.plot.plan([topography, outline, holes, collars], label=False)
+outline = orebody.slice_by_plane(wf.datasets.ORIGIN + [0, 0, 200], [0, 0, 1])
+fig, ax = wf.plot.plan([topography, outline, holes, collars], label=False)
 ax.set_title("Topography, orebody at 200 m and drillholes")
 save(fig, "basics")
 
@@ -78,12 +78,12 @@ assert cube.volume == 8000.0
 # %% [markdown]
 # ## Joining meshes and editing tables
 #
-# `dr.concat` appends meshes in order without welding, so volumes add. `with_attributes` swaps whole attribute
+# `wf.concat` appends meshes in order without welding, so volumes add. `with_attributes` swaps whole attribute
 # tables, and `Table.with_columns` adds several columns at once.
 
 # %%
 second = cube.translate([40, 0, 0])
-pair = dr.concat([cube, second])
+pair = wf.concat([cube, second])
 print(pair.n_faces, "faces,", f"{pair.volume:.0f} m3")
 assert pair.volume == cube.volume + second.volume
 relabelled = pair.with_attributes(face={"block": [1] * 12 + [2] * 12})
@@ -97,7 +97,7 @@ print(relabelled.column_names, table.with_columns({"lab": ["A", "B", "C"]}).colu
 # point with its feature, part and vertex index.
 
 # %%
-crest = dr.Polylines.from_table(
+crest = wf.Polylines.from_table(
     {"ID": ["pad"] * 4, "X": [0, 30, 30, 0], "Y": [0, 0, 30, 30], "Z": [5, 5, 5, 5]}, z="Z", closed=True
 )
 print(crest.length(), crest.contains([[15, 15], [45, 15]]))

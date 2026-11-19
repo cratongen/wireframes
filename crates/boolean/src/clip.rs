@@ -1,6 +1,6 @@
-use drusa_core::predicates::Sign;
-use drusa_core::{Error, Mesh, Result, units};
-use drusa_ops::{RepairOptions, RepairReport, repair};
+use wireframes_core::predicates::Sign;
+use wireframes_core::{Error, Mesh, Result, units};
+use wireframes_ops::{RepairOptions, RepairReport, repair};
 
 use crate::BooleanOptions;
 use crate::arrangement;

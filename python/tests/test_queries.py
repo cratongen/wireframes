@@ -1,6 +1,6 @@
-import drusa as dr
 import numpy as np
 import pytest
+import wireframes as wf
 from conftest import close
 
 
@@ -16,15 +16,15 @@ def test_locate_contains_and_signed_distance(orebody, rng):
     assert (orebody.locate(orebody.coords) == 0).all()
     assert orebody.contains(orebody.coords).all()
     assert not orebody.contains(orebody.coords, boundary=False).any()
-    assert np.array_equal(orebody.locate(dr.PointSet(p)), loc)
-    with pytest.raises(dr.InvalidInput):
+    assert np.array_equal(orebody.locate(wf.PointSet(p)), loc)
+    with pytest.raises(wf.InvalidInput):
         orebody.locate([[0, 0, np.nan]])
-    with pytest.raises(dr.InvalidMesh):
-        dr.datasets.topography(n=20).locate(p)
+    with pytest.raises(wf.InvalidMesh):
+        wf.datasets.topography(n=20).locate(p)
 
 
 def test_closest_point_never_beats_a_vertex(orebody, rng):
-    p = rng.uniform(-50, 50, (100, 3)) + dr.datasets.ORIGIN + [0, 0, 200]
+    p = rng.uniform(-50, 50, (100, 3)) + wf.datasets.ORIGIN + [0, 0, 200]
     q, face, d = orebody.closest_point(p)
     assert q.shape == (100, 3) and face.dtype == np.int64
     assert np.allclose(np.linalg.norm(q - p, axis=1), d)
@@ -58,7 +58,7 @@ def test_trace_intervals_give_the_chord(box):
 
 
 def test_drillholes_through_the_orebody(orebody):
-    holes = dr.datasets.drillholes()
+    holes = wf.datasets.drillholes()
     total = 0.0
     for part in holes.parts:
         iv = orebody.trace_intervals(part, [0.0, 350.0])
@@ -86,9 +86,9 @@ def test_block_fraction_sums_to_solid_volume(orebody):
     rotated = c + local @ rot.T
     fr = orebody.block_fraction(rotated, [25, 25, 10], rotation=rot)
     assert close(fr.sum() * 25 * 25 * 10, orebody.volume, rel=1e-8)
-    with pytest.raises(dr.InvalidInput):
+    with pytest.raises(wf.InvalidInput):
         orebody.block_fraction(centres[:2], [1, 1, -1])
-    with pytest.raises(dr.InvalidInput):
+    with pytest.raises(wf.InvalidInput):
         orebody.block_fraction(centres[:2], [1, 1, 1], rotation=np.diag([1.0, 1.0, -1.0]))
 
 

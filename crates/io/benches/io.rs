@@ -1,7 +1,7 @@
 use criterion::{Criterion, criterion_group, criterion_main};
-use drusa_core::fixtures;
-use drusa_io::{Data, WriteOptions, ply, stl};
 use std::hint::black_box;
+use wireframes_core::fixtures;
+use wireframes_io::{Data, WriteOptions, ply, stl};
 
 fn binary_read_write(c: &mut Criterion) {
     let data = Data {

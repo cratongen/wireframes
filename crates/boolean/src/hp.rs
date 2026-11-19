@@ -6,8 +6,8 @@
 use std::cmp::Ordering;
 use std::sync::Arc;
 
-use drusa_core::exact::{Expansion, round_quotient};
-use drusa_core::predicates::{Sign, kept_axes, orient2d_axis, side_of_plane};
+use wireframes_core::exact::{Expansion, round_quotient};
+use wireframes_core::predicates::{Sign, kept_axes, orient2d_axis, side_of_plane};
 
 fn ord(s: Sign) -> Ordering {
     match s {

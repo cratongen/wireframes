@@ -1,6 +1,6 @@
 use std::io::Write;
 
-use drusa_core::{Error, Mesh, Result};
+use wireframes_core::{Error, Mesh, Result};
 
 use crate::common::{polygon_corners, polygon_groups};
 use crate::obj::{

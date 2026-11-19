@@ -1,4 +1,4 @@
-use drusa_core::{EdgeMap, Error, Mesh, Result};
+use wireframes_core::{EdgeMap, Error, Mesh, Result};
 
 /// Vertex neighbours from unique edges, and whether each vertex is on a boundary
 /// or non-manifold edge.
@@ -55,8 +55,8 @@ pub fn smooth_taubin(mesh: &Mesh, iterations: usize, lambda: f64, mu: f64) -> Re
 #[cfg(test)]
 mod tests {
     use super::*;
-    use drusa_core::fixtures::{pit_surface, sphere};
     use proptest::prelude::*;
+    use wireframes_core::fixtures::{pit_surface, sphere};
 
     proptest! {
         #[test]
@@ -78,8 +78,8 @@ mod tests {
         let m = sphere(2);
         let s = smooth_taubin(&m, 10, 0.5, -0.53).unwrap();
         assert!(s.validate(0.0).unwrap().summary.is_solid());
-        let v0 = drusa_ops::volume(&m).unwrap();
-        let v1 = drusa_ops::volume(&s).unwrap();
+        let v0 = wireframes_ops::volume(&m).unwrap();
+        let v1 = wireframes_ops::volume(&s).unwrap();
         assert!((v1 / v0 - 1.0).abs() < 0.05, "{v0} -> {v1}");
     }
 

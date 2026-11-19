@@ -1,6 +1,6 @@
-use drusa_core::predicates::orient2d;
-use drusa_core::{Aabb, Bvh, Mesh, Result, units};
 use rayon::prelude::*;
+use wireframes_core::predicates::orient2d;
+use wireframes_core::{Aabb, Bvh, Mesh, Result, units};
 
 use crate::measure::{dot, sub};
 
@@ -158,8 +158,8 @@ pub fn thickness(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use drusa_core::fixtures;
     use proptest::prelude::*;
+    use wireframes_core::fixtures;
 
     fn plane(z0: f64, gx: f64, gy: f64) -> Mesh {
         let v = [[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0]]

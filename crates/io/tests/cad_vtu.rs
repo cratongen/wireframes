@@ -3,10 +3,10 @@ mod cad_common;
 use std::io::Write;
 
 use cad_common::*;
-use drusa_core::{Column, ColumnData, Error, Mesh, PointSet, Polylines, Table};
-use drusa_io::{Data, UnstructuredGrid, WriteOptions, vtu};
 use flate2::{Compression, write::ZlibEncoder};
 use proptest::prelude::*;
+use wireframes_core::{Column, ColumnData, Error, Mesh, PointSet, Polylines, Table};
+use wireframes_io::{Data, UnstructuredGrid, WriteOptions, vtu};
 
 fn volume_grid() -> UnstructuredGrid {
     let mut points: Vec<[f64; 3]> = Vec::new();

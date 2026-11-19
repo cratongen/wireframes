@@ -1,6 +1,6 @@
-use drusa_core::validate::degenerate_mask;
-use drusa_core::{EdgeMap, Error, Mesh, Result, validate};
 use rayon::prelude::*;
+use wireframes_core::validate::degenerate_mask;
+use wireframes_core::{EdgeMap, Error, Mesh, Result, validate};
 
 const CHUNK: usize = 4096;
 
@@ -239,8 +239,8 @@ pub fn area_centroid(mesh: &Mesh) -> Option<[f64; 3]> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use drusa_core::fixtures::{self, broken};
     use proptest::prelude::*;
+    use wireframes_core::fixtures::{self, broken};
 
     fn close(a: f64, b: f64) -> bool {
         (a - b).abs() <= 1e-9 * 1f64.max(a.abs()).max(b.abs())

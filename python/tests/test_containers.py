@@ -1,12 +1,12 @@
 import importlib.util
 
-import drusa as dr
 import numpy as np
 import pytest
+import wireframes as wf
 
 
 def test_table_types_nulls_and_units():
-    t = dr.Table(
+    t = wf.Table(
         {"f": [1.0, np.nan, 3.0], "i": [1, None, 3], "b": [True, None, False], "s": ["a", None, "c"]}
     )
     assert t.num_rows == len(t) == 3
@@ -23,19 +23,19 @@ def test_table_types_nulls_and_units():
     assert "grade" in u and "grade" not in t
     assert t.filter([True, False, True])["i"].tolist() == [1, 3]
     assert set(t.with_columns({"k": [1, 2, 3]}).column_names) == {"f", "i", "b", "s", "k"}
-    assert dr.Table().with_column("a", [1, 2]).num_rows == 2
+    assert wf.Table().with_column("a", [1, 2]).num_rows == 2
     assert t.to_dict()["s"].tolist() == ["a", None, "c"]
-    with pytest.raises(dr.MissingColumn, match="columns are"):
+    with pytest.raises(wf.MissingColumn, match="columns are"):
         t.column("nope")
-    with pytest.raises(dr.InvalidInput):
-        dr.Table({"a": [1, 2], "b": [1]})
-    with pytest.raises(dr.InvalidInput):
-        dr.Table({"a": [object(), 1]})
+    with pytest.raises(wf.InvalidInput):
+        wf.Table({"a": [1, 2], "b": [1]})
+    with pytest.raises(wf.InvalidInput):
+        wf.Table({"a": [object(), 1]})
 
 
 @pytest.mark.skipif(importlib.util.find_spec("pandas") is None, reason="needs pandas")
 def test_table_to_pandas_keeps_nulls():
-    df = dr.Table({"i": [1, None], "s": ["a", None]}).to_pandas()
+    df = wf.Table({"i": [1, None], "s": ["a", None]}).to_pandas()
     assert df["i"].isna().tolist() == [False, True]
 
 
@@ -53,14 +53,14 @@ def null_lists(table, frame, kind):
 @pytest.mark.parametrize("kind", ["pandas", "polars", "pyarrow"])
 def test_table_conversions_keep_values_and_nulls(kind):
     pytest.importorskip(kind)
-    t = dr.Table(NULLED)
+    t = wf.Table(NULLED)
     frame = getattr(t, f"to_{kind}")()
     assert list(frame.columns if kind != "pyarrow" else frame.column_names) == t.column_names
     assert len(frame) == 3
     assert null_lists(t, frame, kind) == {n: [False, True, False] for n in t.column_names}
     row0 = [frame[n][0] if kind != "pyarrow" else frame[n][0].as_py() for n in t.column_names]
     assert row0 == [1.0, 1, True, "a"]
-    full = dr.Table({"a": [1, 2]})
+    full = wf.Table({"a": [1, 2]})
     assert null_lists(full, getattr(full, f"to_{kind}")(), kind) == {"a": [False, False]}
 
 
@@ -68,8 +68,8 @@ def test_table_conversions_keep_values_and_nulls(kind):
 def test_container_conversions_match_to_table(kind, box, rng):
     pytest.importorskip(kind)
     mesh = box([0, 0, 0], [1, 1, 1], name="b").with_vertex_column("id", np.arange(8))
-    lines = dr.Polylines([[[0, 0, 0], [1, 0, 0]], [[2, 2, 2], [3, 3, 3]]], attributes={"n": ["x", None]})
-    points = dr.PointSet(rng.uniform(0, 1, (5, 3)), {"g": [0.1, None, 0.3, 0.4, 0.5]})
+    lines = wf.Polylines([[[0, 0, 0], [1, 0, 0]], [[2, 2, 2], [3, 3, 3]]], attributes={"n": ["x", None]})
+    points = wf.PointSet(rng.uniform(0, 1, (5, 3)), {"g": [0.1, None, 0.3, 0.4, 0.5]})
     cases = [
         (mesh, {}, mesh.to_table()),
         (mesh, {"on": "faces"}, mesh.to_table(on="faces")),
@@ -94,11 +94,11 @@ def test_mesh_construction_and_attributes(box):
     assert m.column_names == ["id", "name", "w"]
     assert m.face_attributes.units == {"w": "m"}
     both = m.with_face_column("id", np.arange(12))
-    with pytest.raises(dr.InvalidInput, match="both"):
+    with pytest.raises(wf.InvalidInput, match="both"):
         both["id"]
     assert m.to_table().column_names == ["x", "y", "z", "id"]
     assert m.to_table(on="faces").column_names == ["v0", "v1", "v2", "name", "w"]
-    with pytest.raises(dr.InvalidInput):
+    with pytest.raises(wf.InvalidInput):
         m.to_table(on="edges")
     moved = m.with_vertices(m.coords + 1)
     assert np.array_equal(moved.triangles, m.triangles) and moved.column_names == m.column_names
@@ -106,11 +106,11 @@ def test_mesh_construction_and_attributes(box):
     assert half.n_faces == 6 and half.n_vertices <= 8
     t = m.with_attributes(face={"k": np.arange(12)})
     assert t.column_names == ["id", "k"]
-    with pytest.raises(dr.InvalidInput):
-        dr.Mesh([[0, 0, 0]], [[0, 1, 2]])
-    with pytest.raises(dr.InvalidInput):
-        dr.Mesh([[0, 0]], [])
-    with pytest.raises(dr.InvalidInput):
+    with pytest.raises(wf.InvalidInput):
+        wf.Mesh([[0, 0, 0]], [[0, 1, 2]])
+    with pytest.raises(wf.InvalidInput):
+        wf.Mesh([[0, 0]], [])
+    with pytest.raises(wf.InvalidInput):
         b.with_face_column("x", [1, 2])
 
 
@@ -126,7 +126,7 @@ def test_mesh_is_immutable(box):
 
 def test_concat_offsets_indices(box):
     a, b = box([0, 0, 0], [1, 1, 1], name="a"), box([2, 0, 0], [3, 1, 1])
-    c = dr.concat([a, b])
+    c = wf.concat([a, b])
     assert c.n_vertices == 16 and c.n_faces == 24
     assert c.triangles[12:].min() == 8
     assert c["name"].tolist() == ["a"] * 12 + [None] * 12
@@ -137,7 +137,7 @@ def test_polylines(rng):
     square = [[0, 0], [2, 0], [2, 2], [0, 2]]
     hole = [[0.5, 0.5], [1.5, 0.5], [1.5, 1.5], [0.5, 1.5]]
     line = [[5, 5, 1], [6, 5, 2]]
-    p = dr.Polylines(
+    p = wf.Polylines(
         [square, hole, line],
         closed=[True, True, False],
         features=[0, 0, 1],
@@ -162,24 +162,24 @@ def test_polylines(rng):
     assert len(points) == 10 and "part" in points.column_names
     assert p.filter([False, True]).coords.tolist() == [[5, 5, 1], [6, 5, 2]]
     assert p.with_column("w", [1.0, 2.0]).attributes["w"].tolist() == [1.0, 2.0]
-    with pytest.raises(dr.InvalidInput):
-        dr.Polylines([[[0, 0]]])
-    with pytest.raises(dr.InvalidInput):
+    with pytest.raises(wf.InvalidInput):
+        wf.Polylines([[[0, 0]]])
+    with pytest.raises(wf.InvalidInput):
         p.contains([[0, 0]], feature=7)
 
 
 def test_polylines_from_table():
     t = {"ID": ["a", "a", "a", "b", "b"], "X": [0, 1, 1, 5, 6], "Y": [0, 0, 1, 0, 0], "Z": [1, 1, 1, 2, 2]}
-    p = dr.Polylines.from_table(t, z="Z", crs="EPSG:31983")
+    p = wf.Polylines.from_table(t, z="Z", crs="EPSG:31983")
     assert len(p) == 2 and p.attributes["ID"].tolist() == ["a", "b"]
     assert p.parts[1].tolist() == [[5, 0, 2], [6, 0, 2]] and p.crs == "EPSG:31983"
-    parts = dr.Polylines.from_table({**t, "P": [0, 0, 0, 1, 1]}, z="Z", part="P")
+    parts = wf.Polylines.from_table({**t, "P": [0, 0, 0, 1, 1]}, z="Z", part="P")
     assert len(parts) == 2
 
 
 def test_point_set(rng):
     xyz = rng.uniform(0, 10, (20, 3))
-    p = dr.PointSet(xyz, {"grade": rng.uniform(0, 1, 20)}, crs="EPSG:31983")
+    p = wf.PointSet(xyz, {"grade": rng.uniform(0, 1, 20)}, crs="EPSG:31983")
     assert len(p) == 20 and p.column_names == ["grade"] and p.crs == "EPSG:31983"
     assert np.array_equal(p.coords, xyz)
     assert len(p.filter(p["grade"] > 0.5)) == int((p["grade"] > 0.5).sum())

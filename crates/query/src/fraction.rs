@@ -1,6 +1,6 @@
-use drusa_core::{Aabb, Bvh, Error, Mesh, Result};
-use drusa_ops::box_volume;
 use rayon::prelude::*;
+use wireframes_core::{Aabb, Bvh, Error, Mesh, Result};
+use wireframes_ops::box_volume;
 
 use crate::SurfaceIndex;
 use crate::distance::check_finite;
@@ -91,7 +91,7 @@ fn unit_fractions(mesh: &Mesh, bvh: &Bvh, centroids: &[[f64; 3]]) -> Vec<f64> {
 mod tests {
     use super::*;
     use crate::SolidIndex;
-    use drusa_core::fixtures;
+    use wireframes_core::fixtures;
 
     #[test]
     fn unit_cube_fractions() {

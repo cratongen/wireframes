@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 use std::io::Write;
 
-use drusa_core::{Column, ColumnData, Error, Mesh, Result};
+use wireframes_core::{Column, ColumnData, Error, Mesh, Result};
 
 use crate::common::{decode_name, encode_name};
 use crate::obj::{
@@ -287,12 +287,12 @@ fn normal(c: [[f64; 3]; 3]) -> [f64; 3] {
 
 /// The name a mesh without a `solid` column is written under; a column value
 /// equal to it is written escaped so the reader keeps the column.
-const DEFAULT_SOLID: &[u8] = b"drusa";
+const DEFAULT_SOLID: &[u8] = b"wireframes";
 
 fn solid_name(name: Option<&str>) -> String {
     let mut out = Vec::new();
     match name {
-        Some(n) if n.as_bytes() == DEFAULT_SOLID => out.extend_from_slice(b"%64rusa"),
+        Some(n) if n.as_bytes() == DEFAULT_SOLID => out.extend_from_slice(b"%77ireframes"),
         _ => encode_name(name, false, &mut out),
     }
     String::from_utf8_lossy(&out).into_owned()
@@ -326,7 +326,7 @@ fn write_ascii(m: &Mesh, solids: Option<(&[String], &Column)>) -> Result<Vec<u8>
     let name_of = |f: usize| -> String {
         match solids {
             Some((v, c)) => solid_name(c.is_valid(f).then(|| v[f].as_str())),
-            None => "drusa".into(),
+            None => "wireframes".into(),
         }
     };
     let mut current: Option<String> = None;
@@ -358,7 +358,7 @@ fn write_ascii(m: &Mesh, solids: Option<(&[String], &Column)>) -> Result<Vec<u8>
     }
     match current {
         Some(prev) => writeln!(out, "endsolid {prev}")?,
-        None => out.extend_from_slice(b"solid drusa\nendsolid drusa\n"),
+        None => out.extend_from_slice(b"solid wireframes\nendsolid wireframes\n"),
     }
     Ok(out)
 }
@@ -396,7 +396,7 @@ fn write_binary(m: &Mesh, attr: Option<&Column>) -> Result<Vec<u8>> {
     })?;
     let mut out = Vec::with_capacity(84 + 50 * m.n_faces());
     let mut header = [0u8; 80];
-    header[..5].copy_from_slice(b"drusa");
+    header[..10].copy_from_slice(b"wireframes");
     out.extend_from_slice(&header);
     out.extend_from_slice(&n.to_le_bytes());
     for f in 0..m.n_faces() {

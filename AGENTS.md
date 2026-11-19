@@ -1,10 +1,10 @@
-# Drusa
+# Wireframes
 
 ## Purpose
 
-Drusa is a Rust-core, Python-exposed library to read, write, plot, measure, and
+Wireframes is a Rust-core, Python-exposed library to read, write, plot, measure, and
 combine solids, surfaces, and strings for mining, geology, and petroleum. It has
-zero dependency on `boitata`; once mature, `boitata` will depend on `drusa` and
+zero dependency on `boitata`; once mature, `boitata` will depend on `wireframes` and
 delete its own mesh type and mesh readers. The primary user is the author for
 resource modeling and mine planning work, and the package is published as open
 source under the MIT license.
@@ -28,22 +28,23 @@ mise run compat     # install check across pip, uv, pixi, and conda
 
 ## Layout
 
-Planned repository layout (arrives in Milestone 1):
-
 - `crates/` - Rust workspace:
   - `core`: `Mesh`, `Polylines`, `PointSet`, attribute tables, validation report,
-    repair, and exact geometric predicates (`robust` crate).
+    and exact geometric predicates (`robust` crate).
   - `io`: readers and writers for OBJ, PLY, OFF, STL, DXF, VTK legacy, VTU, and
     Datamine `_tr.csv`/`_pt.csv` pairs.
   - `boolean`: native mesh arrangements, exact intersection predicates, implicit
     intersection points, boolean operations, plane slicing, and surface cutting.
   - `query`: point-in-solid, signed distance, ray/drillhole intersections, and
     exact block volume fractions inside solids.
-  - `construct`: constrained Delaunay DTM with breaklines, solid linking from
-    section strings, extrusion, decimation, smoothing, offset, and remeshing.
+  - `ops`: measures (volume, area, centroid, thickness, slices), repair,
+    connected components, and transforms.
+  - `build`: construction and editing: constrained Delaunay DTM with breaklines,
+    lofting solids from section strings, extrusion, contours, decimation,
+    smoothing, offset, and remeshing.
   - `py`: `pyo3` (`abi3-py311`) bindings built with `maturin`.
-- `python/drusa/` - Python package imported as `import drusa as dr` (thin
-  wrappers, `_drusa.pyi` stub, `plot.py`, `errors.py`, `_containers.py`).
+- `python/wireframes/` - Python package imported as `import wireframes as wf` (thin
+  wrappers, `_wireframes.pyi` stub, `plot.py`, `errors.py`, `_containers.py`).
 - `python/tests/` - pytest suite and property tests.
 - `examples/` - numbered script examples rendered into documentation.
 - `docs/` - `mkdocs` documentation site.
@@ -59,9 +60,9 @@ Planned repository layout (arrives in Milestone 1):
   identity `vol(A union B) + vol(A intersect B) = vol(A) + vol(B)`).
 - Match `boitata`'s Python API style: flat top-level exports, `.x`/`.y`/`.z`
   coordinate views, `.column_names`, `to_polars`/`to_pandas`/`to_pyarrow` on
-  tabular containers, `dr.plot` functions accepting `ax=None` and returning
+  tabular containers, `wf.plot` functions accepting `ax=None` and returning
   `(fig, ax)`, `numpy` as the sole required runtime dependency, and `matplotlib`
-  gated behind `drusa[plot]`.
+  gated behind `wireframes[plot]`.
 - Booleans refuse invalid meshes by default and raise `InvalidMesh` carrying the
   `MeshReport`. Repair is opt-in via `mesh.repair()` or `repair=True`, and every
   modification is recorded in the returned report.

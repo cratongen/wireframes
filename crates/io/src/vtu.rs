@@ -2,8 +2,8 @@
 
 use std::io::{Read, Write};
 
-use drusa_core::{Error, Mesh, Result};
 use flate2::{Compression, read::ZlibDecoder, write::ZlibEncoder};
+use wireframes_core::{Error, Mesh, Result};
 
 use crate::vtk::{
     Array, Cells, PolyData, Ty, Values, concat_tables, data_to_poly, flatten, grid_problem,
@@ -394,7 +394,7 @@ impl Piece {
         &mut self,
         rows_points: usize,
         rows_cells: usize,
-    ) -> Result<(drusa_core::Table, drusa_core::Table)> {
+    ) -> Result<(wireframes_core::Table, wireframes_core::Table)> {
         let pd = unflatten(self.section("PointData"), rows_points, "point")?;
         let cd = unflatten(self.section("CellData"), rows_cells, "cell")?;
         Ok((pd, cd))
@@ -607,7 +607,7 @@ fn merge_polys(mut ps: Vec<PolyData>) -> Result<PolyData> {
     }
     let mut points = Vec::new();
     let mut sections: Vec<Cells> = (0..4).map(|_| Cells::new()).collect();
-    let mut tables: [Vec<drusa_core::Table>; 4] = Default::default();
+    let mut tables: [Vec<wireframes_core::Table>; 4] = Default::default();
     for p in &ps {
         let base = points.len() as i64;
         points.extend_from_slice(&p.points);

@@ -1,8 +1,8 @@
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
 
-use drusa_core::predicates::{Sign, collinear3, side_of_plane};
-use drusa_core::{Error, HalfEdges, Mesh, Result, tolerance};
+use wireframes_core::predicates::{Sign, collinear3, side_of_plane};
+use wireframes_core::{Error, HalfEdges, Mesh, Result, tolerance};
 
 use crate::geom::{
     add, check_distinct_corners, check_finite, cross, dot, face_normal, normalize, scale, sub,
@@ -416,9 +416,9 @@ pub fn decimate(mesh: &Mesh, opts: &DecimateOptions) -> Result<Mesh> {
 mod tests {
     use super::*;
     use crate::close_to_elevation;
-    use drusa_core::fixtures::{sphere, torus};
-    use drusa_ops::area;
     use proptest::prelude::*;
+    use wireframes_core::fixtures::{sphere, torus};
+    use wireframes_ops::area;
 
     fn plate(n: u32) -> Mesh {
         let mut v = vec![];
@@ -459,8 +459,8 @@ mod tests {
         let report = d.validate(0.0).unwrap();
         assert!(report.summary.is_solid(), "{:?}", report.summary);
         let (v0, v1) = (
-            drusa_ops::volume(&m).unwrap(),
-            drusa_ops::volume(&d).unwrap(),
+            wireframes_ops::volume(&m).unwrap(),
+            wireframes_ops::volume(&d).unwrap(),
         );
         let change = (v1 - v0).abs();
         println!(
@@ -499,7 +499,7 @@ mod tests {
             let opts = DecimateOptions { max_error: Some(1e-6), preserve_boundary: preserve, ..Default::default() };
             let d = decimate(&solid, &opts).unwrap();
             prop_assert!(d.validate(0.0).unwrap().summary.is_solid());
-            let (v0, v1) = (drusa_ops::volume(&solid).unwrap(), drusa_ops::volume(&d).unwrap());
+            let (v0, v1) = (wireframes_ops::volume(&solid).unwrap(), wireframes_ops::volume(&d).unwrap());
             prop_assert!((v1 - v0).abs() <= 1e-9 * v0, "{} vs {}", v0, v1);
             prop_assert!(d.n_faces() < solid.n_faces() || n == 2);
 

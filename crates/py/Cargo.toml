@@ -1,5 +1,5 @@
 [package]
-name = "drusa-py"
+name = "wireframes-py"
 description = "Python bindings"
 version.workspace = true
 edition.workspace = true
@@ -8,16 +8,16 @@ license.workspace = true
 publish.workspace = true
 
 [lib]
-name = "_drusa"
+name = "_wireframes"
 crate-type = ["cdylib"]
 
 [dependencies]
-drusa-boolean.workspace = true
-drusa-build.workspace = true
-drusa-core.workspace = true
-drusa-io.workspace = true
-drusa-ops.workspace = true
-drusa-query.workspace = true
+wireframes-boolean.workspace = true
+wireframes-build.workspace = true
+wireframes-core.workspace = true
+wireframes-io.workspace = true
+wireframes-ops.workspace = true
+wireframes-query.workspace = true
 numpy.workspace = true
 pyo3.workspace = true
 

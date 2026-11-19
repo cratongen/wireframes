@@ -1,9 +1,9 @@
 mod cad_common;
 
 use cad_common::*;
-use drusa_core::{Column, ColumnData, Error, Mesh, PointSet, Polylines, Table};
-use drusa_io::{Data, DxfEntity, WriteOptions, dxf};
 use proptest::prelude::*;
+use wireframes_core::{Column, ColumnData, Error, Mesh, PointSet, Polylines, Table};
+use wireframes_io::{Data, DxfEntity, WriteOptions, dxf};
 
 fn polyface() -> WriteOptions {
     WriteOptions {

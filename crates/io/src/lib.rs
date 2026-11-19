@@ -3,7 +3,7 @@
 
 use std::path::{Path, PathBuf};
 
-use drusa_core::{Error, Mesh, PointSet, Polylines, Result};
+use wireframes_core::{Error, Mesh, PointSet, Polylines, Result};
 
 pub mod common;
 pub mod datamine_csv;

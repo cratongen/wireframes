@@ -10,8 +10,8 @@
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 
-use drusa_core::predicates::{Sign, incircle, orient2d};
-use drusa_core::{Error, Result};
+use wireframes_core::predicates::{Sign, incircle, orient2d};
+use wireframes_core::{Error, Result};
 
 pub(crate) trait Geom {
     /// Counter-clockwise orientation of points `a, b, c`.

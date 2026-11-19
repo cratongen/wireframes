@@ -29,11 +29,11 @@ exact predicates; `tolerance` only widens the duplicate-vertex test.
 
 ```python
 fixed, report = mesh.repair(weld=0.0, fill_holes="min_area")
-report.actions        # one row per change: action, vertex, face, other, reason
-report.vertex_map     # output vertex of each input vertex, -1 when removed
-report.face_map       # output face of each input face, -1 when removed
-report.holes_left     # boundary loops still open after the run
-report.summary        # count per action
+report.actions  # one row per change: action, vertex, face, other, reason
+report.vertex_map  # output vertex of each input vertex, -1 when removed
+report.face_map  # output face of each input face, -1 when removed
+report.holes_left  # boundary loops still open after the run
+report.summary  # count per action
 ```
 
 Steps run in order: weld, remove degenerate faces, remove duplicate faces, remove unused vertices, orient,
@@ -54,5 +54,5 @@ nothing.
 ??? example "examples/02-measure-repair/example_02.py"
 
     ```python
-    --8<-- "examples/02-measure-repair/example_02.py"
+    --8 < --"examples/02-measure-repair/example_02.py"
     ```

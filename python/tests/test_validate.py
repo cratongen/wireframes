@@ -1,6 +1,6 @@
-import drusa as dr
 import numpy as np
 import pytest
+import wireframes as wf
 
 
 def test_clean_solid_reports_nothing(box, orebody):
@@ -23,16 +23,16 @@ def test_removing_one_face_opens_three_edges(box):
 
 def test_duplicate_vertices_within_tolerance(box):
     b = box([0, 0, 0], [1, 1, 1])
-    near = dr.Mesh(np.vstack([b.coords, b.coords[:1] + 1e-6]), b.triangles)
+    near = wf.Mesh(np.vstack([b.coords, b.coords[:1] + 1e-6]), b.triangles)
     assert near.validate().summary["duplicate_vertices"] == 0
     assert near.validate(tolerance=1e-5).summary["duplicate_vertices"] == 1
     assert near.validate().summary["unused_vertices"] == 1
-    with pytest.raises(dr.InvalidInput):
+    with pytest.raises(wf.InvalidInput):
         b.validate(tolerance=-1.0)
 
 
 def test_overlapping_cubes_self_intersect(box):
-    m = dr.concat([box([0, 0, 0], [2, 2, 2]), box([1, 1, 1], [3, 3, 3])])
+    m = wf.concat([box([0, 0, 0], [2, 2, 2]), box([1, 1, 1], [3, 3, 3])])
     r = m.validate()
     assert r.summary["self_intersections"] > 0 and not r.is_solid
     assert r.summary["shells"] == 2
@@ -43,11 +43,11 @@ def test_inward_shell_and_flipped_face(box):
     assert b.flip().validate().summary["inward_shells"] == 1
     t = b.triangles.copy()
     t[0] = t[0][::-1]
-    assert dr.Mesh(b.coords, t).validate().summary["inconsistent_edges"] > 0
+    assert wf.Mesh(b.coords, t).validate().summary["inconsistent_edges"] > 0
 
 
 def test_counts_survive_face_permutation(rng, orebody):
     m = orebody.filter_faces(np.arange(orebody.n_faces) % 7 != 0)
     order = rng.permutation(m.n_faces)
-    shuffled = dr.Mesh(m.coords, m.triangles[order])
+    shuffled = wf.Mesh(m.coords, m.triangles[order])
     assert shuffled.validate().summary == m.validate().summary

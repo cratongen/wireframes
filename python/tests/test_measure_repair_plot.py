@@ -1,6 +1,6 @@
-import drusa as dr
 import numpy as np
 import pytest
+import wireframes as wf
 from conftest import close
 
 
@@ -44,7 +44,7 @@ def test_transform_flips_with_negative_determinant(box):
     assert m.volume == pytest.approx(6.0) and m.is_solid
     scale = np.diag([2.0, 2.0, 2.0, 1.0])
     assert b.transform(scale).volume == pytest.approx(48.0)
-    with pytest.raises(dr.InvalidInput):
+    with pytest.raises(wf.InvalidInput):
         b.transform(np.eye(3))
 
 
@@ -52,8 +52,8 @@ def test_to_length_unit(box):
     b = box([0, 0, 0], [1, 1, 1])
     ft = b.to_length_unit("ft")
     assert ft.length_unit == "ft" and ft.volume == pytest.approx(1 / 0.3048**3)
-    with pytest.raises(dr.InvalidInput):
-        dr.Mesh(b.coords, b.triangles).to_length_unit("ft")
+    with pytest.raises(wf.InvalidInput):
+        wf.Mesh(b.coords, b.triangles).to_length_unit("ft")
 
 
 def test_repair_restores_a_shuffled_duplicated_flipped_solid(orebody, rng):
@@ -62,7 +62,7 @@ def test_repair_restores_a_shuffled_duplicated_flipped_solid(orebody, rng):
     flip = rng.random(len(tris)) < 0.3
     tris[flip] = tris[flip][:, ::-1]
     tris = np.vstack([tris, tris[:5]])
-    soup = dr.Mesh(soup_v, tris[rng.permutation(len(tris))])
+    soup = wf.Mesh(soup_v, tris[rng.permutation(len(tris))])
     assert not soup.is_solid
     fixed, report = soup.repair()
     assert fixed.is_solid
@@ -89,12 +89,12 @@ def test_repair_fills_holes(box):
         assert report.summary["face_added"] == 2 and report.holes_left == 0
     _, report = open_box.repair()
     assert report.holes_left == 1
-    with pytest.raises(dr.InvalidInput):
+    with pytest.raises(wf.InvalidInput):
         open_box.repair(fill_holes="nope")
 
 
 def test_components_add_up(box):
-    m = dr.concat([box([0, 0, 0], [1, 1, 1]), box([3, 0, 0], [5, 1, 1])])
+    m = wf.concat([box([0, 0, 0], [1, 1, 1]), box([3, 0, 0], [5, 1, 1])])
     parts = m.components()
     assert [p.n_faces for p in parts] == [12, 12]
     assert sum(p.volume for p in parts) == pytest.approx(m.volume)
@@ -105,8 +105,8 @@ def test_thickness_of_two_planes():
     g = np.linspace(0, 10, 6)
     gx, gy = np.meshgrid(g, g)
     xy = np.column_stack([gx.ravel(), gy.ravel()])
-    top = dr.dtm(np.column_stack([xy, 5 + 0.1 * xy[:, 0]]))
-    bottom = dr.dtm(np.column_stack([xy, 1 + 0.05 * xy[:, 1]]))
+    top = wf.dtm(np.column_stack([xy, 5 + 0.1 * xy[:, 0]]))
+    bottom = wf.dtm(np.column_stack([xy, 1 + 0.05 * xy[:, 1]]))
     q = np.array([[2.5, 3.5], [7.0, 1.0], [20.0, 20.0]])
     t = top.thickness(bottom, q)
     expected = 5 + 0.1 * q[:, 0] - 1 - 0.05 * q[:, 1]
@@ -116,7 +116,7 @@ def test_thickness_of_two_planes():
     assert np.allclose(top.vertical_distance(p3), p3[:, 2] - (5 + 0.1 * q[:2, 0]))
     normal = top.thickness(bottom, q[:2], mode="normal")
     assert (normal <= t[:2] + 1e-12).all() and (normal > 0).all()
-    with pytest.raises(dr.InvalidInput):
+    with pytest.raises(wf.InvalidInput):
         top.thickness(bottom, q, mode="sideways")
 
 
@@ -125,10 +125,10 @@ plt = pytest.importorskip("matplotlib.pyplot")
 
 @pytest.mark.parametrize("view", ["plan", "section", "surface3d"])
 def test_plot_returns_fig_ax_and_reuses_ax(view, orebody):
-    holes = dr.datasets.drillholes(n=3)
+    holes = wf.datasets.drillholes(n=3)
     points = holes.to_points()
-    fn = getattr(dr.plot, view)
-    args = (dr.datasets.ORIGIN, [1, 0, 0]) if view == "section" else ()
+    fn = getattr(wf.plot, view)
+    args = (wf.datasets.ORIGIN, [1, 0, 0]) if view == "section" else ()
     fig, ax = fn([orebody, holes, points], *args)
     assert ax.figure is fig
     projection = "3d" if view == "surface3d" else None
@@ -140,17 +140,17 @@ def test_plot_returns_fig_ax_and_reuses_ax(view, orebody):
 
 
 def test_plot_values_and_problems(orebody):
-    _, ax = dr.plot.plan(orebody, "section", edges=True, label=True)
+    _, ax = wf.plot.plan(orebody, "section", edges=True, label=True)
     assert ax.get_xlabel() == "x (m)"
-    _, ax = dr.plot.section(orebody, dr.datasets.ORIGIN, [0, 1, 0], values="section", thickness=10)
+    _, ax = wf.plot.section(orebody, wf.datasets.ORIGIN, [0, 1, 0], values="section", thickness=10)
     assert len(ax.lines) > 0
-    _, ax = dr.plot.section(orebody, dr.datasets.ORIGIN + [0, 0, 200], [0.2, 0.1, 1])
+    _, ax = wf.plot.section(orebody, wf.datasets.ORIGIN + [0, 0, 200], [0.2, 0.1, 1])
     assert ax.get_xlabel() == "u (m)"
     holed = orebody.filter_faces(np.arange(orebody.n_faces) != 3)
-    _, ax = dr.plot.surface3d(holed, np.arange(holed.n_faces), problems=holed.validate())
+    _, ax = wf.plot.surface3d(holed, np.arange(holed.n_faces), problems=holed.validate())
     assert len(ax.collections) == 2
-    with pytest.raises(dr.InvalidInput):
-        dr.plot.plan(orebody, np.ones(5))
-    with pytest.raises(dr.InvalidInput):
-        dr.plot.plan("not geometry")
+    with pytest.raises(wf.InvalidInput):
+        wf.plot.plan(orebody, np.ones(5))
+    with pytest.raises(wf.InvalidInput):
+        wf.plot.plan("not geometry")
     plt.close("all")

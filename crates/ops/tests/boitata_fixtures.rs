@@ -2,9 +2,9 @@
 //! ported with boitata's expected counts. Kinds boitata does not have
 //! (`CoplanarOverlap`, `UnusedVertex`) are asserted separately.
 
-use drusa_core::{Mesh, MeshProblem, MeshProblemKind, MeshSummary, validate};
-use drusa_ops::{HoleFill, RepairOptions, RepairReport, repair, volume};
 use proptest::prelude::*;
+use wireframes_core::{Mesh, MeshProblem, MeshProblemKind, MeshSummary, validate};
+use wireframes_ops::{HoleFill, RepairOptions, RepairReport, repair, volume};
 
 use MeshProblemKind::*;
 

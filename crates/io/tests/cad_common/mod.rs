@@ -1,8 +1,8 @@
 #![allow(dead_code)]
 
-use drusa_core::{Column, Mesh, PointSet, Polylines, Table};
-use drusa_io::{Data, WriteOptions};
 use proptest::prelude::*;
+use wireframes_core::{Column, Mesh, PointSet, Polylines, Table};
+use wireframes_io::{Data, WriteOptions};
 
 pub fn ascii() -> WriteOptions {
     WriteOptions {

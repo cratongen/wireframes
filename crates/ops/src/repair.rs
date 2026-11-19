@@ -1,10 +1,12 @@
 use std::collections::{HashMap, HashSet};
 
-use drusa_core::predicates::collinear3;
-use drusa_core::topology::locate_point;
-use drusa_core::validate::{degenerate_mask, earliest_within};
-use drusa_core::{Aabb, EdgeMap, Mesh, MeshProblemKind, MeshSummary, Result, tolerance, validate};
 use rayon::prelude::*;
+use wireframes_core::predicates::collinear3;
+use wireframes_core::topology::locate_point;
+use wireframes_core::validate::{degenerate_mask, earliest_within};
+use wireframes_core::{
+    Aabb, EdgeMap, Mesh, MeshProblemKind, MeshSummary, Result, tolerance, validate,
+};
 
 use crate::measure::{cross, dot, norm, sub, sum_by};
 
@@ -320,7 +322,8 @@ fn fill(v: &[[f64; 3]], p: &[u32], how: HoleFill) -> Vec<[u32; 3]> {
     let o = Aabb::from_points(&p.iter().map(|&i| v[i as usize]).collect::<Vec<_>>()).min;
     let local: Vec<[f64; 3]> = p.iter().map(|&i| sub(v[i as usize], o)).collect();
     let cost = |i: usize, m: usize, j: usize| {
-        let degenerate = drusa_core::predicates::collinear3(local[i], local[m], local[j]) as usize;
+        let degenerate =
+            wireframes_core::predicates::collinear3(local[i], local[m], local[j]) as usize;
         (
             degenerate,
             tri_area2(&local, [i as u32, m as u32, j as u32]),
@@ -552,9 +555,9 @@ pub fn repair(mesh: &Mesh, opts: &RepairOptions) -> Result<(Mesh, RepairReport)>
 mod tests {
     use super::*;
     use crate::measure::volume;
-    use drusa_core::fixtures::{self, Rng, broken};
-    use drusa_core::{Column, Error};
     use proptest::prelude::*;
+    use wireframes_core::fixtures::{self, Rng, broken};
+    use wireframes_core::{Column, Error};
 
     fn close(a: f64, b: f64) -> bool {
         (a - b).abs() <= 1e-9 * 1f64.max(a.abs()).max(b.abs())
@@ -795,7 +798,7 @@ mod tests {
         assert_eq!(t.len(), 3);
         for f in t {
             let c = f.map(|i| ring[i as usize]);
-            assert!(!drusa_core::predicates::collinear3(c[0], c[1], c[2]));
+            assert!(!wireframes_core::predicates::collinear3(c[0], c[1], c[2]));
         }
     }
 

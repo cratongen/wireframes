@@ -2,7 +2,7 @@
 
 from . import _containers, errors
 from ._containers import Dataset, read
-from ._drusa import (
+from ._wireframes import (
     Mesh,
     MeshReport,
     PointSet,
@@ -26,13 +26,12 @@ from ._drusa import (
     union,
     write,
 )
-from .errors import DrusaError, FileError, InvalidInput, InvalidMesh, MissingColumn
+from .errors import FileError, InvalidInput, InvalidMesh, MissingColumn, WireframesError
 
 del _containers
 
 __all__ = [
     "Dataset",
-    "DrusaError",
     "FileError",
     "InvalidInput",
     "InvalidMesh",
@@ -44,6 +43,7 @@ __all__ = [
     "RepairReport",
     "Table",
     "UnstructuredGrid",
+    "WireframesError",
     "__version__",
     "concat",
     "cut_fill",
@@ -71,4 +71,4 @@ def __getattr__(name: str):
         import importlib
 
         return importlib.import_module(f"{__name__}.{name}")
-    raise AttributeError(f"module 'drusa' has no attribute {name!r}")
+    raise AttributeError(f"module 'wireframes' has no attribute {name!r}")

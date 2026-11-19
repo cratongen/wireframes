@@ -5,11 +5,11 @@ import subprocess
 import sys
 from pathlib import Path
 
-import drusa as dr
 import numpy as np
 import pytest
+import wireframes as wf
 
-STUB = Path(dr.__file__).with_name("_drusa.pyi")
+STUB = Path(wf.__file__).with_name("_wireframes.pyi")
 
 
 def stub_names():
@@ -29,74 +29,74 @@ def stub_names():
 def test_every_stub_name_exists_at_runtime():
     top, members = stub_names()
     for name in top:
-        assert hasattr(dr._drusa, name), name
+        assert hasattr(wf._wireframes, name), name
     for cls, names in members.items():
         for name in names:
-            assert hasattr(getattr(dr._drusa, cls), name), f"{cls}.{name}"
+            assert hasattr(getattr(wf._wireframes, cls), name), f"{cls}.{name}"
 
 
 def test_every_public_runtime_name_is_in_the_stub():
     top, members = stub_names()
-    public = {n for n in dir(dr._drusa) if not n.startswith("__") or n == "__version__"}
+    public = {n for n in dir(wf._wireframes) if not n.startswith("__") or n == "__version__"}
     assert public - top == set()
     for cls, names in members.items():
-        runtime = {n for n in vars(getattr(dr._drusa, cls)) if not n.startswith("_")}
+        runtime = {n for n in vars(getattr(wf._wireframes, cls)) if not n.startswith("_")}
         runtime |= {
-            n for n in ("__or__", "__and__", "__sub__", "__xor__") if n in vars(getattr(dr._drusa, cls))
+            n for n in ("__or__", "__and__", "__sub__", "__xor__") if n in vars(getattr(wf._wireframes, cls))
         }
         assert runtime - names == set(), cls
 
 
 def test_every_exported_name_exists():
-    for name in dr.__all__:
-        assert getattr(dr, name) is not None, name
-    assert dr.__version__.count(".") == 2
+    for name in wf.__all__:
+        assert getattr(wf, name) is not None, name
+    assert wf.__version__.count(".") == 2
 
 
 def test_unknown_attribute_raises():
     with pytest.raises(AttributeError):
-        dr.no_such_name  # noqa: B018
+        wf.no_such_name  # noqa: B018
 
 
 def test_errors_subclass_builtins():
-    assert issubclass(dr.InvalidMesh, dr.InvalidInput)
-    assert issubclass(dr.InvalidInput, ValueError)
-    assert issubclass(dr.FileError, OSError)
-    assert issubclass(dr.MissingColumn, KeyError)
-    assert all(issubclass(e, dr.DrusaError) for e in (dr.InvalidInput, dr.FileError, dr.MissingColumn))
+    assert issubclass(wf.InvalidMesh, wf.InvalidInput)
+    assert issubclass(wf.InvalidInput, ValueError)
+    assert issubclass(wf.FileError, OSError)
+    assert issubclass(wf.MissingColumn, KeyError)
+    assert all(issubclass(e, wf.WireframesError) for e in (wf.InvalidInput, wf.FileError, wf.MissingColumn))
 
 
 def test_each_rust_error_maps_to_its_class(tmp_path, box):
     b = box([0, 0, 0], [1, 1, 1])
-    with pytest.raises(dr.InvalidInput):
-        dr.Mesh([[0, 0, np.inf]], [])
-    with pytest.raises(dr.MissingColumn):
+    with pytest.raises(wf.InvalidInput):
+        wf.Mesh([[0, 0, np.inf]], [])
+    with pytest.raises(wf.MissingColumn):
         b["nope"]
-    with pytest.raises(dr.FileError):
-        dr.read(tmp_path / "missing.obj")
+    with pytest.raises(wf.FileError):
+        wf.read(tmp_path / "missing.obj")
     bad = tmp_path / "bad.off"
     bad.write_text("OFF\n3 1 0\n0 0 0\n1 0 0\n")
-    with pytest.raises(dr.FileError):
-        dr.read(bad)
-    with pytest.raises(dr.InvalidInput, match="unknown file extension"):
-        dr.read(tmp_path / "x.unknown")
-    with pytest.raises(dr.InvalidInput, match="crs mismatch"):
-        dr.Mesh(b.coords, b.triangles, crs="EPSG:1") | dr.Mesh(b.coords + 0.5, b.triangles, crs="EPSG:2")
-    with pytest.raises(dr.InvalidInput, match="length unit mismatch"):
-        dr.concat(
+    with pytest.raises(wf.FileError):
+        wf.read(bad)
+    with pytest.raises(wf.InvalidInput, match="unknown file extension"):
+        wf.read(tmp_path / "x.unknown")
+    with pytest.raises(wf.InvalidInput, match="crs mismatch"):
+        wf.Mesh(b.coords, b.triangles, crs="EPSG:1") | wf.Mesh(b.coords + 0.5, b.triangles, crs="EPSG:2")
+    with pytest.raises(wf.InvalidInput, match="length unit mismatch"):
+        wf.concat(
             [
-                dr.Mesh(b.coords, b.triangles, length_unit="m"),
-                dr.Mesh(b.coords, b.triangles, length_unit="ft"),
+                wf.Mesh(b.coords, b.triangles, length_unit="m"),
+                wf.Mesh(b.coords, b.triangles, length_unit="ft"),
             ]
         )
-    with pytest.raises(dr.InvalidMesh) as e:
+    with pytest.raises(wf.InvalidMesh) as e:
         b.filter_faces(np.arange(12) > 0).volume  # noqa: B018
-    assert isinstance(e.value.report, dr.MeshReport)
+    assert isinstance(e.value.report, wf.MeshReport)
     assert e.value.report.summary["boundary_edges"] == 3
 
 
 def test_matplotlib_stays_optional():
-    code = "import sys, drusa; drusa.Mesh([[0,0,0]], []); assert 'matplotlib' not in sys.modules"
+    code = "import sys, wireframes; wireframes.Mesh([[0,0,0]], []); assert 'matplotlib' not in sys.modules"
     subprocess.run([sys.executable, "-c", code], check=True)
 
 
@@ -118,6 +118,6 @@ def test_property_dtypes_and_shapes(box, orebody):
     assert m.locate(m.coords).dtype == np.int8
     assert m.contains(m.coords).dtype == np.bool_
     assert m.component_labels().dtype == np.int64
-    p = dr.datasets.drillholes(n=3)
+    p = wf.datasets.drillholes(n=3)
     assert p.closed.dtype == np.bool_ and p.feature.dtype == np.int64
     assert p.locate(p.coords).dtype == np.int64

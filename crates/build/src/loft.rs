@@ -1,4 +1,4 @@
-use drusa_core::{Column, Error, Mesh, Polylines, Result};
+use wireframes_core::{Column, Error, Mesh, Polylines, Result};
 
 use crate::geom::{centroid, check_finite, cross, dot, newell, norm, sub};
 use crate::polygon::triangulate_region;
@@ -178,7 +178,7 @@ mod tests {
             let p = Polylines::from_parts(vec![square(a, 10.0, ccw0), square(a, 10.0 + h, ccw1)], vec![true, true], None).unwrap();
             let m = loft(&p, &LoftOptions::default()).unwrap();
             let want = a * a * h;
-            let got = drusa_ops::volume(&m).unwrap();
+            let got = wireframes_ops::volume(&m).unwrap();
             prop_assert!((got - want).abs() <= 1e-9 * want.max(1.0), "{} vs {}", got, want);
         }
     }
@@ -204,7 +204,7 @@ mod tests {
         )
         .unwrap();
         let m = loft(&p, &LoftOptions::default()).unwrap();
-        assert!(drusa_ops::volume(&m).unwrap() > 0.0);
+        assert!(wireframes_ops::volume(&m).unwrap() > 0.0);
         let open = loft(&p, &LoftOptions { cap_ends: false }).unwrap();
         assert!(!open.is_closed());
     }

@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use drusa_core::{Column, ColumnData, Error, Mesh, Result, Table};
+use wireframes_core::{Column, ColumnData, Error, Mesh, Result, Table};
 
 use crate::dxf::decode_text;
 use crate::vtk::fmt_f64;

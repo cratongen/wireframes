@@ -293,89 +293,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "460fbee9c2c2f33933d720630a6a0bac33ba7053db5344fac858d4b8952d77d5"
 
 [[package]]
-name = "drusa-boolean"
-version = "0.1.0"
-dependencies = [
- "criterion",
- "drusa-core",
- "drusa-ops",
- "num-bigint",
- "num-rational",
- "proptest",
- "rayon",
-]
-
-[[package]]
-name = "drusa-build"
-version = "0.1.0"
-dependencies = [
- "drusa-boolean",
- "drusa-core",
- "drusa-ops",
- "drusa-query",
- "proptest",
- "rayon",
- "spade",
-]
-
-[[package]]
-name = "drusa-core"
-version = "0.1.0"
-dependencies = [
- "num-bigint",
- "num-rational",
- "proptest",
- "rayon",
- "robust",
- "thiserror",
-]
-
-[[package]]
-name = "drusa-io"
-version = "0.1.0"
-dependencies = [
- "criterion",
- "drusa-core",
- "flate2",
- "proptest",
- "rayon",
-]
-
-[[package]]
-name = "drusa-ops"
-version = "0.1.0"
-dependencies = [
- "drusa-core",
- "proptest",
- "rayon",
-]
-
-[[package]]
-name = "drusa-py"
-version = "0.1.0"
-dependencies = [
- "drusa-boolean",
- "drusa-build",
- "drusa-core",
- "drusa-io",
- "drusa-ops",
- "drusa-query",
- "numpy",
- "pyo3",
-]
-
-[[package]]
-name = "drusa-query"
-version = "0.1.0"
-dependencies = [
- "criterion",
- "drusa-core",
- "drusa-ops",
- "proptest",
- "rayon",
-]
-
-[[package]]
 name = "either"
 version = "1.19.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1302,6 +1219,89 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8c3b93199df0ab874cdf0c6a94f0a0dc3423fe41f1cafb62b8bd7b1deb277aef"
 dependencies = [
  "memchr",
+]
+
+[[package]]
+name = "wireframes-boolean"
+version = "0.1.0"
+dependencies = [
+ "criterion",
+ "num-bigint",
+ "num-rational",
+ "proptest",
+ "rayon",
+ "wireframes-core",
+ "wireframes-ops",
+]
+
+[[package]]
+name = "wireframes-build"
+version = "0.1.0"
+dependencies = [
+ "proptest",
+ "rayon",
+ "spade",
+ "wireframes-boolean",
+ "wireframes-core",
+ "wireframes-ops",
+ "wireframes-query",
+]
+
+[[package]]
+name = "wireframes-core"
+version = "0.1.0"
+dependencies = [
+ "num-bigint",
+ "num-rational",
+ "proptest",
+ "rayon",
+ "robust",
+ "thiserror",
+]
+
+[[package]]
+name = "wireframes-io"
+version = "0.1.0"
+dependencies = [
+ "criterion",
+ "flate2",
+ "proptest",
+ "rayon",
+ "wireframes-core",
+]
+
+[[package]]
+name = "wireframes-ops"
+version = "0.1.0"
+dependencies = [
+ "proptest",
+ "rayon",
+ "wireframes-core",
+]
+
+[[package]]
+name = "wireframes-py"
+version = "0.1.0"
+dependencies = [
+ "numpy",
+ "pyo3",
+ "wireframes-boolean",
+ "wireframes-build",
+ "wireframes-core",
+ "wireframes-io",
+ "wireframes-ops",
+ "wireframes-query",
+]
+
+[[package]]
+name = "wireframes-query"
+version = "0.1.0"
+dependencies = [
+ "criterion",
+ "proptest",
+ "rayon",
+ "wireframes-core",
+ "wireframes-ops",
 ]
 
 [[package]]

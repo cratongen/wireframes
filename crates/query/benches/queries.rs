@@ -1,7 +1,7 @@
 use criterion::{Criterion, criterion_group, criterion_main};
-use drusa_core::fixtures;
-use drusa_query::{Blocks, SolidIndex, Trace};
 use std::hint::black_box;
+use wireframes_core::fixtures;
+use wireframes_query::{Blocks, SolidIndex, Trace};
 
 fn queries(c: &mut Criterion) {
     let s = SolidIndex::new(&fixtures::torus(64, 32)).unwrap();

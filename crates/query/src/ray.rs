@@ -1,7 +1,7 @@
 use std::cmp::Ordering;
 
-use drusa_core::exact::{Expansion, ImplicitPoint};
-use drusa_core::predicates::{
+use wireframes_core::exact::{Expansion, ImplicitPoint};
+use wireframes_core::predicates::{
     Sign, kept_axes, orient2d_axis, orient3d, projection_axis, side_of_plane,
 };
 

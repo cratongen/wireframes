@@ -1,7 +1,9 @@
-use drusa_boolean::{BooleanOptions, clip_by_surface, cut_fill, slice_by_plane, split_by_plane};
-use drusa_core::fixtures;
-use drusa_core::{Column, Mesh, Polylines};
 use proptest::prelude::*;
+use wireframes_boolean::{
+    BooleanOptions, clip_by_surface, cut_fill, slice_by_plane, split_by_plane,
+};
+use wireframes_core::fixtures;
+use wireframes_core::{Column, Mesh, Polylines};
 
 mod support;
 use support::closed_manifold;
@@ -261,7 +263,7 @@ fn split_cap_with_rounded_collinear_points_stays_closed() {
     assert!(closed(&a) && closed(&b));
     assert!(close(volume(&a) + volume(&b), volume(&m), 1e-9));
     let slivers = |x: &Mesh| {
-        drusa_core::validate::degenerate_mask(x)
+        wireframes_core::validate::degenerate_mask(x)
             .iter()
             .filter(|d| **d)
             .count()

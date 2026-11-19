@@ -4,7 +4,7 @@
 use std::collections::{BTreeMap, HashMap};
 use std::fmt::Write as _;
 
-use drusa_core::{Column, ColumnData, Error, PointSet, Polylines, Result, Table};
+use wireframes_core::{Column, ColumnData, Error, PointSet, Polylines, Result, Table};
 
 use crate::common::polygons;
 use crate::vtk::{Fan, fmt_f64};
@@ -384,14 +384,14 @@ impl Out {
     }
 }
 
-const DRUSA_APP: &str = "DRUSA";
+const WIREFRAMES_APP: &str = "WIREFRAMES";
 
-/// The feature index in a `DRUSA` extended-data block, written on every part of
+/// The feature index in a `WIREFRAMES` extended-data block, written on every part of
 /// a feature with several parts.
 fn xdata_feature(body: &[Group]) -> Result<Option<i64>> {
     let Some(k) = body
         .iter()
-        .position(|g| g.code == 1001 && g.value == DRUSA_APP)
+        .position(|g| g.code == 1001 && g.value == WIREFRAMES_APP)
     else {
         return Ok(None);
     };
@@ -977,7 +977,7 @@ pub fn write(data: &Data, opts: &WriteOptions) -> Result<Vec<u8>> {
                 ents.p(10, [0.0; 3]);
                 ents.g(70, 8 | pl.closed()[p] as i32);
                 if multipart {
-                    ents.g(1001, DRUSA_APP);
+                    ents.g(1001, WIREFRAMES_APP);
                     ents.g(1071, f);
                 }
                 for &q in pl.part(p) {
@@ -1033,7 +1033,7 @@ pub fn write(data: &Data, opts: &WriteOptions) -> Result<Vec<u8>> {
     w.g(2, "APPID");
     w.g(70, 1);
     w.g(0, "APPID");
-    w.g(2, DRUSA_APP);
+    w.g(2, WIREFRAMES_APP);
     w.g(70, 0);
     w.g(0, "ENDTAB");
     w.g(0, "ENDSEC");

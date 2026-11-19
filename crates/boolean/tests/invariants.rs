@@ -1,11 +1,11 @@
 mod support;
 use support::closed_manifold;
 
-use drusa_boolean::{BooleanOptions, Op, boolean};
-use drusa_core::fixtures::{self, broken};
-use drusa_core::topology::locate_point;
-use drusa_core::{Error, Mesh};
 use proptest::prelude::*;
+use wireframes_boolean::{BooleanOptions, Op, boolean};
+use wireframes_core::fixtures::{self, broken};
+use wireframes_core::topology::locate_point;
+use wireframes_core::{Error, Mesh};
 
 fn volume(m: &Mesh) -> f64 {
     let o = m.bounds().map_or([0.0; 3], |b| b.min);
@@ -255,7 +255,7 @@ fn results_do_not_depend_on_thread_count() {
 
 #[test]
 fn face_attributes_follow_their_source() {
-    use drusa_core::Column;
+    use wireframes_core::Column;
     let a = fixtures::cube()
         .with_face_column("rock", Column::i64(vec![1; 12]))
         .unwrap();
@@ -421,7 +421,7 @@ proptest! {
 
 /// A positively oriented tetrahedron, `None` when flat.
 fn tet(p: [[f64; 3]; 4]) -> Option<Mesh> {
-    use drusa_core::predicates::{Sign, side_of_plane};
+    use wireframes_core::predicates::{Sign, side_of_plane};
     let t = match side_of_plane(p[3], p[0], p[1], p[2]) {
         Sign::Zero => return None,
         Sign::Negative => vec![[0, 1, 2], [0, 3, 1], [1, 3, 2], [0, 2, 3]],

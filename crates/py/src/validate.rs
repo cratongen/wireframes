@@ -1,6 +1,6 @@
-use drusa_core::{Column, MeshReport, MeshSummary, Table};
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
+use wireframes_core::{Column, MeshReport, MeshSummary, Table};
 
 use crate::containers::{PyMesh, PyTable};
 use crate::errors::to_py;
@@ -43,7 +43,7 @@ pub(crate) fn summary_dict<'py>(py: Python<'py>, s: &MeshSummary) -> PyResult<Bo
 
 /// What ``Mesh.validate`` found: problem counts and every problem with its
 /// face, vertex and edge.
-#[pyclass(name = "MeshReport", module = "drusa", frozen)]
+#[pyclass(name = "MeshReport", module = "wireframes", frozen)]
 pub(crate) struct PyMeshReport {
     pub(crate) inner: MeshReport,
 }
@@ -63,7 +63,7 @@ impl PyMeshReport {
     #[getter]
     fn problems(&self) -> PyResult<PyTable> {
         let p = &self.inner.problems;
-        let int = |f: &dyn Fn(&drusa_core::MeshProblem) -> Option<i64>| {
+        let int = |f: &dyn Fn(&wireframes_core::MeshProblem) -> Option<i64>| {
             nullable_i64(p.iter().map(f).collect())
         };
         let table = Table::new(p.len())

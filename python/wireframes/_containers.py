@@ -10,8 +10,8 @@ from typing import Any, NamedTuple
 
 import numpy as np
 
-from . import _drusa
-from ._drusa import Mesh, PointSet, Polylines, Table
+from . import _wireframes
+from ._wireframes import Mesh, PointSet, Polylines, Table
 from .errors import InvalidInput
 
 
@@ -37,7 +37,7 @@ class Dataset(NamedTuple):
     mesh: Mesh | None
     polylines: Polylines | None
     points: PointSet | None
-    grid: _drusa.UnstructuredGrid | None
+    grid: _wireframes.UnstructuredGrid | None
     length_unit: str | None
     warnings: list[str]
 
@@ -67,7 +67,7 @@ def read(path: str | PathLike[str], *, crs: str | None = None, length_unit: str 
     InvalidInput
         When `length_unit` disagrees with the unit the file declares.
     """
-    return Dataset(*_drusa._read(path, crs=crs, length_unit=length_unit))
+    return Dataset(*_wireframes._read(path, crs=crs, length_unit=length_unit))
 
 
 def _is_null(x: Any) -> bool:
