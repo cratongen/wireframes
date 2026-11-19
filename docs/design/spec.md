@@ -962,8 +962,12 @@ Arrangement (`arrangement.rs`):
    splitting the face across its longest edge at its middle corner (the new faces
    keep that face's source). A face whose middle corner rounds to strictly inside the
    coplanar face across its longest edge (exact `orient3d` and `orient2d_axis` on the
-   rounded points) is a fold and is removed the same way. Every step keeps each edge
-   used once in each direction. Equal coordinates in different shells stay apart
+   rounded points) is a fold and is removed the same way. Each such split flips the
+   longest edge to the edge from the middle corner to the neighbour's far corner; it
+   is skipped where that edge already exists or where the longest edge was itself
+   made by a split, so every split removes an edge the shell came in with and the
+   cleanup ends (flips on rounded points can otherwise cycle without bound). Every
+   step keeps each edge used once in each direction. Equal coordinates in different shells stay apart
    (touching shells), and so do the copies of one exact point within a shell.
    Rounding can still fold a sliver onto a neighbour (tolerance policy rule 5).
 8. Attributes: output face attributes are `Table::concat` of A's and B's face

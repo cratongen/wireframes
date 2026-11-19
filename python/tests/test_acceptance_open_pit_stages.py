@@ -389,7 +389,8 @@ import wireframes as wf
 z = np.load({path!r})
 a, b = wf.Mesh(z["av"], z["at"]), wf.Mesh(z["bv"], z["bt"])
 m = a & b
-print(m.n_faces, m.n_faces == 0 or m.is_solid, 0.0 if m.n_faces == 0 else m.volume)
+solid = m.n_faces == 0 or m.is_solid
+print(m.n_faces, solid, 0.0 if m.n_faces == 0 else m.volume if solid else float("nan"))
 """
 
 
@@ -397,14 +398,22 @@ def limit_memory():
     resource.setrlimit(resource.RLIMIT_AS, (2 << 30, 2 << 30))
 
 
-@pytest.mark.skip(reason="acceptance: intersection of a 124 and a 164 face solid exhausts memory")
-def test_intersection_of_previous_pit_and_pushback_pieces_stays_small():
+def intersect_runaway_pair():
     code = RUNAWAY.format(path=str(DATA / "pushback_pair_runaway.npz"))
     env = dict(os.environ, RAYON_NUM_THREADS="2", MALLOC_ARENA_MAX="2")
     out = subprocess.run([sys.executable, "-c", code], env=env, capture_output=True, text=True, timeout=300, check=False,
                          preexec_fn=limit_memory)  # fmt: skip
     assert out.returncode == 0, out.stderr[-2000:]
-    _, solid, volume = out.stdout.split()
+    return out.stdout.split()
+
+
+def test_intersection_of_previous_pit_and_pushback_pieces_stays_small():
+    intersect_runaway_pair()
+
+
+@pytest.mark.skip(reason="acceptance: rounded slivers between walls that agree to an ulp self-intersect")
+def test_intersection_of_previous_pit_and_pushback_pieces_is_a_thin_solid():
+    _, solid, volume = intersect_runaway_pair()
     assert solid == "True" and float(volume) < 1e-6
 
 
