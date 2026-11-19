@@ -216,7 +216,7 @@ pub fn split_by_plane(mesh: &Mesh, origin: [f64; 3], normal: [f64; 3]) -> Result
     let pts: Vec<Pt> = sec
         .keys
         .par_iter()
-        .map(|&k| key_point(mesh, k, origin, normal))
+        .map(|&k| Pt::E(key_point(mesh, k, origin, normal).to_f64()))
         .collect();
     let same = if closed {
         coincident(&pts)

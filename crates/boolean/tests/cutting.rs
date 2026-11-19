@@ -351,6 +351,62 @@ fn clip_and_cut_fill_do_not_depend_on_thread_count() {
     assert_eq!(a.2, b.2);
 }
 
+/// A frustum over a random convex `sides`-gon: bottom at `z = 0`, top scaled
+/// by `top` at `z = 1`. Each side is cut into `k` collinear pieces, so each
+/// wall is a strip of triangles that is planar only up to the rounding of its
+/// corners, and a section crosses it in a long, nearly collinear chain.
+fn frustum(seed: u64, sides: usize, k: usize, top: f64) -> Mesh {
+    let mut rng = fixtures::Rng::new(seed);
+    let mut angles: Vec<f64> = (0..sides)
+        .map(|_| rng.uniform(0.0, std::f64::consts::TAU))
+        .collect();
+    angles.sort_by(f64::total_cmp);
+    let corner = |a: f64| [100.0 * a.cos(), 100.0 * a.sin()];
+    let ring: Vec<[f64; 2]> = (0..sides)
+        .flat_map(|i| {
+            let (p, q) = (corner(angles[i]), corner(angles[(i + 1) % sides]));
+            (0..k).map(move |j| {
+                let s = j as f64 / k as f64;
+                [p[0] + s * (q[0] - p[0]), p[1] + s * (q[1] - p[1])]
+            })
+        })
+        .collect();
+    let mut v = vec![];
+    for (s, z) in [(1.0, 0.0), (top, 1.0)] {
+        v.extend(ring.iter().map(|p| [s * p[0], s * p[1], z]));
+    }
+    let c = angles.iter().map(|&a| corner(a)).fold([0.0; 2], |s, p| {
+        [s[0] + p[0] / sides as f64, s[1] + p[1] / sides as f64]
+    });
+    v.push([c[0], c[1], 0.0]);
+    v.push([top * c[0], top * c[1], 1.0]);
+    let n = ring.len() as u32;
+    let mut t = vec![];
+    for i in 0..n {
+        let j = (i + 1) % n;
+        t.push([2 * n, j, i]);
+        t.push([2 * n + 1, n + i, n + j]);
+        t.push([i, j, n + j]);
+        t.push([i, n + j, n + i]);
+    }
+    Mesh::new(v, t).unwrap()
+}
+
+#[test]
+fn split_caps_of_nearly_collinear_sections_are_valid_solids() {
+    for seed in 0..60 {
+        let m = frustum(seed, 5, 9, 1.7);
+        assert!(m.validate(0.0).unwrap().summary.is_solid(), "seed {seed}");
+        for z in [0.1, 0.3, 0.7] {
+            let (a, b) = split_by_plane(&m, [0.0, 0.0, z], [0.0, 0.0, 1.0]).unwrap();
+            for part in [&a, &b] {
+                let s = part.validate(0.0).unwrap().summary;
+                assert!(s.is_solid(), "seed {seed}, z {z}: {s:?}");
+            }
+        }
+    }
+}
+
 #[test]
 fn split_side_test_survives_underflow() {
     let tet = Mesh::new(

@@ -359,7 +359,6 @@ def test_pushback_as_difference_of_pits_clipped_by_the_same_topography():
     assert (outer & inner).is_solid and (outer | inner).is_solid
 
 
-@pytest.mark.skip(reason="acceptance: bench split cap triangles overlap")
 def test_bench_split_of_a_small_clipped_pit_is_valid():
     rng = np.random.default_rng(0)
     xy = rng.uniform(-450, 450, (30, 2))

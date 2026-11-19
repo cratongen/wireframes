@@ -952,15 +952,21 @@ one solid vertex, and an empty mesh on the other.
 
 `split_by_plane`: returns `(negative, positive)` where positive means
 `(p - origin) . normal > 0`; points on the plane go to positive (boitata rule).
-Section points of a closed mesh that are exactly equal (shells touching on the plane,
-compared with `cmp_lex`) are one point of the cap triangulation; each output shell
-then gets its own copy of such a point, so touching shells stay apart in both parts.
-Side tests use `exact::plane_side`, which evaluates the sign of
-`(p - origin) . normal` exactly with expansions, so `origin` and `normal` are taken
-as given f64 values. Crossing points on edges are computed exactly and rounded
-once. Closed meshes are capped (cap triangulated by CDT in the plane); open meshes
-are trimmed. Cap faces get null attributes. `slice_by_plane` uses the same side
-rule.
+Crossing points on edges are computed exactly and rounded once, before the cap is
+built. Section points of a closed mesh whose rounded coordinates are equal (shells
+touching on the plane, or exact points that round together, compared with `cmp_lex`)
+are one point of the cap triangulation; each output shell then gets its own copy of
+such a point, so touching shells stay apart in both parts. Side tests use
+`exact::plane_side`, which evaluates the sign of `(p - origin) . normal` exactly with
+expansions, so `origin` and `normal` are taken as given f64 values. Closed meshes are
+capped: the cap is a CDT of the rounded section points in the dominant-axis
+projection, with exact predicates on those `f64` points, so the cap triangles written
+out never overlap or flip (a CDT of the exact points can hold slivers that rounding
+flips). Open meshes are trimmed. Cap faces get null attributes. `slice_by_plane` uses
+the same side rule. Where the mesh touches the plane from one side (a vertex or an
+edge in the plane with every incident face on the positive side), the exact positive
+part touches itself there and is not a solid; the cap does not pass through that
+contact as a vertex or edge, so `validate` reports self-intersections on that part.
 
 `slice_by_plane`: boitata `section` semantics: one feature per line per offset;
 feature columns `offset` (Float64) and the face attributes of the faces it crosses;

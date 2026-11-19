@@ -67,6 +67,9 @@ All notable changes to wireframes are listed here. The format follows
   point inside one of its edges.
 - `split_by_plane` no longer panics when a closed mesh meets the plane only at
   a vertex.
+- `split_by_plane` triangulates the cap from the rounded section points, so
+  cap triangles no longer overlap where the section has long, nearly collinear
+  runs of points (a bench split of a clipped pit).
 
 ### Known issues
 
@@ -75,6 +78,9 @@ All notable changes to wireframes are listed here. The format follows
   f64: two distinct exact points that round to the same float give a
   degenerate face. Seen in chains of grid-box booleans and in boxes overlapping
   by 1e-6 at UTM coordinates.
+- `split_by_plane` at a plane the mesh touches from above (a DTM contour
+  level, for example) returns a positive part that touches itself and is not
+  a solid.
 - A cavity that touches its outer shell along an edge is refused as a
   self-intersection, while one that touches it at a vertex is a valid contact.
 - `loft` does not branch, `extrude` has no path sweep, and `offset` is not a
