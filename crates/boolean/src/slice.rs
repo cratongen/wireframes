@@ -276,6 +276,37 @@ pub fn split_by_plane(mesh: &Mesh, origin: [f64; 3], normal: [f64; 3]) -> Result
             cap_segs.push([id(t[k]), id(t[(k + 1) % 3])]);
         }
     }
+    let mut touch_segs: Vec<[u32; 2]> = vec![];
+    if closed {
+        let mut touch = on.clone();
+        for t in mesh.triangles() {
+            if t.iter().any(|&v| sec.negative[v as usize]) || t.iter().all(|&v| on[v as usize]) {
+                for &v in t {
+                    touch[v as usize] = false;
+                }
+            }
+        }
+        let mut id = |v: u32| {
+            let n = sec.keys.len() as u32;
+            *sec.index.entry(Key::V(v)).or_insert_with(|| {
+                sec.keys.push(Key::V(v));
+                n
+            })
+        };
+        for v in 0..mesh.n_vertices() as u32 {
+            if touch[v as usize] {
+                id(v);
+            }
+        }
+        for t in mesh.triangles() {
+            for k in 0..3 {
+                let (a, b) = (t[k], t[(k + 1) % 3]);
+                if a < b && touch[a as usize] && touch[b as usize] {
+                    touch_segs.push([id(a), id(b)]);
+                }
+            }
+        }
+    }
     let pts: Vec<Pt> = sec
         .keys
         .par_iter()
@@ -369,9 +400,28 @@ pub fn split_by_plane(mesh: &Mesh, origin: [f64; 3], normal: [f64; 3]) -> Result
             .map(|(k, &i)| (i, k as u32))
             .collect();
         let upts: Vec<Pt> = reps.iter().map(|&i| pts[i as usize].clone()).collect();
-        let usegs: Vec<[u32; 2]> = cap_segs.iter().map(|s| s.map(|i| local[&i])).collect();
-        let c = cdt(&CapGeom { pts: &upts, drop }, upts.len() as u32, &usegs)
+        let edge = |s: &[u32; 2]| {
+            let s = s.map(|i| local[&same[i as usize]]);
+            (s[0].min(s[1]), s[0].max(s[1]))
+        };
+        let parity: HashSet<(u32, u32)> = cap_segs.iter().map(edge).collect();
+        let mut touching: Vec<(u32, u32)> = touch_segs
+            .iter()
+            .map(edge)
+            .filter(|e| e.0 != e.1 && !parity.contains(e))
+            .collect();
+        touching.sort_unstable();
+        touching.dedup();
+        let usegs: Vec<[u32; 2]> = cap_segs
+            .iter()
+            .map(|s| s.map(|i| local[&i]))
+            .chain(touching.iter().map(|e| [e.0, e.1]))
+            .collect();
+        let mut c = cdt(&CapGeom { pts: &upts, drop }, upts.len() as u32, &usegs)
             .map_err(|e| Error::invalid(format!("cannot cap the section: {e}")))?;
+        for e in &touching {
+            c.constrained.remove(e);
+        }
         let up = Sign::of(normal[drop]) == Sign::Positive;
         for t in even_odd(&c) {
             let g = t.map(|i| own(reps[i as usize]));

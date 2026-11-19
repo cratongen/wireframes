@@ -164,6 +164,22 @@ def test_split_and_slice_by_plane(orebody, box):
     assert corner.n_faces == 12 and empty.n_faces == 0
 
 
+def test_split_of_a_closed_dtm_at_its_local_minima_gives_solids():
+    t = wf.datasets.topography()
+    s = t.close_to_elevation(float(t.z.min()) - 50)
+    v, f = t.coords, np.asarray(t.triangles)
+    lowest = np.full(len(v), np.inf)
+    for k in range(3):
+        for j in (1, 2):
+            np.minimum.at(lowest, f[:, k], v[f[:, (k + j) % 3], 2])
+    minima = np.flatnonzero(lowest > v[:, 2])
+    assert len(minima) >= 5
+    for i in minima[:8]:
+        lower, upper = s.split_by_plane(v[i], [0, 0, 1])
+        assert lower.is_solid and upper.is_solid, i
+        assert close(lower.volume + upper.volume, s.volume, rel=1e-9)
+
+
 def test_cut_fill_identities():
     t = wf.datasets.topography(n=120)
     zero = wf.cut_fill(t, t)

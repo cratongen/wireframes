@@ -495,3 +495,78 @@ fn split_of_a_sub_underflow_sliver_is_closed() {
     let (neg, pos) = split_by_plane(&tet, [0.0; 3], [1.0, 0.0, 0.0]).unwrap();
     assert!(closed_manifold(&neg) && closed_manifold(&pos));
 }
+
+fn height_field_solid(top: &[[f64; 5]; 5]) -> Mesh {
+    let mut v = vec![];
+    for level in [None, Some(top)] {
+        for (i, row) in [0.0f64, 1.0, 2.0, 3.0, 4.0].iter().enumerate() {
+            for (j, y) in [0.0f64, 1.0, 2.0, 3.0, 4.0].iter().enumerate() {
+                v.push([*row, *y, level.map_or(0.0, |h| h[i][j])]);
+            }
+        }
+    }
+    let at = |l: u32, i: u32, j: u32| l * 25 + i * 5 + j;
+    let mut t = vec![];
+    for i in 0..4 {
+        for j in 0..4 {
+            let [a, b, c, d] = [
+                at(1, i, j),
+                at(1, i + 1, j),
+                at(1, i + 1, j + 1),
+                at(1, i, j + 1),
+            ];
+            t.push([a, b, c]);
+            t.push([a, c, d]);
+            let [a, b, c, d] = [
+                at(0, i, j),
+                at(0, i + 1, j),
+                at(0, i + 1, j + 1),
+                at(0, i, j + 1),
+            ];
+            t.push([a, c, b]);
+            t.push([a, d, c]);
+        }
+    }
+    let ring: Vec<(u32, u32)> = (0..4)
+        .map(|k| (k, 0))
+        .chain((0..4).map(|k| (4, k)))
+        .chain((0..4).map(|k| (4 - k, 4)))
+        .chain((0..4).map(|k| (0, 4 - k)))
+        .collect();
+    for k in 0..ring.len() {
+        let (p, q) = (ring[k], ring[(k + 1) % ring.len()]);
+        let [a, b] = [at(0, p.0, p.1), at(0, q.0, q.1)];
+        let [c, d] = [at(1, q.0, q.1), at(1, p.0, p.1)];
+        t.push([a, b, c]);
+        t.push([a, c, d]);
+    }
+    Mesh::new(v, t).unwrap()
+}
+
+#[test]
+fn split_at_a_level_the_top_touches_from_above_gives_solids() {
+    let mut pit = [[2.0; 5]; 5];
+    pit[2][2] = 1.0;
+    let mut valley = [[2.0; 5]; 5];
+    valley[1][2] = 1.0;
+    valley[2][2] = 1.0;
+    valley[3][2] = 1.0;
+    let mut two_pits = [[2.0; 5]; 5];
+    two_pits[1][1] = 1.0;
+    two_pits[3][3] = 1.0;
+    for top in [pit, valley, two_pits] {
+        let m = height_field_solid(&top);
+        assert!(m.validate(0.0).unwrap().summary.is_solid());
+        let (lower, upper) = split_by_plane(&m, [0.0, 0.0, 1.0], [0.0, 0.0, 1.0]).unwrap();
+        for part in [&lower, &upper] {
+            let s = part.validate(0.0).unwrap().summary;
+            assert!(s.is_solid(), "{top:?}: {s:?}");
+        }
+        assert!((volume(&lower) - 16.0).abs() < 1e-12);
+        assert!((volume(&lower) + volume(&upper) - volume(&m)).abs() < 1e-12);
+        let (upper_flipped, lower_flipped) =
+            split_by_plane(&m, [0.0, 0.0, 1.0], [0.0, 0.0, -1.0]).unwrap();
+        assert!((volume(&upper_flipped) - volume(&upper)).abs() < 1e-12);
+        assert!((volume(&lower_flipped) - 16.0).abs() < 1e-12);
+    }
+}

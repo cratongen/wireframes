@@ -80,6 +80,11 @@ All notable changes to wireframes are listed here. The format follows
   point inside one of its edges.
 - `split_by_plane` no longer panics when a closed mesh meets the plane only at
   a vertex.
+- `split_by_plane` of a closed mesh at a plane it touches from above, such
+  as a closed DTM split at the elevation of a local minimum, returns two
+  solids. The cap passes through the contact vertex or edge, so the upper
+  part touches itself there; before, it came back with 4 to 7
+  self-intersections.
 - `split_by_plane` triangulates the cap from the rounded section points, so
   cap triangles no longer overlap where the section has long, nearly collinear
   runs of points (a bench split of a clipped pit).
@@ -105,9 +110,6 @@ All notable changes to wireframes are listed here. The format follows
   neighbouring face that is not coplanar with it. Seen in chains of grid-box booleans and in booleans of
   pits clipped by the same topography (their caps differ by about one ulp);
   for pushbacks, clip the difference of the unclipped pits instead.
-- `split_by_plane` at a plane the mesh touches from above (a DTM contour
-  level, for example) returns a positive part that touches itself and is not
-  a solid.
 - A cavity that touches its outer shell along an edge is refused as a
   self-intersection, while one that touches it at a vertex is a valid contact.
 - `loft` does not branch, `extrude` has no path sweep, and `offset` is not a
