@@ -279,6 +279,17 @@ fn point(body: &[Group], code: i32) -> Result<[f64; 3]> {
     ])
 }
 
+/// A point whose x, y and z groups must all be present.
+fn required_point(kind: &str, head: &Group, body: &[Group], code: i32) -> Result<[f64; 3]> {
+    let mut p = [0.0; 3];
+    for (k, c) in [code, code + 10, code + 20].into_iter().enumerate() {
+        p[k] = first(body, c)
+            .ok_or_else(|| group_err(head, format!("{kind} has no group {c}")))?
+            .f64()?;
+    }
+    Ok(p)
+}
+
 fn layer(body: &[Group]) -> String {
     first(body, 8).map_or_else(|| "0".to_string(), |g| g.value.clone())
 }
@@ -651,7 +662,17 @@ pub fn read(r: &[u8]) -> Result<Data> {
         Some(rest) => binary_groups(rest)?,
         None => ascii_groups(r)?,
     };
-    let mut entities: Vec<(&str, &[Group])> = Vec::new();
+    let ends_with_eof = groups
+        .last()
+        .is_some_and(|g| g.code == 0 && g.value == "EOF");
+    if !ends_with_eof {
+        let m = "file ends without the 0/EOF group; it is truncated";
+        return Err(match groups.last() {
+            Some(g) => group_err(g, m.to_string()),
+            None => Error::format(m),
+        });
+    }
+    let mut entities: Vec<(&str, &Group, &[Group])> = Vec::new();
     let mut section = String::new();
     let mut length_unit = None;
     let mut i = 0;
@@ -683,7 +704,7 @@ pub fn read(r: &[u8]) -> Result<Data> {
             }
             "ENDSEC" => section.clear(),
             "EOF" => break,
-            _ if section == "ENTITIES" => entities.push((kind, body)),
+            _ if section == "ENTITIES" => entities.push((kind, &groups[i], body)),
             _ => {}
         }
         i = end;
@@ -691,17 +712,21 @@ pub fn read(r: &[u8]) -> Result<Data> {
     let mut out = Out::default();
     let mut k = 0;
     while k < entities.len() {
-        let (kind, body) = entities[k];
+        let (kind, head, body) = entities[k];
         k += 1;
         match kind {
             "3DFACE" => {
-                let c = [point(body, 10)?, point(body, 11)?, point(body, 12)?];
+                let c = [
+                    required_point(kind, head, body, 10)?,
+                    required_point(kind, head, body, 11)?,
+                    required_point(kind, head, body, 12)?,
+                ];
                 let mut ids = vec![out.vid(c[0]), out.vid(c[1]), out.vid(c[2])];
                 if first(body, 13).is_some()
                     || first(body, 23).is_some()
                     || first(body, 33).is_some()
                 {
-                    let d = out.vid(point(body, 13)?);
+                    let d = out.vid(required_point(kind, head, body, 13)?);
                     if d != ids[2] {
                         ids.push(d);
                     }
@@ -711,7 +736,7 @@ pub fn read(r: &[u8]) -> Result<Data> {
             "POLYLINE" => {
                 let mut verts = Vec::new();
                 while k < entities.len() && entities[k].0 == "VERTEX" {
-                    verts.push(entities[k].1);
+                    verts.push(entities[k].2);
                     k += 1;
                 }
                 if k < entities.len() && entities[k].0 == "SEQEND" {
@@ -1048,6 +1073,30 @@ pub fn write(data: &Data, opts: &WriteOptions) -> Result<Vec<u8>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn face(corners: &str) -> String {
+        format!("0\nSECTION\n2\nENTITIES\n0\n3DFACE\n8\nA\n{corners}0\nENDSEC\n0\nEOF\n")
+    }
+
+    const CORNERS: &str = "10\n0\n20\n0\n30\n0\n11\n1\n21\n0\n31\n0\n12\n0\n22\n1\n32\n0\n";
+
+    #[test]
+    fn a_file_without_eof_is_an_error_naming_its_last_line() {
+        let full = face(CORNERS);
+        assert!(read(full.as_bytes()).is_ok());
+        let cut = &full[..full.find("0\nENDSEC").unwrap()];
+        let e = read(cut.as_bytes()).unwrap_err().to_string();
+        assert!(e.contains("line 26") && e.contains("EOF"), "{e}");
+        assert!(read(b"").is_err());
+    }
+
+    #[test]
+    fn a_3dface_missing_a_corner_group_is_an_error() {
+        let e = read(face(&CORNERS.replace("22\n1\n", "")).as_bytes())
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("3DFACE has no group 22"), "{e}");
+    }
 
     #[test]
     fn cp1252_fallback_decodes_high_bytes() {

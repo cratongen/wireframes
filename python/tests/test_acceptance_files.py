@@ -550,7 +550,6 @@ def test_truncated_files_fail_naming_the_line_or_byte(tmp_path, small, name, fra
     assert LOCATION.search(str(e.value)), str(e.value)
 
 
-@pytest.mark.skip(reason="acceptance: a truncated dxf reads silently, with a cut coordinate as a vertex")
 def test_truncated_dxf_is_an_error(tmp_path, small):
     wf.write(tmp_path / "m.dxf", small, skip_unsupported_columns=True)
     full = (tmp_path / "m.dxf").read_bytes()

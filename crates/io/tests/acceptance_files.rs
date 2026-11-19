@@ -33,7 +33,6 @@ fn mesh_data(m: Mesh) -> Data {
 }
 
 #[test]
-#[ignore = "acceptance: a dxf cut inside ENTITIES reads a truncated coordinate as a vertex"]
 fn dxf_cut_inside_a_coordinate_is_an_error() {
     let bytes = dxf::write(&mesh_data(tetra()), &WriteOptions::default()).unwrap();
     let text = String::from_utf8(bytes).unwrap();
