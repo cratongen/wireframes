@@ -198,8 +198,11 @@ tonnage without warning. `wireframes` enforces three rules:
     strike, a drive united with crosscuts one at a time (union 11 of 12 in
     example 07), 188 of 648 inclined splits of an icosphere through its
     vertices, and clips of an octagonal pit by flat ground at UTM scale.
-    Six Python acceptance tests stay skipped and one Rust
-    acceptance test stays ignored until snap rounding lands.
+    In the oracle suite, 39 of the 960 boolean results compared with
+    Manifold raise `wf.KernelError`, and all 960, counting the meshes those
+    errors carry, match Manifold's volume and area within the stated bound. Six Python acceptance tests stay
+    skipped and one Rust acceptance test stays ignored until snap rounding
+    lands.
 
 ### M5: Spatial queries for drillholes and block models
 
