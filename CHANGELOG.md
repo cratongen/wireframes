@@ -28,6 +28,10 @@ All notable changes to wireframes are listed here. The format follows
   thread-count determinism tests for `io` and `build`, commutativity of union
   and intersection in `locate`, a Datamine triangle-id alias test, and
   DataFrame conversion tests that check null handling.
+- Oracle suite (`mise run oracle`): booleans against Manifold, measures,
+  containment and ray hits against trimesh, and the DTM and convex solids
+  against scipy, each with a stated bound and every disagreement settled by
+  exact arithmetic. The oracles sit in the `oracle` dependency group.
 - `mise run compat`, which installs the wheel with pip, uv, pixi and conda.
 - Solids of touching shells: `validate` counts contacts between closed shells
   in `touching_shell_edges` and `touching_shell_vertices` and keeps them

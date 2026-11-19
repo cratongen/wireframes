@@ -104,8 +104,9 @@ tonnage without warning. `wireframes` enforces three rules:
 4. **Standing volume identity**: every boolean test suite and property test checks
    `vol(A union B) + vol(A intersect B) = vol(A) + vol(B)` within `f64`
    materialization rounding, alongside `Mesh.validate().summary.is_closed`. The
-   C++ `Manifold` library is used in CI as an external test oracle and benchmark
-   baseline, never as a dependency of `wireframes`.
+   C++ `Manifold` library, through its `manifold3d` Python package, is a
+   dev-only test oracle (`mise run oracle`) and benchmark baseline, never a
+   dependency of `wireframes`.
 
 ## Roadmap
 
@@ -172,7 +173,9 @@ tonnage without warning. `wireframes` enforces three rules:
   the acceptance check passes. Solids may hold shells that touch along edges or
   at vertices, and a shell may touch itself the same way; booleans accept and
   return them. Known gaps:
-  - The Manifold oracle comparison and a CI pipeline do not exist yet.
+  - A CI pipeline does not exist yet. The oracle suite (`mise run oracle`)
+    compares booleans with Manifold, measures and queries with trimesh, and the
+    DTM and convex solids with scipy (spec section 12).
   - The semi-static filter in front of the exact predicates is not written.
 
 ### M5: Spatial queries for drillholes and block models

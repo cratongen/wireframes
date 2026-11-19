@@ -196,7 +196,13 @@ No other dependency without a line in this table.
    but `validate` reports the self-intersections, so `is_solid` is false; a fix
    needs snap rounding of the arrangement, which is not implemented. Output tests check
    combinatorial closure and manifoldness, and `validate` on outputs is run in the
-   property tests with the failure rate reported, never hidden.
+   property tests with the failure rate reported, never hidden. The oracle suite
+   (section 12) counts closed results that `validate` does not pass as solids, out
+   of 160 boolean results per arrangement of seeded pairs: 1 for overlapping pairs,
+   24 for a solid and its copy halved about the origin, 1 at UTM coordinates and 13
+   for pairs turned `1e-9` rad apart; every one had an input with two neighbouring
+   faces coplanar only to rounding (a torus whose two flat rings differ by one ulp
+   in z, or a quad wall after a rotation) or came from the near-coincident pairs.
 
 ## 3. wireframes-core
 
@@ -1654,6 +1660,7 @@ triangulate, loft, extrude, plot` (lazy attribute), `__version__`.
 | `verify` | `lint` then `test` |
 | `bench` | `cargo bench` (criterion), interleaved rounds, medians |
 | `examples`, `docs`, `docs-build`, `compat` | as in AGENTS.md |
+| `oracle` | `py:build`, then `pytest -m oracle -s`: the oracle suite of section 12 with its counts |
 
 Proptest cases: 256 per property by default (`PROPTEST_CASES` overrides). The
 `[env]` table of `mise.toml` sets `PROPTEST_RNG_SEED`, so every run through `mise`
@@ -1662,7 +1669,10 @@ failures on top of them. To explore new cases, override the seed for one run
 (`PROPTEST_RNG_SEED=<n> mise run test`).
 
 `meshio` and `trimesh` are dev-only dependencies used inside tests as independent
-writers and readers; tests that need them skip when they are missing.
+writers and readers; tests that need them skip when they are missing. `manifold3d`,
+`scipy` and `rtree` (trimesh's ray index) form the `oracle` dependency group, which
+`uv sync` installs next to `dev` (`tool.uv.default-groups`); they are never runtime
+dependencies, and the oracle tests skip when they are missing.
 
 ## 12. Invariants and theory checks
 
@@ -1798,6 +1808,71 @@ wireframes-py
 - Error mapping: each Rust `Error` variant raises the mapped Python class.
 - numpy dtypes and shapes of every property match the stub.
 - Plot functions return `(fig, ax)` and reuse a passed `ax`.
+
+### Oracle suite
+
+`python/tests/test_oracle_{manifold,trimesh,scipy}.py` (marker `oracle`, run alone
+by `mise run oracle`, and part of `mise run test`) compare wireframes with
+independent implementations on seeded inputs. Each comparison states its bound in
+the module docstring; the reasoning is summarized here. `eps` is the f64 machine
+epsilon, `R` the largest coordinate magnitude, `n` the face count.
+
+- Manifold (`manifold3d`, double precision through `Mesh64`): union,
+  intersection, difference and symmetric difference (Manifold's `(a - b) + (b - a)`)
+  of 240 pairs of convex (box, convex hull, icosphere) and non-convex (torus, star
+  prism, L prism, lofted lens) solids in six arrangements of 40 pairs: overlapping
+  after a random rotation and translation, halved copies (nested when star-shaped
+  about the origin), boxes touching along part of a face, an edge or a corner,
+  overlapping pairs at UTM coordinates, disjoint pairs, and a solid against its
+  copy turned `1e-9` rad and moved `1e-9`. With `delta = max(Manifold tolerance,
+  8 eps R)` (Manifold may move geometry by its tolerance, `1e-12` times the bounding
+  box scale): `|dV| <= 4 delta (area(a) + area(b))` and `|dA| <= 4 delta P` with `P`
+  the face perimeters of both inputs and both results, because moving a surface by
+  `delta` changes volume by at most `delta` times its area and a triangle's area by
+  at most `delta` times its perimeter. For the near-coincident pairs a plane shift
+  of `delta` slides a crossing point by `delta / theta` along the surface, so the
+  area bound uses `delta / 1e-9`. All 960 results agree within these bounds. Every
+  result is closed; one that `validate` does not pass as a solid must come from the
+  near-coincident arrangement or an input with faces coplanar only to rounding
+  (tolerance policy rule 5), and pairs without either must give solids.
+- trimesh: volume, area and centroid of 56 solids (turned shapes and boolean
+  results), within `8 n eps (sqrt(3) R)^3`, `8 n eps (2 sqrt(3) R)^2` and
+  `8 n eps (sqrt(3) R)^4 / V` (one f64 term per face from raw coordinates, a few eps
+  each, pairwise summation); containment of 42 189 points, a third of them sharing
+  two coordinates with a vertex; and the hits of 5800 rays, half aimed at a vertex,
+  with hit distances within `1e-9 R`. Containment and hit counts must agree exactly,
+  and every disagreement is settled by an exact rational parity or ray test that
+  must side with wireframes.
+- scipy.spatial (Qhull): `dtm` without breaklines against `Delaunay` on 30 seeded
+  point sets at the origin and 30 at UTM coordinates (14 505 triangles each). The
+  Delaunay triangulation of points with no four cocircular is unique, so the
+  triangle sets must be equal; a difference is settled by the exact in-circle test,
+  which must find wireframes clean. A cocircular grid checks that both are Delaunay
+  and cover the hull. The DTM plan area matches `ConvexHull` within `8 n eps` relative.
+  For 59 intersections of convex solids, the volume matches Qhull's
+  `HalfspaceIntersection` of both solids' face planes within `1e-12 (vol(a) +
+  vol(b))` (each Qhull vertex solves three planes in f64; the largest relative
+  difference seen is 1.4e-16), and the hull of the result's vertices within
+  `8 n eps R^3`.
+
+Disagreements where the oracle is wrong, each kept as a test or counted by one:
+
+- Manifold, near-coincident pairs: its crossing points lie up to `9.9e-8` from the
+  exact crossing of an input edge and face (computed with rationals), and the areas
+  of the two sides differ by up to `1.2e-7` in that arrangement (`4e-15` or less in
+  the others at unit scale); wireframes' crossing points lie within half an ulp
+  (`5.5e-17` measured) (`test_coplanar_crossings_are_exact`).
+- Manifold, boxes touching along part of a face: for one argument order the
+  intersection is a zero-volume double sheet over the contact (area twice the
+  contact area), for the other it is empty; the regularized intersection is empty.
+  The suite drops components with `|volume| <= delta * area` from Manifold results
+  (`test_manifold_keeps_a_flat_sheet_where_boxes_touch_along_a_face`).
+- trimesh: at UTM coordinates its centroid of a box is `3e-4` m off the centre in
+  northing (`test_trimesh_centroid_drifts_at_utm_coordinates`); 19 containment
+  answers and 798 hit counts disagree with the exact tests, all at rays or points
+  aligned with vertices.
+- Qhull: at UTM coordinates 3 of 30 `Delaunay` triangulations hold one edge that
+  fails the exact in-circle test; at the origin none do.
 
 ## 13. Ownership
 

@@ -45,6 +45,11 @@ dev = [
     "meshio>=5.3.5",
     "trimesh>=5.2.1",
 ]
+oracle = [
+    "manifold3d>=3.5.5",
+    "rtree>=1.4.1",
+    "scipy>=1.17.1",
+]
 
 [tool.maturin]
 manifest-path = "crates/py/Cargo.toml"
@@ -54,11 +59,15 @@ locked = true
 
 [tool.uv]
 package = false
+default-groups = ["dev", "oracle"]
 
 [tool.pytest.ini_options]
 testpaths = ["python/tests"]
 addopts = "-m 'not slow'"
-markers = ["slow: runs benchmarks"]
+markers = [
+    "slow: runs benchmarks",
+    "oracle: compares with independent implementations (manifold3d, trimesh, scipy)",
+]
 
 [tool.ruff]
 line-length = 110
