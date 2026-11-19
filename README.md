@@ -3,8 +3,6 @@
 `wireframes` is a Rust-core, Python-exposed library to read, write, plot, measure,
 and combine 3D solids, surfaces, and strings for mining, geology, and petroleum.
 
-> A druse (*wireframes* in Portuguese) is a rock cavity lined with crystal faces.
-
 ## Scope and relationship to boitata
 
 `wireframes` is a standalone geometry package with zero dependency on `boitata`.
@@ -63,6 +61,7 @@ omitted, and return `(fig, ax)`.
 | AutoCAD DXF | `.dxf` | M2 | M2 | `3DFACE`, `MESH`, `POLYFACE`, `POLYLINE`, `LWPOLYLINE`, `POINT`, layers |
 | VTK legacy | `.vtk` | M2 | M2 | `POLYDATA` and `UNSTRUCTURED_GRID` |
 | VTK XML unstructured | `.vtu` | M2 | M2 | Triangle, quad, tetra, and hexa cells with point/cell data |
+| VTK XML polydata | `.vtp` | M2 | M2 | Points, lines, and polygons (`Verts`, `Lines`, `Polys`, `Strips`) with point/cell data |
 | Datamine wireframe CSV | `_tr.csv` / `_pt.csv` | M2 | M2 | Paired triangle (`TRISOL`/`PID1`/`PID2`/`PID3`) and point (`PID`/`XP`/`YP`/`ZP`) tables |
 
 ## Non-goals
@@ -133,7 +132,8 @@ tonnage without warning. `wireframes` enforces three rules:
 
 - **Scope**: read and write DXF (`3DFACE`, polyface meshes, 3D polylines, points,
   and layer attributes), legacy VTK (`POLYDATA` and `UNSTRUCTURED_GRID`), XML VTU
-  (surfaces plus data-only round-trip of tetrahedral and hexahedral cells), and
+  (surfaces plus data-only round-trip of tetrahedral and hexahedral cells), XML VTP
+  polydata (meshes, strings, and points), and
   Datamine `_tr.csv`/`_pt.csv` wireframe pairs.
 - **Acceptance check**:
   ```sh
@@ -198,7 +198,7 @@ tonnage without warning. `wireframes` enforces three rules:
     strike, a drive united with crosscuts one at a time (union 11 of 12 in
     example 07), 188 of 648 inclined splits of an icosphere through its
     vertices, and clips of an octagonal pit by flat ground at UTM scale.
-    Seven Python acceptance tests stay skipped and one Rust
+    Six Python acceptance tests stay skipped and one Rust
     acceptance test stays ignored until snap rounding lands.
 
 ### M5: Spatial queries for drillholes and block models
@@ -220,7 +220,7 @@ tonnage without warning. `wireframes` enforces three rules:
 
 - **Scope**: 2.5D constrained Delaunay triangulation (`dtm`) from points and 3D
   breakline strings; solid construction from sequential section strings
-  (`link_strings`) with branching and end-capping; polyline extrusion along a
+  (`loft`) with branching and end-capping; polyline extrusion along a
   vector or path; quadric error decimation; volume-preserving Taubin smoothing;
   isotropic surface offset; and isotropic remeshing.
 - **Acceptance check**:
@@ -252,7 +252,7 @@ tonnage without warning. `wireframes` enforces three rules:
   entire verification and example suite.
 - **Acceptance check**:
   ```sh
-  mise -C /home/user/Projects/boitata run verify
+  mise -C ../boitata run verify   # boitata checked out next to wireframes
   ```
 - **Status**: not started. No release is tagged, no wheels are on PyPI, there
   is no CI pipeline, and boitata does not depend on wireframes yet. Until the
