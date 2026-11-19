@@ -5,7 +5,7 @@ the names, signatures and semantics in this file. If the code needs a change her
 the lead edits this file first, then the code follows.
 
 Sources: `AGENTS.md` and `README.md` (charter), a read-only survey of
-`/home/user/Projects/boitata`, the Meshes.jl reference catalog, and format notes
+`../boitata`, the Meshes.jl reference catalog, and format notes
 for OBJ, PLY, OFF, STL, DXF, VTK legacy, VTK XML and Datamine CSV pairs.
 
 ## 0. Decisions where the sources disagree
