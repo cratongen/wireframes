@@ -433,7 +433,10 @@ def test_drillholes_through_lofted_mesh_vertices(lens31):
         a, b = lens31.coords[k] - 130 * d, lens31.coords[k] + 170 * d
         lo, hi, inside = ug.intervals(lens31, [a, b])
         assert lo[0] == 0.0 and (lo[1:] == hi[:-1]).all() and (inside[1:] != inside[:-1]).all()
-        assert close((hi - lo)[inside].sum(), brute_inside_length(lens31, a, b))
+        got, brute = (hi - lo)[inside].sum(), brute_inside_length(lens31, a, b)
+        # A hole within an ulp of a vertex can graze a chord a few ulps of the UTM coordinates
+        # long; the brute midpoint rounds out of it, so the oracle resolves only that spacing.
+        assert close(got, brute) or abs(got - brute) <= 8 * np.spacing(np.abs(a).max())
 
 
 def test_drillholes_along_lofted_mesh_edges_are_inside(lens31):
