@@ -28,8 +28,11 @@ string vertex as a vertex of the solid, so the solid passes through the interpre
 
 `extrude` sweeps each closed ring along a straight vector. The volume of the prism is the ring's area in its own
 plane times the component of the vector along the ring normal; note that `Polylines.area()` is the plan area,
-which is zero for a ring in a vertical plane such as a drive profile. `offset` refuses a result that intersects
-itself.
+which is zero for a ring in a vertical plane such as a drive profile. `extrude` has no path sweep: build a drive
+along a curved centreline by lofting rings placed along it. `offset` refuses a result that intersects itself.
+It moves vertices by `distance`, not faces: at a box corner each face moves by `distance / sqrt(3)`, so it is not
+a skin of constant thickness. `loft` links one ring per section; a section with two or more rings, as where a
+lens splits, raises `InvalidInput`, so loft each branch on its own and unite the pieces.
 
 Every solid builder validates its output. The checks the test suite runs on them:
 

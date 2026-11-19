@@ -1272,7 +1272,9 @@ Semantics:
   boundary vertices fixed; defaults in Python `lambda=0.5, mu=-0.53`.
 - `offset`: vertices move by `distance` along angle-weighted vertex normals
   (outward positive); output validated and refused with `InvalidMesh` when it
-  self-intersects.
+  self-intersects. Faces move less than `distance` where they meet at an angle
+  (by `distance / sqrt(3)` at a box corner); the docstring states this and
+  `test_construct.py` pins the box case.
 - `remesh`: Botsch-Kobbelt isotropic remeshing (split above 4/3 L, collapse below
   4/5 L, valence flips, tangential relaxation, projection to the input by
   `SurfaceIndex::closest`); boundary edges split only; face attributes copied from

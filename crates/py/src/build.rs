@@ -129,6 +129,9 @@ fn loft(py: Python, sections: PyRef<PyPolylines>, cap_ends: bool) -> PyResult<Py
 
 /// Solid swept by each closed ring along `vector`.
 ///
+/// The sweep is straight; there is no sweep along a path. For a drive along
+/// a curved centreline, place rings along it and ``loft`` them.
+///
 /// Parameters
 /// ----------
 /// polygons : Polylines
@@ -256,6 +259,14 @@ impl PyMesh {
 
     /// A copy with every vertex moved by `distance` along its vertex normal,
     /// outward when positive.
+    ///
+    /// Vertices move by `distance`, faces do not: where faces meet at an
+    /// angle, a face ends up closer than `distance` to its old plane. At a
+    /// box corner the three faces move by ``distance / sqrt(3)``, so
+    /// ``box([0, 0, 0], [1, 1, 1]).offset(0.5)`` has volume 3.92, not the
+    /// 8.0 of a mitred offset or the 6.88 of a Minkowski offset. It is a
+    /// vertex displacement for smooth meshes, not an isotropic offset or a
+    /// skin of constant thickness.
     ///
     /// Parameters
     /// ----------

@@ -309,7 +309,7 @@ class Mesh:
     def smooth(self, *, iterations: int = 10, lambda_: float = 0.5, mu: float = -0.53) -> Mesh:
         """A Taubin-smoothed copy."""
     def offset(self, distance: float) -> Mesh:
-        """A copy moved along vertex normals."""
+        """A copy with each vertex moved by `distance` along its normal; faces at corners move less."""
     def remesh(self, edge_length: float, *, iterations: int = 5) -> Mesh:
         """An isotropically remeshed copy."""
     def contours(self, levels: ArrayLike) -> Polylines:

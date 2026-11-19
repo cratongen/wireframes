@@ -221,11 +221,14 @@ tonnage without warning. `wireframes` enforces three rules:
 - **Status**: partial. `dtm` with breaklines, `triangulate`, `extrude`, `loft`,
   `close_to_elevation`, `contours`, `decimate`, `smooth`, `offset` and `remesh`
   exist, and the acceptance check passes. Missing against the scope above:
-  - `loft` links one ring to one ring. Branching sections raise `Unsupported`
-    (spec decision 15).
-  - `extrude` sweeps along a vector only, not along a path.
-  - `offset` moves vertices along angle-weighted normals. A true isotropic
-    (Minkowski) offset is deferred (spec decision 16).
+  - `loft` links one ring to one ring. A section with several rings raises
+    `wf.InvalidInput` (spec decision 15). Not started.
+  - `extrude` sweeps along a vector only, not along a path. Not started; a
+    drive along a curved centreline needs lofted rings.
+  - `offset` moves vertices by `distance` along angle-weighted normals, so
+    faces move less where they meet at an angle (by `distance / sqrt(3)` at a
+    box corner). Neither a mitred nor an isotropic (Minkowski) offset exists
+    yet (spec decision 16). Not started.
   - `smooth` runs Taubin smoothing, which does not preserve volume exactly: in
     example 05 the orebody's volume changes by 0.16 percent.
 

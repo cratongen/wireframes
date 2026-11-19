@@ -119,6 +119,9 @@ def test_decimate_smooth_offset_remesh(orebody):
     grown = orebody.offset(1.0)
     assert grown.is_solid and grown.volume > orebody.volume
     assert np.allclose(np.linalg.norm(grown.coords - orebody.coords, axis=1), 1.0)
+    cube = wf.datasets.box([0, 0, 0], [1, 1, 1]).offset(0.5)
+    assert np.isclose(cube.volume, (1 + 1 / np.sqrt(3)) ** 3, rtol=1e-12)
+    assert np.allclose(cube.coords.max(axis=0), 1 + 0.5 / np.sqrt(3), rtol=1e-12)
     box = wf.datasets.box([0, 0, 0], [4, 4, 4])
     re = box.remesh(1.0, iterations=2)
     assert re.is_closed and re.n_faces > 12
