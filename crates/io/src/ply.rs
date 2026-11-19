@@ -383,8 +383,8 @@ fn index_ty(p: &Prop) -> Option<Ty> {
 pub fn read(r: &[u8]) -> Result<Data> {
     let h = header(r)?;
     let mut b = Body {
-        d: &r[h.body..],
-        pos: 0,
+        d: r,
+        pos: h.body,
         line: h.lines + 1,
         enc: h.enc,
     };
@@ -484,8 +484,12 @@ pub fn read(r: &[u8]) -> Result<Data> {
             for (prop, t) in el.props.iter().zip(&targets) {
                 match (*t, prop.kind) {
                     (Target::Coord(a), Kind::Scalar(ty)) => {
+                        let at = b.pos;
                         let x = b.num(ty)?.f64();
                         if !x.is_finite() {
+                            if b.enc != Enc::Ascii {
+                                b.pos = at;
+                            }
                             return Err(b.err(format!("vertex coordinate {x} is not finite")));
                         }
                         p[a] = x;

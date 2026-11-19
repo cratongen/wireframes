@@ -744,7 +744,6 @@ def test_ply_variants_read_the_box_and_keep_properties(tmp_path, data):
     assert np.array_equal(m["qual"], np.full(12, 0.25)) and np.array_equal(m["nx"], np.full(8, 0.5))
 
 
-@pytest.mark.skip(reason="acceptance: binary ply errors give the byte offset in the data, not in the file")
 def test_binary_ply_errors_give_the_file_byte_offset(tmp_path):
     data = binary_ply("<")
     (tmp_path / "cut.ply").write_bytes(data[:-3])

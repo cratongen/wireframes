@@ -371,3 +371,30 @@ proptest! {
         }
     }
 }
+
+#[test]
+fn binary_error_offsets_count_from_the_start_of_the_file() {
+    let head = b"ply\nformat binary_little_endian 1.0\nelement vertex 3\nproperty double x\nproperty double y\nproperty double z\nelement face 1\nproperty list uchar int vertex_indices\nend_header\n";
+    let mut full = head.to_vec();
+    for p in [[0.0f64, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]] {
+        p.iter().for_each(|x| full.extend(x.to_le_bytes()));
+    }
+    full.push(3);
+    [0i32, 1, 2]
+        .iter()
+        .for_each(|i| full.extend(i.to_le_bytes()));
+    assert!(ply::read(&full).is_ok());
+    let at = |e: Error| -> usize {
+        let s = e.to_string();
+        s[s.find("at byte ").expect(&s) + 8..s.len() - 1]
+            .parse()
+            .unwrap()
+    };
+    let mut nan = full.clone();
+    let x1 = head.len() + 24;
+    nan[x1..x1 + 8].copy_from_slice(&f64::NAN.to_le_bytes());
+    assert_eq!(at(ply::read(&nan).unwrap_err()), x1);
+    let cut = &full[..full.len() - 3];
+    let off = at(ply::read(cut).unwrap_err());
+    assert!((full.len() - 13..full.len()).contains(&off), "{off}");
+}
