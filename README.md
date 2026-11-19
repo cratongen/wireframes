@@ -180,6 +180,15 @@ tonnage without warning. `wireframes` enforces three rules:
     compares booleans with Manifold, measures and queries with trimesh, and the
     DTM and convex solids with scipy (spec section 12).
   - The semi-static filter in front of the exact predicates is not written.
+  - Neighbouring solids that share a wall cannot sit in one valid mesh. Two
+    shells that share all or part of a face, or part of an edge, or where a
+    vertex of one rests inside a face of the other, are reported as coplanar
+    overlaps or self-intersections, so `is_solid` is false and booleans raise
+    `wf.InvalidMesh` (example 08, section 7). Stope files digitized against a
+    common wall must be joined with `union` (one shell, stope attributes kept
+    per face) or kept as separate meshes before any boolean. Accepting
+    conforming face contacts would change the solid definition in the
+    glossary and every boolean's classification; not started.
   - Snap rounding is not implemented. Where the inputs agree only to rounding,
     rounding the exact result to `f64` leaves self-intersections, and booleans,
     `clip_by_surface` and `split_by_plane` raise `wf.KernelError` (with the
@@ -245,9 +254,11 @@ tonnage without warning. `wireframes` enforces three rules:
   ```sh
   mise -C /home/user/Projects/boitata run verify
   ```
-- **Status**: not started. No wheels are published and boitata does not depend
-  on wireframes yet. `mise run compat` checks that the wheel installs with pip, uv,
-  pixi and conda.
+- **Status**: not started. No release is tagged, no wheels are on PyPI, there
+  is no CI pipeline, and boitata does not depend on wireframes yet. Until the
+  first release, users build the wheel from a clone with `maturin build`
+  (docs/index.md shows the steps). `mise run compat` checks that the locally
+  built wheel installs with pip, uv, pixi and conda.
 
 ## Performance
 

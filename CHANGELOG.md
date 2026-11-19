@@ -133,3 +133,7 @@ All notable changes to wireframes are listed here. The format follows
 - `loft` does not branch, `extrude` has no path sweep, and `offset` is not a
   Minkowski offset.
 - No real Datamine Studio export is tested yet.
+- Solids that share a wall (all or part of a face) are not valid in one mesh;
+  join them with `union` first.
+- No release, published wheels or CI exist yet; install by building the wheel
+  from a clone.
