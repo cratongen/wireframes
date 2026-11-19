@@ -219,3 +219,37 @@ proptest! {
         prop_assert!(close(t, want), "{} {}", t, want);
     }
 }
+
+#[test]
+fn touching_shells_measure_and_split_into_components() {
+    use wireframes_ops::{centroid, components, volume, volume_by_elevation};
+    for (name, m, c) in [
+        (
+            "edge, apart",
+            fixtures::edge_touching_cubes(false),
+            [1.0, 1.0, 0.5],
+        ),
+        (
+            "edge, welded",
+            fixtures::edge_touching_cubes(true),
+            [1.0, 1.0, 0.5],
+        ),
+        ("vertex", fixtures::vertex_touching_cubes(), [1.0, 1.0, 1.0]),
+    ] {
+        let v = volume(&m).unwrap_or_else(|e| panic!("{name}: {e}"));
+        assert!((v - 2.0).abs() < 1e-12, "{name}: {v}");
+        let g = centroid(&m).unwrap();
+        assert!((0..3).all(|k| (g[k] - c[k]).abs() < 1e-12), "{name}: {g:?}");
+        let slabs = volume_by_elevation(&m, &[-1.0, 0.5, 1.0, 3.0]).unwrap();
+        assert!(
+            (slabs.iter().sum::<f64>() - 2.0).abs() < 1e-12,
+            "{name}: {slabs:?}"
+        );
+        let parts = components(&m).unwrap();
+        assert_eq!(parts.len(), 2, "{name}");
+        for p in &parts {
+            assert!((volume(p).unwrap() - 1.0).abs() < 1e-12, "{name}");
+            assert!(p.validate(0.0).unwrap().summary.is_solid(), "{name}");
+        }
+    }
+}

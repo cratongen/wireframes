@@ -336,7 +336,8 @@ impl PyMesh {
         Ok((mesh.into(), PyRepairReport { inner: report }))
     }
 
-    /// One mesh per edge-connected component, in order of first face.
+    /// One mesh per edge-connected component, in order of first face; shells
+    /// that touch along an edge or at a vertex are separate components.
     fn components(&self) -> PyResult<Vec<PyMesh>> {
         Ok(wireframes_ops::components(&self.inner)
             .map_err(to_py)?

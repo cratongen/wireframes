@@ -148,7 +148,7 @@ class Mesh:
         """Length unit label."""
     @property
     def is_closed(self) -> bool:
-        """Whether every edge of the non-degenerate faces joins exactly two faces."""
+        """Whether every edge of the non-degenerate faces joins exactly two faces, or more that pair into touching shells."""
     @property
     def is_solid(self) -> bool:
         """Whether ``validate()`` finds a solid."""
@@ -224,7 +224,7 @@ class Mesh:
     ) -> tuple[Mesh, RepairReport]:
         """A repaired copy and the report of every change; touching closed shells keep their own vertices."""
     def components(self) -> list[Mesh]:
-        """One mesh per edge-connected component."""
+        """One mesh per edge-connected component; touching shells are separate components."""
     def component_labels(self) -> Ints:
         """Edge-connected component of each triangle."""
     def volume_by_elevation(self, edges: ArrayLike) -> Floats:

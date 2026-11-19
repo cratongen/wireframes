@@ -287,7 +287,9 @@ pub struct Mesh {
   `units::check_same`; no welding.
 - `validate(&self, tolerance: f64) -> Result<MeshReport>` (calls `validate::validate`).
 - `is_closed(&self) -> bool`: at least one non-degenerate face and every edge of the
-  non-degenerate faces used by exactly two faces (combinatorial).
+  non-degenerate faces used by exactly two faces, or by more that `Shells` pairs into
+  shells in contact (combinatorial plus exact radial order; equals
+  `MeshSummary::is_closed`).
 
 ### 3.4 polylines.rs
 
@@ -712,7 +714,7 @@ pub fn face_normals(mesh: &Mesh) -> Vec<[f64; 3]>;      // unit; [0,0,0] for deg
 pub fn face_centroids(mesh: &Mesh) -> Vec<[f64; 3]>;
 pub fn vertex_normals(mesh: &Mesh) -> Vec<[f64; 3]>;    // angle-weighted, unit; [0,0,0] for isolated vertices
 pub fn dip(mesh: &Mesh) -> Vec<(f64, f64)>;             // per face (dip degrees 0..90, dip direction degrees 0..360 from +y clockwise); NaN dip direction for horizontal faces
-pub fn volume(mesh: &Mesh) -> Result<f64>;              // signed; InvalidMesh unless closed and consistently wound (EdgeMap check, not full validate)
+pub fn volume(mesh: &Mesh) -> Result<f64>;              // signed; InvalidMesh unless closed and consistently wound (EdgeMap check, not full validate; an edge with more than two faces passes when `Shells` pairs it as a contact)
 pub fn centroid(mesh: &Mesh) -> Result<[f64; 3]>;       // volume centroid, same precondition, InvalidInput when volume is 0
 pub fn area_centroid(mesh: &Mesh) -> Option<[f64; 3]>;  // None when area is 0
 ```
@@ -819,7 +821,7 @@ idempotent: repairing its own output gives zero actions.
 ### 5.5 components.rs
 
 ```rust
-pub fn component_labels(mesh: &Mesh) -> Vec<u32>;       // edge-connected, label = order of first face
+pub fn component_labels(mesh: &Mesh) -> Vec<u32>;       // `Shells` of the non-degenerate faces (touching shells are separate), degenerate faces join their edge neighbours; label = order of first face
 pub fn components(mesh: &Mesh) -> Result<Vec<Mesh>>;    // one mesh per label, faces and vertices in input order
 ```
 
@@ -931,6 +933,9 @@ one solid vertex, and an empty mesh on the other.
 
 `split_by_plane`: returns `(negative, positive)` where positive means
 `(p - origin) . normal > 0`; points on the plane go to positive (boitata rule).
+Section points of a closed mesh that are exactly equal (shells touching on the plane,
+compared with `cmp_lex`) are one point of the cap triangulation; each output shell
+then gets its own copy of such a point, so touching shells stay apart in both parts.
 Side tests use `exact::plane_side`, which evaluates the sign of
 `(p - origin) . normal` exactly with expansions, so `origin` and `normal` are taken
 as given f64 values. Crossing points on edges are computed exactly and rounded

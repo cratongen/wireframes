@@ -1,9 +1,11 @@
 use std::cmp::Ordering;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use rayon::prelude::*;
 use wireframes_core::predicates::{Sign, orient2d_axis};
-use wireframes_core::{Column, Error, Mesh, Polylines, Result, Table};
+use wireframes_core::topology::Shells;
+use wireframes_core::validate::degenerate_mask;
+use wireframes_core::{Column, EdgeMap, Error, Mesh, Polylines, Result, Table};
 
 use crate::hp::{self, Pt};
 use crate::triangulate::{Geom, cdt, even_odd};
@@ -136,6 +138,37 @@ fn dominant(normal: [f64; 3]) -> usize {
         .expect("three axes")
 }
 
+/// For each section point, the smallest index of a point exactly equal to it.
+fn coincident(pts: &[Pt]) -> Vec<u32> {
+    let mut order: Vec<u32> = (0..pts.len() as u32).collect();
+    order.sort_by(|&a, &b| hp::cmp_lex(&pts[a as usize], &pts[b as usize]).then(a.cmp(&b)));
+    let mut same: Vec<u32> = (0..pts.len() as u32).collect();
+    for w in order.windows(2) {
+        if hp::cmp_lex(&pts[w[0] as usize], &pts[w[1] as usize]) == Ordering::Equal {
+            same[w[1] as usize] = same[w[0] as usize];
+        }
+    }
+    same
+}
+
+/// Shell label of each face of `list`, the faces joined as [`Shells`] joins
+/// them.
+fn shells_of(
+    list: &[([u32; 3], Option<u32>)],
+    coords: &dyn Fn(u32) -> [f64; 3],
+) -> Result<Vec<u32>> {
+    let mut ids: Vec<u32> = list.iter().flat_map(|(t, _)| *t).collect();
+    ids.sort_unstable();
+    ids.dedup();
+    let at = |g: u32| ids.binary_search(&g).expect("listed") as u32;
+    let m = Mesh::new(
+        ids.iter().map(|&g| coords(g)).collect(),
+        list.iter().map(|(t, _)| t.map(at)).collect(),
+    )?;
+    let skip = degenerate_mask(&m);
+    Ok(Shells::new(&m, &EdgeMap::new(&m, Some(&skip))).of)
+}
+
 /// `(negative, positive)`; points on the plane go to positive.
 /// Closed meshes are capped with a triangulation of the section; cap faces
 /// have null attributes. Faces lying in the plane go to the positive side,
@@ -180,6 +213,20 @@ pub fn split_by_plane(mesh: &Mesh, origin: [f64; 3], normal: [f64; 3]) -> Result
             cap_segs.push([id(t[k]), id(t[(k + 1) % 3])]);
         }
     }
+    let pts: Vec<Pt> = sec
+        .keys
+        .par_iter()
+        .map(|&k| key_point(mesh, k, origin, normal))
+        .collect();
+    let same = if closed {
+        coincident(&pts)
+    } else {
+        (0..pts.len() as u32).collect()
+    };
+    for s in cap_segs.iter_mut() {
+        *s = s.map(|i| same[i as usize]);
+    }
+    cap_segs.retain(|s| s[0] != s[1]);
     let mut count: HashMap<(u32, u32), usize> = HashMap::new();
     for s in &cap_segs {
         *count.entry((s[0].min(s[1]), s[0].max(s[1]))).or_default() += 1;
@@ -187,19 +234,27 @@ pub fn split_by_plane(mesh: &Mesh, origin: [f64; 3], normal: [f64; 3]) -> Result
     cap_segs.retain(|s| count[&(s[0].min(s[1]), s[0].max(s[1]))] % 2 == 1);
     cap_segs.sort_unstable_by_key(|s| (s[0].min(s[1]), s[0].max(s[1])));
     cap_segs.dedup_by_key(|s| (s[0].min(s[1]), s[0].max(s[1])));
-    let pts: Vec<Pt> = sec
-        .keys
-        .par_iter()
-        .map(|&k| key_point(mesh, k, origin, normal))
-        .collect();
     let nv = mesh.n_vertices() as u32;
-    let gid = |k: Key| match k {
+    let own = |i: u32| match sec.keys[i as usize] {
         Key::V(v) => v,
-        Key::E(..) => nv + sec.index[&k],
+        Key::E(..) => nv + i,
     };
+    let gid = |k: Key| own(same[sec.index[&k] as usize]);
+    let mut vmap: Vec<u32> = (0..nv).collect();
+    for (i, k) in sec.keys.iter().enumerate() {
+        if let Key::V(v) = *k {
+            vmap[v as usize] = own(same[i]);
+        }
+    }
+    let merged: HashSet<u32> = (0..pts.len() as u32)
+        .filter(|&i| same[i as usize] != i)
+        .flat_map(|i| [own(i), own(same[i as usize])])
+        .map(|g| if g < nv { vmap[g as usize] } else { g })
+        .collect();
     let mut faces: [Vec<([u32; 3], Option<u32>)>; 2] = [vec![], vec![]];
     for (f, t) in mesh.triangles().iter().enumerate() {
         let neg = t.map(|v| sec.negative[v as usize]);
+        let t = &t.map(|v| vmap[v as usize]);
         if roof[f] {
             faces[0].push((*t, Some(f as u32)));
             continue;
@@ -229,11 +284,22 @@ pub fn split_by_plane(mesh: &Mesh, origin: [f64; 3], normal: [f64; 3]) -> Result
         }
     }
     if closed && !cap_segs.is_empty() {
-        let c = cdt(&CapGeom { pts: &pts, drop }, pts.len() as u32, &cap_segs)
+        let reps: Vec<u32> = (0..pts.len() as u32)
+            .filter(|&i| same[i as usize] == i)
+            .collect();
+        let local: HashMap<u32, u32> = reps
+            .iter()
+            .enumerate()
+            .map(|(k, &i)| (i, k as u32))
+            .collect();
+        let upts: Vec<Pt> = reps.iter().map(|&i| pts[i as usize].clone()).collect();
+        let usegs: Vec<[u32; 2]> = cap_segs.iter().map(|s| s.map(|i| local[&i])).collect();
+        let c = cdt(&CapGeom { pts: &upts, drop }, upts.len() as u32, &usegs)
             .map_err(|e| Error::invalid(format!("cannot cap the section: {e}")))?;
         let up = Sign::of(normal[drop]) == Sign::Positive;
         for t in even_odd(&c) {
-            let g = t.map(|i| gid(sec.keys[i as usize]));
+            let g = t.map(|i| own(reps[i as usize]));
+            let g = g.map(|x| if x < nv { vmap[x as usize] } else { x });
             let (n, p) = if up {
                 (g, [g[0], g[2], g[1]])
             } else {
@@ -251,11 +317,17 @@ pub fn split_by_plane(mesh: &Mesh, origin: [f64; 3], normal: [f64; 3]) -> Result
         }
     };
     let build = |list: &[([u32; 3], Option<u32>)]| -> Result<Mesh> {
-        let mut map: HashMap<u32, u32> = HashMap::new();
+        let shell = if merged.is_empty() {
+            vec![0; list.len()]
+        } else {
+            shells_of(list, &coords)?
+        };
+        let mut map: HashMap<(u32, u32), u32> = HashMap::new();
         let (mut v, mut rows, mut tris) = (vec![], vec![], vec![]);
-        for (t, _) in list {
+        for (f, (t, _)) in list.iter().enumerate() {
             tris.push(t.map(|id| {
-                *map.entry(id).or_insert_with(|| {
+                let part = if merged.contains(&id) { shell[f] } else { 0 };
+                *map.entry((id, part)).or_insert_with(|| {
                     v.push(coords(id));
                     rows.push((id < nv).then_some(id));
                     v.len() as u32 - 1

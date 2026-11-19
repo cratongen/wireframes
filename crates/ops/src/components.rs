@@ -1,29 +1,56 @@
+use wireframes_core::topology::Shells;
+use wireframes_core::validate::degenerate_mask;
 use wireframes_core::{EdgeMap, Mesh, Result};
 
-/// Edge-connected component label per face, numbered by first face.
+/// Edge-connected component label per face, numbered by first face. Shells
+/// that touch along an edge are separate components ([`Shells`]); a degenerate
+/// face joins every face it shares an edge with.
 pub fn component_labels(mesh: &Mesh) -> Vec<u32> {
-    let edges = EdgeMap::new(mesh, None);
     let n = mesh.n_faces();
-    let mut label = vec![u32::MAX; n];
-    let mut next = 0;
-    let mut stack = vec![];
-    for f in 0..n {
-        if label[f] != u32::MAX {
-            continue;
+    let skip = degenerate_mask(mesh);
+    let shells = Shells::new(mesh, &EdgeMap::new(mesh, Some(&skip)));
+    let mut parent: Vec<u32> = (0..n as u32).collect();
+    fn root(parent: &mut [u32], mut i: u32) -> u32 {
+        while parent[i as usize] != i {
+            parent[i as usize] = parent[parent[i as usize] as usize];
+            i = parent[i as usize];
         }
-        label[f] = next;
-        stack.push(f as u32);
-        while let Some(g) = stack.pop() {
-            for &e in &edges.face_edges[g as usize] {
-                for &h in edges.faces_of_edge(e) {
-                    if label[h as usize] == u32::MAX {
-                        label[h as usize] = next;
-                        stack.push(h);
-                    }
+        i
+    }
+    let mut join = |a: u32, b: u32| {
+        let (a, b) = (root(&mut parent, a), root(&mut parent, b));
+        parent[a.max(b) as usize] = a.min(b);
+    };
+    let mut first: Vec<u32> = vec![u32::MAX; shells.count];
+    for f in 0..n as u32 {
+        let s = shells.of[f as usize];
+        if s != u32::MAX {
+            if first[s as usize] == u32::MAX {
+                first[s as usize] = f;
+            }
+            join(first[s as usize], f);
+        }
+    }
+    if skip.contains(&true) {
+        let all = EdgeMap::new(mesh, None);
+        for e in 0..all.edges.len() as u32 {
+            let fs = all.faces_of_edge(e);
+            if fs.iter().any(|&f| skip[f as usize]) {
+                for &g in &fs[1..] {
+                    join(fs[0], g);
                 }
             }
         }
-        next += 1;
+    }
+    let mut label = vec![u32::MAX; n];
+    let mut next = 0;
+    let mut of_root: std::collections::HashMap<u32, u32> = std::collections::HashMap::new();
+    for f in 0..n as u32 {
+        let r = root(&mut parent, f);
+        label[f as usize] = *of_root.entry(r).or_insert_with(|| {
+            next += 1;
+            next - 1
+        });
     }
     label
 }

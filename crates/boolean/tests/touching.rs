@@ -4,7 +4,9 @@
 mod support;
 use support::closed_manifold;
 
-use wireframes_boolean::{BooleanOptions, Op, boolean, clip_by_surface};
+use wireframes_boolean::{
+    BooleanOptions, Op, boolean, clip_by_surface, slice_by_plane, split_by_plane,
+};
 use wireframes_core::fixtures::{self, Rng};
 use wireframes_core::{Mesh, MeshSummary};
 
@@ -364,4 +366,34 @@ fn repair_option_keeps_touching_inputs_apart() {
     let r = boolean(&welded, &b, Op::Union, &BooleanOptions { repair: true }).unwrap();
     assert_eq!(r.repairs[0].as_ref().unwrap().actions.len(), 2);
     assert!(close(volume(&r.mesh), 2.0 + 1.0 - 0.5));
+}
+
+#[test]
+fn slicing_and_splitting_touching_shells() {
+    for (name, m) in [
+        ("apart", fixtures::edge_touching_cubes(false)),
+        ("welded", fixtures::edge_touching_cubes(true)),
+    ] {
+        let s = slice_by_plane(&m, [0.0, 0.0, 0.5], [0.0, 0.0, 1.0], &[]).unwrap();
+        assert_eq!(s.n_parts(), 2, "{name}");
+        assert!(s.closed().iter().all(|c| *c), "{name}");
+        let areas: f64 = s.area().iter().sum();
+        assert!(close(areas, 2.0), "{name}: {areas}");
+        let (below, above) = split_by_plane(&m, [0.0, 0.0, 0.5], [0.0, 0.0, 1.0]).unwrap();
+        for piece in [&below, &above] {
+            let r = summary(piece);
+            assert!(r.is_solid(), "{name}: {r:?}");
+            assert_eq!(r.shells, 2, "{name}");
+            assert!(close(volume(piece), 1.0), "{name}");
+        }
+        let (left, right) = split_by_plane(&m, [1.0, 0.0, 0.0], [1.0, 0.0, 0.0]).unwrap();
+        assert!(
+            close(volume(&left), 1.0) && close(volume(&right), 1.0),
+            "{name}"
+        );
+        let diagonal = [1.0, 1.0, 0.0];
+        let (a, b) = split_by_plane(&m, [1.0, 1.0, 0.0], diagonal).unwrap();
+        assert!(close(volume(&a), 1.0) && close(volume(&b), 1.0), "{name}");
+        assert!(summary(&a).is_solid() && summary(&b).is_solid(), "{name}");
+    }
 }

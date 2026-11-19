@@ -164,11 +164,20 @@ pub(crate) fn check_closed_oriented(mesh: &Mesh, what: &str) -> Result<Vec<bool>
             .expect("face holds edge");
         t[k] < t[(k + 1) % 3]
     };
+    let mut contacts = false;
     let ok = degenerate.contains(&false)
         && (0..edges.edges.len() as u32).all(|e| match *edges.faces_of_edge(e) {
             [a, b] => forward(a, e) != forward(b, e),
-            _ => false,
-        });
+            [_] => false,
+            _ => {
+                contacts = true;
+                true
+            }
+        })
+        && (!contacts
+            || wireframes_core::topology::Shells::new(mesh, &edges)
+                .non_manifold
+                .is_empty());
     if ok {
         Ok(degenerate)
     } else {

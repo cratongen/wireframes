@@ -96,3 +96,27 @@ def test_block_fraction_is_one_inside_zero_outside(box):
     b = box([0, 0, 0], [4, 4, 4])
     f = b.block_fraction([[2, 2, 2], [9, 9, 9], [4, 2, 2]], [1, 1, 1])
     assert f.tolist() == [1.0, 0.0, 0.5]
+
+
+def test_touching_shell_solid_queries_cuts_and_files(box, tmp_path):
+    two = box([0, 0, 0], [1, 1, 1]) | box([1, 1, 0], [2, 2, 1])
+    s = two.validate().summary
+    assert s["is_solid"] and s["touching_shell_edges"] == 1
+    centres = np.array([[x, y, z] for x in (0.25, 0.75, 1.25, 1.75) for y in (0.25, 0.75, 1.25, 1.75)
+                        for z in (0.25, 0.75)])  # fmt: skip
+    f = two.block_fraction(centres, [0.5, 0.5, 0.5])
+    assert f.sum() * 0.125 == pytest.approx(2.0)
+    below, above = two.split_by_plane([0, 0, 0.5], [0, 0, 1])
+    for part in (below, above):
+        assert part.is_solid and part.volume == pytest.approx(1.0)
+        assert part.validate().summary["shells"] == 2
+    rings = two.slice_by_plane([0, 0, 0.5], [0, 0, 1])
+    assert len(rings.parts) == 2 and all(rings.closed) and rings.area().sum() == pytest.approx(2.0)
+    parts = two.components()
+    assert len(parts) == 2 and all(p.volume == pytest.approx(1.0) for p in parts)
+    assert two.volume_by_elevation([0, 0.5, 1]).sum() == pytest.approx(2.0)
+    for ext in ("obj", "stl", "ply", "vtu"):
+        path = tmp_path / f"two.{ext}"
+        wf.write(path, two)
+        back = wf.read_mesh(path)
+        assert back.is_solid and back.volume == pytest.approx(2.0), ext

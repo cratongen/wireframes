@@ -215,14 +215,22 @@ impl Mesh {
     }
 
     /// At least one non-degenerate face, and every edge of the non-degenerate
-    /// faces used by exactly two of them.
+    /// faces used by exactly two of them, or by more that pair into shells in
+    /// contact there (`MeshSummary::is_closed`).
     pub fn is_closed(&self) -> bool {
         let skip = crate::validate::degenerate_mask(self);
         if skip.iter().all(|&s| s) {
             return false;
         }
         let edges = crate::EdgeMap::new(self, Some(&skip));
-        (0..edges.edges.len() as u32).all(|e| edges.faces_of_edge(e).len() == 2)
+        let n = |e: u32| edges.faces_of_edge(e).len();
+        if (0..edges.edges.len() as u32).any(|e| n(e) < 2) {
+            return false;
+        }
+        (0..edges.edges.len() as u32).all(|e| n(e) == 2)
+            || crate::topology::Shells::new(self, &edges)
+                .non_manifold
+                .is_empty()
     }
 }
 
@@ -291,6 +299,8 @@ mod tests {
         assert!(fixtures::cube().is_closed());
         assert!(!fixtures::open_cube().is_closed());
         assert!(!Mesh::empty().is_closed());
+        assert!(fixtures::edge_touching_cubes(true).is_closed());
+        assert!(!fixtures::broken::non_manifold_fin().is_closed());
         assert_eq!(
             fixtures::cube().bounds().unwrap(),
             Aabb {

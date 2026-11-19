@@ -516,3 +516,73 @@ fn tiny_positive_block_size_gives_a_fraction_in_range() {
 fn empty_mesh_is_not_a_solid() {
     assert!(SolidIndex::new(&Mesh::empty()).is_err());
 }
+
+#[test]
+fn solids_of_touching_shells_locate_measure_and_trace() {
+    for (name, m) in [
+        ("edge, apart", fixtures::edge_touching_cubes(false)),
+        ("edge, welded", fixtures::edge_touching_cubes(true)),
+        ("vertex", fixtures::vertex_touching_cubes()),
+    ] {
+        let s = SolidIndex::new(&m).unwrap_or_else(|e| panic!("{name}: {e}"));
+        let pts = [
+            [0.5, 0.5, 0.5],
+            [1.5, 1.5, 0.75],
+            [1.5, 0.5, 0.5],
+            [1.0, 1.0, 1.0],
+            [1.0, 1.0, 0.5],
+            [0.75, 1.25, 0.5],
+        ];
+        let inside_second = |p: [f64; 3]| {
+            let lo = if name == "vertex" {
+                [1.0; 3]
+            } else {
+                [1.0, 1.0, 0.0]
+            };
+            (0..3).all(|k| lo[k] < p[k] && p[k] < lo[k] + 1.0)
+        };
+        let loc = s.locate_all(&pts);
+        let d = s.signed_distance(&pts);
+        assert_eq!(loc[0], Location::Inside, "{name}");
+        assert_eq!(loc[3], Location::Boundary, "{name}");
+        assert_eq!(loc[2], Location::Outside, "{name}");
+        assert_eq!(loc[1] == Location::Inside, inside_second(pts[1]), "{name}");
+        for (k, l) in loc.iter().enumerate() {
+            assert_eq!(Sign::of(d[k]).to_i8(), *l as i8, "{name} point {k}");
+        }
+        assert!(
+            close(d[0], -0.5, 1e-12) && close(d[2], 0.5, 1e-12),
+            "{name}: {d:?}"
+        );
+        assert!(close(d[5], 0.25, 1e-12), "{name}: {d:?}");
+        let cells: Vec<[f64; 3]> = (0..4)
+            .flat_map(|i| (0..4).flat_map(move |j| (0..4).map(move |k| [i, j, k])))
+            .map(|c: [i32; 3]| c.map(|x| x as f64 * 0.5 + 0.25))
+            .collect();
+        let blocks = Blocks {
+            centroids: cells,
+            size: [0.5; 3],
+            rotation: None,
+        };
+        let f = s.block_fraction(&blocks).unwrap();
+        let total: f64 = f.iter().sum::<f64>() * 0.125;
+        assert!(close(total, volume(&m), 1e-12), "{name}: {total}");
+        let trace = Trace {
+            xyz: vec![[-1.0, -1.0, 0.5], [3.0, 3.0, 0.5]],
+            depth: vec![0.0, 4.0 * 2f64.sqrt()],
+        };
+        let inside: f64 = s
+            .trace_intervals(&trace)
+            .unwrap()
+            .iter()
+            .filter(|i| i.inside)
+            .map(|i| i.to - i.from)
+            .sum();
+        let want = if name == "vertex" {
+            2f64.sqrt()
+        } else {
+            2.0 * 2f64.sqrt()
+        };
+        assert!(close(inside, want, 1e-12), "{name}: {inside}");
+    }
+}

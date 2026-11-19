@@ -138,7 +138,8 @@ impl PyMesh {
         Ok(PyMeshReport { inner: report })
     }
 
-    /// Whether every edge of the non-degenerate faces joins exactly two faces.
+    /// Whether every edge of the non-degenerate faces joins exactly two faces,
+    /// or more that pair into shells touching there.
     #[getter]
     fn is_closed(&self) -> bool {
         self.inner.is_closed()
