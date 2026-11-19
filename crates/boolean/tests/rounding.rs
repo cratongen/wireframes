@@ -179,7 +179,6 @@ fn booleans_of_the_runaway_pushback_pair_reduced_for_the_reversed_difference() {
 }
 
 #[test]
-#[ignore = "rounding: a tessellated stope wall rotated to strike is planar only to rounding"]
 fn union_of_a_tessellated_stope_and_a_box_rotated_to_strike() {
     booleans_are_solids_with_exact_volumes("rotated_stopes");
 }

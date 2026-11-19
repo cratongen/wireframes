@@ -211,7 +211,6 @@ def test_stopes_offset_by_a_third_of_a_panel_at_utm_coordinates():
     assert close(u.volume, sum(p.volume for p in parts))
 
 
-@pytest.mark.skip(reason="acceptance: union of tessellated stopes rotated to strike is not a solid")
 def test_union_of_face_sharing_stopes_rotated_to_strike():
     a = rotate_z(grid_box(DEEP, DEEP + [20, 16, 24], (8, 1, 2)), 37.0, DEEP)
     b = rotate_z(grid_box(DEEP + [0, 16, 0], DEEP + [20, 32, 24], (1, 3, 2)), 37.0, DEEP)
