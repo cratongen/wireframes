@@ -64,7 +64,20 @@ stage2 = (closed2 - closed1).clip_by_surface(topography)[0]  # valid
 stage2 = closed2.clip_by_surface(topography)[0] - closed1.clip_by_surface(topography)[0]  # can self-intersect
 ```
 
-Check `is_solid` on any result you pass on. [Example 06](../examples/06-open-pit/README.md) shows both orders.
+Underground work meets it in long chains of booleans. Each result carries rounded vertices along its intersection
+lines, and a boolean that takes it as input treats them as exact; long, thin triangles near them can then fold
+over each other after a few steps. Two habits avoid it. Put pieces that do not touch into one mesh with
+`wf.concat` and run one boolean, instead of one boolean per piece. And build each reported quantity from the
+original solids rather than from an earlier result:
+
+```python
+level = drive | wf.concat(crosscuts)  # one union; the crosscuts do not touch each other
+dilution = (stopes - orebody).volume - ((stopes & development) - orebody).volume  # from original solids
+```
+
+Check `is_solid` on any result you pass on. [Example 06](../examples/06-open-pit/README.md) shows both orders of
+clipping, and [example 07](../examples/07-underground/README.md) shows a chain of unions that fails validation at
+its eleventh step.
 
 ## Cutting
 
@@ -74,7 +87,8 @@ negative, positive = mesh.split_by_plane(origin, normal)  # exact side test; on-
 lines = mesh.slice_by_plane(origin, normal, offsets=[0, 10, 20])
 ```
 
-`clip_by_surface` needs the surface boundary outside the solid, and both inputs must pass validation. Cap faces
+`clip_by_surface` needs the surface boundary outside the solid: a fault or topography that ends inside the solid
+raises `wf.InvalidInput`, so extend the surface past the solid first. Both inputs must pass validation. Cap faces
 take the surface's face columns, so a `surface` column on the topography marks which faces of a clipped pit came
 from the ground and which from the design. `slice_by_plane` returns one feature per line with an `offset` column
 and the face columns of the triangles it crosses; a line splits where those columns change.
