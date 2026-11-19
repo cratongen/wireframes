@@ -120,8 +120,15 @@ fn writes_one_based_pids_and_refuses_clashes() {
         datamine_csv::write(&mesh_data(bad), &Default::default()),
         Err(Error::InvalidInput(_))
     ));
-    let bad = m.with_face_column("TRI", utf8(&["a"])).unwrap();
+    let bad = m
+        .clone()
+        .with_face_column("triangle", utf8(&["a"]))
+        .unwrap();
     assert!(datamine_csv::write(&mesh_data(bad), &Default::default()).is_err());
+    let alias = m.with_face_column("TRI", utf8(&["a"])).unwrap();
+    let (pt, tr) = datamine_csv::write(&mesh_data(alias.clone()), &Default::default()).unwrap();
+    let back = datamine_csv::read(&pt, &tr).unwrap().mesh.unwrap();
+    assert_eq!(back.face_attributes(), alias.face_attributes());
     assert!(matches!(
         datamine_csv::write(&Data::default(), &Default::default()),
         Err(Error::Unsupported(_))

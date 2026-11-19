@@ -275,7 +275,6 @@ def test_datamine_missing_pid_names_the_row(tmp_path):
         wf.read_mesh(write_pair(tmp_path, "gap", pt, tr))
 
 
-@pytest.mark.skip(reason="acceptance: TRISOL is taken as the triangle id over TRIANGLE when it comes first")
 def test_datamine_trisol_beside_triangle_is_kept(tmp_path):
     pt = "XP,YP,ZP,PID\n0,0,0,1\n1,0,0,2\n0,1,0,3\n"
     tr = "TRISOL,TRIANGLE,PID1,PID2,PID3\n7,1,1,2,3\n"
@@ -283,7 +282,6 @@ def test_datamine_trisol_beside_triangle_is_kept(tmp_path):
     assert m["TRISOL"].tolist() == [7.0]
 
 
-@pytest.mark.skip(reason="acceptance: an error in _pt.csv is labelled with the _tr.csv path")
 def test_datamine_error_names_the_points_file(tmp_path):
     pt = "XP,YP,ZP,PID\n0,0,0,1\n1,0,0\n"
     tr = "TRIANGLE,PID1,PID2,PID3\n1,1,2,3\n"

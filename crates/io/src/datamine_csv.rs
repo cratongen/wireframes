@@ -1,6 +1,7 @@
 //! Datamine wireframe CSV pairs: `_pt.csv` points and `_tr.csv` triangles.
 
 use std::collections::HashMap;
+use std::path::Path;
 
 use wireframes_core::{Column, ColumnData, Error, Mesh, Result, Table};
 
@@ -122,10 +123,11 @@ impl Csv {
         })
     }
 
+    /// The column of the first name in `names` that the header holds.
     fn col(&self, names: &[&str]) -> Option<usize> {
-        self.header
+        names
             .iter()
-            .position(|h| names.iter().any(|n| h.eq_ignore_ascii_case(n)))
+            .find_map(|n| self.header.iter().position(|h| h.eq_ignore_ascii_case(n)))
     }
 
     fn need(&self, name: &str) -> Result<usize> {
@@ -227,6 +229,32 @@ impl Csv {
 
 /// Reads a `_pt.csv` and `_tr.csv` pair.
 pub fn read(pt: &[u8], tr: &[u8]) -> Result<Data> {
+    read_pair(pt, tr, None)
+}
+
+/// As [`read`]; with `paths = Some((pt, tr))` a format error names the file of
+/// the pair that holds it.
+pub(crate) fn read_pair(pt: &[u8], tr: &[u8], paths: Option<(&Path, &Path)>) -> Result<Data> {
+    let in_pt = |e: Error| match paths {
+        Some((p, _)) => e.with_path(p),
+        None => e,
+    };
+    let in_tr = |e: Error| match paths {
+        Some((_, t)) => e.with_path(t),
+        None => e,
+    };
+    let (vertices, index, vertex_table) = read_points(pt).map_err(in_pt)?;
+    let (triangles, face_table) = read_triangles(tr, &index).map_err(in_tr)?;
+    let mesh = Mesh::new(vertices, triangles)?.with_attributes(vertex_table, face_table)?;
+    Ok(Data {
+        mesh: Some(mesh),
+        ..Data::default()
+    })
+}
+
+type Points = (Vec<[f64; 3]>, HashMap<i64, u32>, Table);
+
+fn read_points(pt: &[u8]) -> Result<Points> {
     let mut p = Csv::parse(pt, "_pt.csv")?;
     let cols = [p.need("XP")?, p.need("YP")?, p.need("ZP")?, p.need("PID")?];
     p.skip_type_row(cols[0]);
@@ -247,8 +275,10 @@ pub fn read(pt: &[u8], tr: &[u8]) -> Result<Data> {
         }
         vertices.push(xyz);
     }
-    let vertex_table = p.extras(&cols)?;
+    Ok((vertices, index, p.extras(&cols)?))
+}
 
+fn read_triangles(tr: &[u8], index: &HashMap<i64, u32>) -> Result<(Vec<[u32; 3]>, Table)> {
     let mut t = Csv::parse(tr, "_tr.csv")?;
     let tcols = [t.need("PID1")?, t.need("PID2")?, t.need("PID3")?];
     t.skip_type_row(tcols[0]);
@@ -268,12 +298,7 @@ pub fn read(pt: &[u8], tr: &[u8]) -> Result<Data> {
         }
         triangles.push(tri);
     }
-    let face_table = t.extras(&skip)?;
-    let mesh = Mesh::new(vertices, triangles)?.with_attributes(vertex_table, face_table)?;
-    Ok(Data {
-        mesh: Some(mesh),
-        ..Data::default()
-    })
+    Ok((triangles, t.extras(&skip)?))
 }
 
 fn field(s: &str) -> String {
@@ -336,8 +361,7 @@ pub fn write(data: &Data, _opts: &WriteOptions) -> Result<(Vec<u8>, Vec<u8>)> {
         pt.push_str(&row.join(","));
         pt.push('\n');
     }
-    reserved = vec!["PID1", "PID2", "PID3"];
-    reserved.extend(TRIANGLE_IDS);
+    reserved = vec!["TRIANGLE", "PID1", "PID2", "PID3"];
     let mut tr = header(&["TRIANGLE", "PID1", "PID2", "PID3"], ft, &reserved, "face")?;
     tr.push('\n');
     for (i, t) in mesh.triangles().iter().enumerate() {
@@ -348,4 +372,41 @@ pub fn write(data: &Data, _opts: &WriteOptions) -> Result<(Vec<u8>, Vec<u8>)> {
         tr.push('\n');
     }
     Ok((pt.into_bytes(), tr.into_bytes()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const PT: &str = "XP,YP,ZP,PID\n0,0,0,1\n1,0,0,2\n0,1,0,3\n";
+
+    #[test]
+    fn triangle_id_alias_is_chosen_by_priority_not_column_order() {
+        let t = Csv::parse(b"TRISOL,TRI,TRIANGLE,PID1\n1,2,3,4\n", "_tr.csv").unwrap();
+        assert_eq!(t.col(&TRIANGLE_IDS), Some(2));
+        let t = Csv::parse(b"TRISOL,PID1\n1,2\n", "_tr.csv").unwrap();
+        assert_eq!(t.col(&TRIANGLE_IDS), Some(0));
+    }
+
+    #[test]
+    fn a_trisol_column_beside_triangle_round_trips() {
+        let tr = "TRISOL,TRIANGLE,PID1,PID2,PID3\n7,1,1,2,3\n";
+        let data = read(PT.as_bytes(), tr.as_bytes()).unwrap();
+        let (pt2, tr2) = write(&data, &WriteOptions::default()).unwrap();
+        let again = read(&pt2, &tr2).unwrap().mesh.unwrap();
+        let col = again.face_attributes().column("TRISOL").unwrap();
+        assert_eq!(col.data, ColumnData::Float64(vec![7.0]));
+    }
+
+    #[test]
+    fn each_error_names_the_file_of_the_pair_that_holds_it() {
+        let (pt, tr) = (Path::new("a_pt.csv"), Path::new("a_tr.csv"));
+        let bad_pt = "XP,YP,ZP,PID\n0,0,0,1\n1,0,0\n";
+        let good_tr = "TRIANGLE,PID1,PID2,PID3\n1,1,2,3\n";
+        let e = read_pair(bad_pt.as_bytes(), good_tr.as_bytes(), Some((pt, tr))).unwrap_err();
+        assert!(e.to_string().starts_with("a_pt.csv:3: "), "{e}");
+        let bad_tr = "TRIANGLE,PID1,PID2,PID3\n1,1,2,9\n";
+        let e = read_pair(PT.as_bytes(), bad_tr.as_bytes(), Some((pt, tr))).unwrap_err();
+        assert!(e.to_string().starts_with("a_tr.csv:2: "), "{e}");
+    }
 }

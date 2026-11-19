@@ -47,7 +47,6 @@ fn dxf_cut_inside_a_coordinate_is_an_error() {
 }
 
 #[test]
-#[ignore = "acceptance: TRISOL is taken as the triangle id over TRIANGLE when it comes first, and its values are lost"]
 fn datamine_trisol_beside_triangle_is_kept() {
     let pt = "XP,YP,ZP,PID\n0,0,0,1\n1,0,0,2\n0,1,0,3\n";
     let tr = "TRISOL,TRIANGLE,PID1,PID2,PID3\n7,1,1,2,3\n";
@@ -74,7 +73,6 @@ fn datamine_triangle_before_trisol_keeps_trisol() {
 }
 
 #[test]
-#[ignore = "acceptance: an error in _pt.csv is labelled with the _tr.csv path"]
 fn datamine_error_names_the_file_that_holds_it() {
     let dir = scratch("datamine_error_names_the_file");
     std::fs::write(dir.join("pit_pt.csv"), "XP,YP,ZP,PID\n0,0,0,1\n1,0,0\n").unwrap();

@@ -158,7 +158,7 @@ pub fn read_with(path: impl AsRef<Path>, opts: &ReadOptions) -> Result<Data> {
         Format::DatamineCsv => {
             let (pt, tr) = datamine_pair(path);
             let (pt_bytes, tr_bytes) = (load(&pt)?, load(&tr)?);
-            datamine_csv::read(&pt_bytes, &tr_bytes)
+            datamine_csv::read_pair(&pt_bytes, &tr_bytes, Some((&pt, &tr)))
         }
         _ => {
             let bytes = load(path)?;
