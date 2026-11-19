@@ -171,3 +171,35 @@ def test_repair_keeps_touching_shells_apart(box):
     assert set(actions["action"].tolist()) == {"vertex_split"}
     assert split.validate().summary["touching_shell_edges"] == 1
     assert len(split.repair()[1]) == 0
+
+
+def test_plot_colours_text_face_and_point_columns_by_category():
+    from wireframes import plot
+
+    m = wf.datasets.box([0, 0, 0], [1, 1, 1]).with_face_column("layer", ["ORE", "WASTE", None] * 4)
+    fig, ax = plot.plan(m, "layer")
+    bar = fig.axes[-1]
+    assert [t.get_text() for t in bar.get_yticklabels()] == ["ORE", "WASTE"]
+    plt.close(fig)
+    fig, _ = plot.surface3d(m, "layer")
+    plt.close(fig)
+    points = wf.PointSet([[0, 0, 0], [1, 0, 0], [2, 0, 0]], {"hole": ["DH2", "DH1", "DH2"]})
+    fig, ax = plot.plan(points, "hole")
+    assert ax.collections[0].get_array().tolist() == [0.0, 1.0, 0.0]
+    plt.close(fig)
+    rock = m.with_vertex_column("rock", ["a", "b"] * 4)
+    with pytest.raises(wf.InvalidInput, match="'rock' cannot shade triangles"):
+        plot.plan(rock, "rock")
+
+
+def test_plot_missing_column_names_vertex_and_face_columns():
+    from wireframes import plot
+
+    m = (
+        wf.datasets.box([0, 0, 0], [1, 1, 1])
+        .with_face_column("rock", [1.0] * 12)
+        .with_vertex_column("au", [0.5] * 8)
+    )
+    for view in (plot.plan, plot.surface3d):
+        with pytest.raises(wf.MissingColumn, match=r'"gold"; columns are \["au", "rock"\]'):
+            view(m, "gold")

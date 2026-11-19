@@ -45,36 +45,63 @@ def _unit_label(items: list[Any], axis: str) -> str:
     return f"{axis} ({unit})" if unit else axis
 
 
-def _mesh_values(mesh: Mesh, values: Any) -> tuple[np.ndarray, bool]:
-    """``(values, per_face)``; vertex z when `values` is None."""
+def _categories(raw: np.ndarray) -> tuple[np.ndarray, list[str] | None]:
+    """Numbers to colour by, and the category names when `raw` is text: codes in first-appearance order,
+    NaN for nulls."""
+    if raw.dtype.kind in "biuf":
+        return raw.astype(float), None
+    keys = list(dict.fromkeys(x for x in raw.tolist() if x is not None))
+    index = {k: i for i, k in enumerate(keys)}
+    return np.array([np.nan if x is None else index[x] for x in raw.tolist()], dtype=float), keys
+
+
+def _limits(keys: list[str] | None) -> dict[str, float]:
+    return {} if keys is None else {"vmin": -0.5, "vmax": max(len(keys), 1) - 0.5}
+
+
+def _colorbar(fig: Any, ax: Any, art: Any, label: str, keys: list[str] | None) -> None:
+    bar = fig.colorbar(art, ax=ax, shrink=0.8, label=label)
+    if keys is not None:
+        bar.set_ticks(range(len(keys)), labels=keys)
+
+
+def _mesh_values(mesh: Mesh, values: Any) -> tuple[np.ndarray, bool, list[str] | None]:
+    """``(values, per_face, categories)``; vertex z when `values` is None."""
     if values is None:
-        return mesh.z, False
+        return mesh.z, False, None
     if isinstance(values, str):
-        if values in mesh.face_attributes:
-            return np.asarray(mesh.face_attributes[values], dtype=float), True
-        return np.asarray(mesh.vertex_attributes[values], dtype=float), False
-    v = np.asarray(values, dtype=float)
-    if len(v) == mesh.n_faces:
-        return v, True
-    if len(v) == mesh.n_vertices:
-        return v, False
-    raise InvalidInput(
-        f"values must have one value per face ({mesh.n_faces}) or per vertex ({mesh.n_vertices})"
-    )
+        per_face = values in mesh.face_attributes
+        raw = mesh.face_attributes[values] if per_face else mesh[values]
+    else:
+        raw = np.asarray(values)
+        if len(raw) not in (mesh.n_faces, mesh.n_vertices):
+            raise InvalidInput(
+                f"values must have one value per face ({mesh.n_faces}) or per vertex ({mesh.n_vertices})"
+            )
+        per_face = len(raw) == mesh.n_faces
+    v, keys = _categories(raw)
+    if keys is not None and not per_face:
+        name = f" {values!r}" if isinstance(values, str) else ""
+        raise InvalidInput(
+            f"text vertex values{name} cannot shade triangles; colour by a face column or by numbers"
+        )
+    return v, per_face, keys
 
 
-def _face_values(mesh: Mesh, values: Any) -> np.ndarray:
-    v, per_face = _mesh_values(mesh, values)
-    return v if per_face else v[mesh.triangles].mean(axis=1)
+def _face_values(mesh: Mesh, values: Any) -> tuple[np.ndarray, list[str] | None]:
+    v, per_face, keys = _mesh_values(mesh, values)
+    return (v if per_face else v[mesh.triangles].mean(axis=1)), keys
 
 
-def _point_values(points: PointSet, values: Any) -> np.ndarray | None:
+def _point_values(points: PointSet, values: Any) -> tuple[np.ndarray | None, list[str] | None]:
     if values is None:
-        return None
+        return None, None
     if isinstance(values, str):
-        return np.asarray(points[values], dtype=float) if values in points.attributes else None
-    v = np.asarray(values, dtype=float)
-    return v if len(v) == len(points) else None
+        if values not in points.attributes:
+            return None, None
+        return _categories(points[values])
+    raw = np.asarray(values)
+    return _categories(raw) if len(raw) == len(points) else (None, None)
 
 
 def _ring(part: np.ndarray, closed: bool) -> np.ndarray:
@@ -98,7 +125,8 @@ def plan(
         What to draw, bottom first.
     values : str or array_like, optional
         Colour of meshes and points: a face or vertex column name, or one value per face or vertex. None
-        colours meshes by elevation.
+        colours meshes by elevation. Text values, such as the DXF ``layer``, colour by category; on a mesh
+        they must be per face.
     ax : matplotlib.axes.Axes, optional
         Axes to draw on; None creates a figure.
     cmap : str
@@ -127,15 +155,16 @@ def plan(
         if isinstance(item, Mesh):
             if item.n_faces == 0:
                 continue
-            v, per_face = _mesh_values(item, values)
+            v, per_face, keys = _mesh_values(item, values)
             style = {"cmap": cmap, "edgecolors": "0.3" if edges else "none", "linewidth": 0.2}
+            style |= _limits(keys)
             if per_face:
                 art = ax.tripcolor(item.x, item.y, item.triangles, facecolors=v, **style)
             else:
                 art = ax.tripcolor(item.x, item.y, item.triangles, v, shading="gouraud", **style)
             if edges and not per_face:
                 ax.triplot(item.x, item.y, item.triangles, color="0.3", linewidth=0.2)
-            fig.colorbar(art, ax=ax, shrink=0.8, label=values if isinstance(values, str) else "z")
+            _colorbar(fig, ax, art, values if isinstance(values, str) else "z", keys)
         elif isinstance(item, Polylines):
             features = item.feature
             for p, (part, closed) in enumerate(zip(item.parts, item.closed, strict=True)):
@@ -145,11 +174,13 @@ def plan(
                 if label and first:
                     ax.annotate(str(features[p]), (part[0, 0], part[0, 1]), fontsize=7)
         else:
-            c = _point_values(item, values)
+            c, keys = _point_values(item, values)
             if c is None:
                 ax.scatter(item.x, item.y, color="k", s=8)
             else:
-                ax.scatter(item.x, item.y, c=c, s=8, cmap=cmap)
+                art = ax.scatter(item.x, item.y, c=c, s=8, cmap=cmap, **_limits(keys))
+                if keys is not None:
+                    _colorbar(fig, ax, art, values if isinstance(values, str) else "", keys)
     ax.set_aspect("equal")
     ax.ticklabel_format(useOffset=False, style="plain")
     ax.locator_params(nbins=5)
@@ -277,7 +308,7 @@ def surface3d(
         What to draw.
     values : str or array_like, optional
         Colour of the meshes: a face or vertex column, or one value per face or vertex; None colours by
-        elevation.
+        elevation. Text face values colour by category.
     ax : mpl_toolkits.mplot3d.Axes3D, optional
         3D axes to draw on; None creates a figure.
     cmap : str
@@ -315,8 +346,8 @@ def surface3d(
             if item.n_faces == 0:
                 continue
             tris = item.coords[item.triangles]
-            fv = _face_values(item, values)
-            norm = Normalize(np.nanmin(fv), np.nanmax(fv))
+            fv, keys = _face_values(item, values)
+            norm = Normalize(**_limits(keys)) if keys is not None else Normalize(np.nanmin(fv), np.nanmax(fv))
             faces = colormaps[cmap](norm(fv))
             shade = 0.6 + 0.4 * np.abs(item.face_normals[:, 2])
             faces[:, :3] *= shade[:, None]

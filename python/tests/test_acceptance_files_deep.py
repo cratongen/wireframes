@@ -1112,9 +1112,6 @@ def test_plot_functions_draw_into_the_axes_given(tmp_path):
     plt.close("all")
 
 
-@pytest.mark.skip(
-    reason="acceptance: plotting by a text column such as the dxf layer raises a bare ValueError"
-)
 def test_plot_by_a_text_column_colours_by_category_or_says_why_not():
     pytest.importorskip("matplotlib")
     from wireframes import plot
@@ -1132,7 +1129,6 @@ def test_plot_by_a_text_column_colours_by_category_or_says_why_not():
             assert "layer" in str(e) or "hole" in str(e)
 
 
-@pytest.mark.skip(reason="acceptance: plot names only vertex columns when a column is missing")
 def test_plot_missing_column_lists_every_column():
     pytest.importorskip("matplotlib")
     from wireframes import plot

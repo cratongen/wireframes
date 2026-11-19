@@ -1619,6 +1619,10 @@ def surface3d(
 
 - `plan`: meshes as `tripcolor` (face column or vertex column, else z), polylines as
   lines (rings closed), points as scatter; equal aspect; xy axes in the data unit.
+- `plan` and `surface3d` colour by text values (a Utf8 column such as the DXF
+  `layer`) as categories in first-appearance order, labelled on the colour bar;
+  text vertex values on a mesh raise `InvalidInput`. A column name that is not on
+  the mesh raises `MissingColumn` listing its vertex and face columns.
 - `section`: meshes drawn as `slice_by_plane(origin, normal)` traces; polylines and
   points within `thickness / 2` of the plane projected onto it; axes are the
   in-plane horizontal distance from `origin` and elevation (vertical sections) or
