@@ -486,33 +486,20 @@ pub fn validate(mesh: &Mesh, tolerance: f64) -> Result<MeshReport> {
         })
         .collect();
     contact_edges.sort_unstable();
-    let linked = |f: u32, g: u32| {
-        edges.face_edges[f as usize].iter().any(|&id| {
-            edges.face_edges[g as usize].contains(&id)
-                && shells
-                    .links(&edges, id)
-                    .iter()
-                    .any(|&l| l == [f, g] || l == [g, f])
-        })
-    };
     let mut touching_shell_edges = 0;
     let mut edge_ends = contact_points.clone();
     for ([a, b], fs) in &contact_edges {
-        let mixed = |x: u32, y: u32| MeshProblem {
-            face: Some(x.max(y)),
-            other: Some(x.min(y)),
-            ..problem(SelfIntersection)
-        };
         match radial_pairs_at(mesh, fs, v[*a as usize], v[*b as usize]) {
-            Radial::Paired(pairs) => match pairs.iter().find(|p| !linked(fs[p[0]], fs[p[1]])) {
-                Some(p) => problems.push(mixed(fs[p[0]], fs[p[1]])),
-                None => {
-                    touching_shell_edges += 1;
-                    edge_ends.extend([*a, *b]);
-                }
-            },
+            Radial::Paired(_) => {
+                touching_shell_edges += 1;
+                edge_ends.extend([*a, *b]);
+            }
             Radial::Coincident => {}
-            Radial::Unbalanced => problems.push(mixed(fs[0], fs[1])),
+            Radial::Unbalanced => problems.push(MeshProblem {
+                face: Some(fs[0].max(fs[1])),
+                other: Some(fs[0].min(fs[1])),
+                ..problem(SelfIntersection)
+            }),
         }
     }
 
@@ -878,6 +865,36 @@ mod tests {
             .collect();
         let s = summary(&Mesh::new(m.vertices().to_vec(), outward).unwrap());
         assert_eq!(s.inward_shells, 1, "{s:?}");
+    }
+
+    #[test]
+    fn cavities_touching_along_an_edge_are_solid() {
+        for (m, shells) in [
+            (fixtures::edge_touching_cavity(), 2),
+            (fixtures::edge_touching_cavities(), 3),
+        ] {
+            let r = validate(&m, 0.0).unwrap();
+            assert!(
+                r.summary.is_solid() && r.problems.is_empty(),
+                "{:?}",
+                r.problems
+            );
+            assert_eq!(
+                (
+                    r.summary.shells,
+                    r.summary.touching_shell_edges,
+                    r.summary.touching_shell_vertices
+                ),
+                (shells, 1, 2)
+            );
+        }
+        let outward = Mesh::concat(&[
+            &fixtures::box_mesh([0.0; 3], [4.0; 3]),
+            &fixtures::box_mesh([1.0; 3], [2.0; 3]),
+            &fixtures::flipped(&fixtures::box_mesh([2.0, 2.0, 1.0], [3.0, 3.0, 2.0])),
+        ])
+        .unwrap();
+        assert!(!summary(&outward).is_solid());
     }
 
     #[test]

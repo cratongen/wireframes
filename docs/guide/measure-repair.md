@@ -47,7 +47,8 @@ reports vertices within 2 mm of each other, which finds corners that another pac
 6. No degenerate or duplicate faces, and no duplicate vertices except exact copies where closed shells touch.
 
 Closed shells may touch each other along edges or at vertices, as primary stopes in a checkerboard do, and one
-shell may touch itself the same way, as a ring of stopes around a pillar does. The summary counts those
+shell may touch itself the same way, as a ring of stopes around a pillar does. Cavities follow the same rule: a
+cavity may touch its outer shell, and two cavities may touch each other, along edges or at vertices. The summary counts those
 contacts in `touching_shell_edges` and `touching_shell_vertices`, and they leave `is_solid` true. Contacts are
 exact: the edges and vertices must have equal coordinates. Only closed shells touch; where an open shell meets
 another one the report lists non-manifold vertices or edges instead. Shells that share part or all of a face,

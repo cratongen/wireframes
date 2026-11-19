@@ -553,6 +553,55 @@ fn a_cavity_touching_the_outer_shell_at_its_vertices() {
 }
 
 #[test]
+fn cavities_touching_along_an_edge() {
+    let m = fixtures::edge_touching_cavity();
+    assert!(close(volume(&m), 1.0 - 1.0 / 32.0));
+    let [_, i, _, _] = check_identities(&m, &fixtures::box_mesh([0.5, 0.5, 0.25], [2.0; 3]));
+    assert!(summary(&i).touching_shell_edges > 0, "{:?}", summary(&i));
+
+    let m = fixtures::edge_touching_cavities();
+    assert!(close(volume(&m), 62.0));
+    let holes = Mesh::concat(&[
+        &fixtures::box_mesh([1.0; 3], [2.0; 3]),
+        &fixtures::box_mesh([2.0, 2.0, 1.0], [3.0, 3.0, 2.0]),
+    ])
+    .unwrap();
+    let d = run(
+        &fixtures::box_mesh([0.0; 3], [4.0; 3]),
+        &holes,
+        Op::Difference,
+    );
+    let s = summary(&d);
+    assert_eq!(
+        (s.touching_shell_edges, s.touching_shell_vertices),
+        (1, 2),
+        "{s:?}"
+    );
+    assert!(close(volume(&d), 62.0));
+    let ia = combine(
+        Op::Difference,
+        in_box([0.0; 3], [4.0; 3]),
+        combine(
+            Op::Union,
+            in_box([1.0; 3], [2.0; 3]),
+            in_box([2.0, 2.0, 1.0], [3.0, 3.0, 2.0]),
+        ),
+    );
+    for (lo, hi) in [
+        ([1.5, 1.5, 0.5], [2.5, 2.5, 1.5]),
+        ([-1.0, -1.0, 1.5], [5.0, 5.0, 5.0]),
+        ([2.0, -1.0, -1.0], [5.0, 5.0, 5.0]),
+    ] {
+        let b = fixtures::box_mesh(lo, hi);
+        let [u, i, _, x] = check_identities(&m, &b);
+        let ib = in_box(lo, hi);
+        assert!(close(volume(&u), voxel_volume(&|p| ia(p) || ib(p))));
+        assert!(close(volume(&i), voxel_volume(&|p| ia(p) && ib(p))));
+        assert!(close(volume(&x), voxel_volume(&|p| ia(p) != ib(p))));
+    }
+}
+
+#[test]
 fn split_through_a_lone_vertex_on_the_plane() {
     let (a, b) = split_by_plane(&fixtures::cube(), [1.0; 3], [1.0; 3]).unwrap();
     assert_eq!((a.n_faces(), b.n_faces()), (12, 0));

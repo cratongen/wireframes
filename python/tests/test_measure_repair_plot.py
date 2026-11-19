@@ -173,6 +173,17 @@ def test_repair_keeps_touching_shells_apart(box):
     assert len(split.repair()[1]) == 0
 
 
+def test_cavities_touching_along_an_edge_are_solids_like_touching_bodies(box):
+    holes = [box([1, 1, 1], [2, 2, 2]), box([2, 2, 1], [3, 3, 2])]
+    bodies = wf.concat(holes)
+    cavities = wf.concat([box([0, 0, 0], [4, 4, 4])] + [h.flip() for h in holes])
+    for m in (bodies, cavities):
+        s = m.validate().summary
+        assert m.is_solid and s["touching_shell_edges"] == 1 and s["self_intersections"] == 0
+    assert close(cavities.volume, 62.0)
+    assert close((box([0, 0, 0], [4, 4, 4]) - bodies).volume, 62.0)
+
+
 def test_plot_colours_text_face_and_point_columns_by_category():
     from wireframes import plot
 

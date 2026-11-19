@@ -89,6 +89,12 @@ All notable changes to wireframes are listed here. The format follows
 - `validate` and `repair` no longer take a cavity that touches its outer shell
   at every vertex it has for an inward shell; nesting falls back to an exact
   point inside one of its edges.
+- `validate` accepts a cavity that touches its outer shell along an edge, and
+  two cavities that touch each other along an edge, as contacts. It reported
+  them as self-intersections because each wedge of solid around the edge runs
+  from one shell to the other, while the same contact at a vertex was valid.
+  An edge contact is now valid whenever the faces around it alternate in
+  direction, so no wedge is inside twice.
 - `split_by_plane` no longer panics when a closed mesh meets the plane only at
   a vertex.
 - `split_by_plane` of a closed mesh at a plane it touches from above, such
@@ -123,8 +129,6 @@ All notable changes to wireframes are listed here. The format follows
   differ by about one ulp), in unions of stopes rotated to strike, and in
   inclined splits where other vertices lie within an ulp of the plane. For
   pushbacks, clip the difference of the unclipped pits instead.
-- A cavity that touches its outer shell along an edge is refused as a
-  self-intersection, while one that touches it at a vertex is a valid contact.
 - `loft` does not branch, `extrude` has no path sweep, and `offset` is not a
   Minkowski offset.
 - No real Datamine Studio export is tested yet.

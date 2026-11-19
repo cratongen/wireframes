@@ -398,6 +398,39 @@ pub fn vertex_touching_cavity() -> Mesh {
     mesh(v, f)
 }
 
+/// The unit cube and a tetrahedral cavity, wound inward, that shares the
+/// cube's edge from `(1, 1, 0)` to `(1, 1, 1)`: a cavity touching its outer
+/// shell along an edge, with coincident copies. Volume `1 - 1 / 32`.
+pub fn edge_touching_cavity() -> Mesh {
+    let t = mesh(
+        vec![
+            [1.0, 1.0, 0.0],
+            [1.0, 1.0, 1.0],
+            [0.5, 0.75, 0.5],
+            [0.75, 0.5, 0.5],
+        ],
+        vec![[0, 2, 1], [0, 1, 3], [0, 3, 2], [1, 2, 3]],
+    );
+    let t = if t.validate(0.0).expect("valid").summary.inward_shells > 0 {
+        t
+    } else {
+        flipped(&t)
+    };
+    Mesh::concat(&[&cube(), &t]).expect("no labels")
+}
+
+/// The box from `0` to `4` with two unit cavities, wound inward, from `1` to
+/// `2` and from `(2, 2, 1)` to `(3, 3, 2)`: cavities touching each other
+/// along the edge `x = y = 2`, with coincident copies. Volume `62`.
+pub fn edge_touching_cavities() -> Mesh {
+    Mesh::concat(&[
+        &box_mesh([0.0; 3], [4.0; 3]),
+        &flipped(&box_mesh([1.0; 3], [2.0; 3])),
+        &flipped(&box_mesh([2.0, 2.0, 1.0], [3.0, 3.0, 2.0])),
+    ])
+    .expect("no labels")
+}
+
 /// Meshes with one deliberate defect each.
 pub mod broken {
     use super::*;

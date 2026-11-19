@@ -77,7 +77,12 @@ Each line: the decision, then why.
     may also touch itself along edges or at vertices on the same terms (revised
     2026-11-19 after the underground acceptance round: refusing it made unions
     depend on their order, since an intermediate union of stopes closing around a
-    gap touches itself until the gap is filled).
+    gap touches itself until the gap is filled). The same terms hold for cavities:
+    a cavity may touch its outer shell, and two cavities may touch each other,
+    along edges or at vertices, when the solid between them does not overlap
+    itself (revised 2026-11-19: `validate` had refused edge contacts whose wedges
+    of solid run from one shell to another, so a cavity touching along an edge was
+    a defect while one touching at a vertex was valid).
 
 ## 1. Workspace
 
@@ -639,10 +644,12 @@ Semantics:
   one vertex umbrella (fan) of closed shells meets, by shared index or coincident
   copies. Every edge location with more than two faces of closed shells that has a
   contact point at one end, or is in `Shells::contacts`, is a candidate:
-  `radial_pairs_at` on all its faces must pair each face with a face it is linked to
-  across that edge (`Shells::links`); then the edge counts once in
-  `touching_shell_edges`, else the first unlinked pair (or, when `Unbalanced`, the
-  first two faces) is a `SelfIntersection` (the interiors overlap there).
+  `radial_pairs_at` on all its faces must return `Paired`: around the edge the faces
+  alternate in direction, so wedges of solid and of void alternate and no wedge is
+  inside twice. The pairs may join faces of different shells, as where cavities
+  touch along an edge and each wedge of solid runs from one cavity to the other.
+  Then the edge counts once in `touching_shell_edges`; when `Unbalanced`, the first
+  two faces are a `SelfIntersection` (the interiors overlap there).
   `touching_shell_vertices` counts the contact points and the ends of the counted
   edges. A shell touching itself along an edge can have ends where its faces form
   one umbrella; that edge is then shared by index. `Coincident` adds nothing: the coplanar overlap or duplicate face is
@@ -1774,7 +1781,9 @@ wireframes-boolean
   edges and vertices, and a chain of ten mixed booleans each fed its previous result,
   checked against an exact voxel count.
 - Four shells on one edge and four octant boxes meeting at one vertex; a cavity
-  touching its outer shell at every vertex it has; exact edge and vertex contacts at
+  touching its outer shell at every vertex it has; a cavity touching its outer shell
+  along an edge and two cavities touching each other along an edge, checked against
+  an exact voxel count; exact edge and vertex contacts at
   UTM scale and contacts 1e-6 apart; shells touching along a face are a coplanar
   overlap, not a contact. Inputs with permuted vertices, faces and corners give the
   same faces (as coordinate triples) and the same summary or the same error, and 1
