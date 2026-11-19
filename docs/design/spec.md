@@ -1659,7 +1659,8 @@ triangulate, loft, extrude, plot` (lazy attribute), `__version__`.
 | `lint` | `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `ruff check`, `ruff format --check` |
 | `verify` | `lint` then `test` |
 | `bench` | `cargo bench` (criterion), interleaved rounds, medians |
-| `examples`, `docs`, `docs-build`, `compat` | as in AGENTS.md |
+| `examples` | `py:build`, then `examples/run.py`: runs each `examples/NN-*/example_NN.py` cell by cell (`# %%` code, `# %% [markdown]` text, `# %% [hidden]` run but not shown) and writes `README.md` next to it with the printed output and the figures saved by `common.save`; `docs/hooks.py` publishes the pages, scripts and figures in the site |
+| `docs`, `docs-build`, `compat` | as in AGENTS.md |
 | `oracle` | `py:build`, then `pytest -m oracle -s`: the oracle suite of section 12 with its counts |
 
 Proptest cases: 256 per property by default (`PROPTEST_CASES` overrides). The

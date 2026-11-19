@@ -1,0 +1,155 @@
+# Points, rays, drillholes and blocks against a solid
+
+`locate` tells whether each point is inside, on or outside a solid, exactly: it counts crossings of a vertical
+ray with exact predicates and breaks ties by symbolic perturbation. `signed_distance`, `ray_hits`,
+`trace_intervals` and `block_fraction` build on the same index, which the mesh builds once and keeps.
+
+```python
+import matplotlib.pyplot as plt
+import numpy as np
+import wireframes as wf
+from common import HIGHLIGHT, save
+```
+
+## Inside, on or outside
+
+The sign of `locate` (-1 inside, 0 on the surface, 1 outside) agrees with the sign of `signed_distance`. A
+vertex of the mesh is on its surface.
+
+```python
+o = wf.datasets.ORIGIN
+orebody = wf.datasets.orebody()
+rng = np.random.default_rng(3)
+points = o + rng.uniform([-220, -80, 160], [220, 80, 240], (2000, 3))
+where = orebody.locate(points)
+distance = orebody.signed_distance(points)
+print(np.unique(where, return_counts=True))
+assert np.array_equal(np.sign(distance).astype(np.int8), where)
+assert (orebody.locate(orebody.coords) == 0).all()
+```
+
+```text
+(array([-1,  1], dtype=int8), array([ 451, 1549]))
+```
+
+`contains` answers the same question as a boolean, with `boundary` choosing what a point on the surface counts
+as. `closest_point` returns the nearest surface point, its face and the unsigned distance.
+
+```python
+inside = orebody.contains(points)
+assert np.array_equal(inside, where <= 0) and not orebody.contains(orebody.coords, boundary=False).any()
+nearest, face, gap = orebody.closest_point(points)
+assert np.allclose(gap, np.abs(distance)) and np.allclose(np.linalg.norm(nearest - points, axis=1), gap)
+print(f"furthest sample point is {gap.max():.1f} m from the orebody, nearest face {face[np.argmax(gap)]}")
+```
+
+```text
+furthest sample point is 62.1 m from the orebody, nearest face 347
+```
+
+## Surfaces seen from above
+
+For an open surface, `surface_z` gives the highest elevation above each plan point and `vertical_distance` the
+height of a point above it, negative below ground. `segment_hits` lists where straight segments, such as
+blast holes, pierce a mesh.
+
+```python
+topography = wf.datasets.topography()
+collars = np.column_stack([o[:2] + rng.uniform(-300, 300, (5, 2)), np.full(5, 400.0)])
+ground = topography.surface_z(collars[:, :2])
+print("ground", np.round(ground, 2))
+assert np.allclose(topography.vertical_distance(collars), 400.0 - ground)
+toes = collars - [0, 0, 300]
+hits = topography.segment_hits(collars, toes)
+print(hits.column_names)
+assert np.allclose(np.sort(hits["z"]), np.sort(ground))
+```
+
+```text
+ground [304.53 322.05 307.77 286.48 315.06]
+['segment', 't', 'face', 'x', 'y', 'z', 'kind', 'entering']
+```
+
+## Drillhole intervals
+
+`trace_intervals` splits a desurveyed trace into runs inside and outside the solid, with the faces where it
+enters and leaves. Depths interpolate along each trace segment.
+
+```python
+holes = wf.datasets.drillholes()
+rows = []
+for name, trace in zip(holes.attributes["hole"], holes.parts, strict=True):
+    iv = orebody.trace_intervals(trace, [0.0, 350.0])
+    for start, end in zip(iv["from"][iv["inside"]], iv["to"][iv["inside"]], strict=True):
+        rows.append((name, start, end))
+        print(f"{name}: inside from {start:6.2f} m to {end:6.2f} m ({end - start:5.2f} m)")
+```
+
+```text
+DH001: inside from 116.45 m to 139.91 m (23.46 m)
+DH002: inside from 120.71 m to 157.47 m (36.75 m)
+DH003: inside from 115.09 m to 157.29 m (42.20 m)
+DH004: inside from 117.41 m to 166.11 m (48.70 m)
+DH005: inside from 108.54 m to 156.66 m (48.12 m)
+DH006: inside from 106.81 m to 148.11 m (41.31 m)
+DH007: inside from 102.35 m to 155.82 m (53.46 m)
+DH008: inside from 105.10 m to 150.50 m (45.40 m)
+DH009: inside from 110.70 m to 155.33 m (44.63 m)
+DH010: inside from 112.40 m to 158.20 m (45.79 m)
+DH011: inside from 110.90 m to 149.83 m (38.93 m)
+DH012: inside from 113.94 m to 140.05 m (26.11 m)
+```
+
+## Block fractions
+
+`block_fraction` integrates the solid over each block with the divergence theorem, so there is no sampling
+error: over blocks that cover the solid, fraction times block volume sums to the solid volume.
+
+```python
+size = np.array([20.0, 10.0, 5.0])
+lo, hi = (np.array(b) for b in orebody.bounds)
+axes = [np.arange(lo[k] + size[k] / 2 - size[k], hi[k] + size[k], size[k]) for k in range(3)]
+centres = np.stack(np.meshgrid(*axes, indexing="ij"), -1).reshape(-1, 3)
+fraction = orebody.block_fraction(centres, size)
+print(
+    f"{len(centres):,} blocks, {np.count_nonzero(fraction):,} touch the solid, {np.sum(fraction == 1):,} full"
+)
+print(f"sum of fraction x volume - solid volume = {fraction.sum() * size.prod() - orebody.volume:+.2e} m3")
+assert abs(fraction.sum() * size.prod() - orebody.volume) <= 1e-8 * orebody.volume
+```
+
+```text
+4,290 blocks, 1,826 touch the solid, 880 full
+sum of fraction x volume - solid volume = -2.33e-10 m3
+```
+
+The top panel shows the signed distance on a horizontal plane at 200 m, the bottom panel the block fractions
+of the 200 m bench with the drillhole intercepts.
+
+```python
+gx, gy = np.meshgrid(np.linspace(-240, 240, 241), np.linspace(-90, 90, 91))
+plane = o + np.column_stack([gx.ravel(), gy.ravel(), np.full(gx.size, 200.0)])
+field = orebody.signed_distance(plane).reshape(gx.shape)
+fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(9, 6.4), layout="constrained", sharex=True)
+image = ax1.pcolormesh(gx, gy, field, cmap="RdBu", vmin=-30, vmax=30, shading="auto")
+ax1.contour(gx, gy, field, [0.0], colors="k", linewidths=1.0)
+fig.colorbar(image, ax=ax1, label="Signed distance (m)")
+ax1.set_title("Signed distance at 200 m")
+bench = np.isclose(centres[:, 2], axes[2][np.argmin(np.abs(axes[2] - (o[2] + 200)))])
+c = centres[bench] - o
+art = ax2.scatter(c[:, 0], c[:, 1], c=fraction[bench], marker="s", s=24, cmap="cividis")
+fig.colorbar(art, ax=ax2, label="Fraction inside")
+for trace in holes.parts:
+    t = trace - o
+    ax2.plot(t[:, 0], t[:, 1], color=HIGHLIGHT, linewidth=0.8)
+ax2.set_title("Block fractions of the 200 m bench and drillhole traces")
+for ax in (ax1, ax2):
+    ax.set_aspect("equal")
+    ax.set_ylabel("Northing from origin (m)")
+ax2.set_xlabel("Easting from origin (m)")
+save(fig, "queries")
+```
+
+![queries](queries.png)
+
+Full script: [`example_04.py`](example_04.py), run by `mise run examples`.

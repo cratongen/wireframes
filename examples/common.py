@@ -38,10 +38,14 @@ mpl.rcParams.update(
 )
 
 
+SAVED: list[Path] = []
+
+
 def save(fig, name: str) -> Path:
-    """Writes `name`.png next to the calling script and closes the figure."""
+    """Writes `name`.png next to the calling script, closes the figure and records the path in `SAVED`."""
     caller = inspect.currentframe().f_back.f_globals["__file__"]
     path = Path(caller).parent / f"{name}.png"
     fig.savefig(path)
     plt.close(fig)
+    SAVED.append(path)
     return path

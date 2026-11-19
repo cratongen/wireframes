@@ -37,7 +37,7 @@ fig, ax = wf.plot.section([orebody, inside], wf.datasets.ORIGIN, [0, 1, 0])
 | [Plotting](guide/plotting.md) | plan, section and 3D views |
 
 Each page ends with a numbered example from `examples/`. `mise run examples` reruns them all and rewrites their
-figures; every example asserts the invariant it shows.
+pages and figures; every example asserts the invariant it shows.
 
 ## Rules the library keeps
 

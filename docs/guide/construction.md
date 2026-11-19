@@ -33,8 +33,4 @@ Every solid builder validates its output. The checks the test suite runs on them
 
 ![A DTM with a breakline, and edited meshes in section](../examples/05-construct/construct.png)
 
-??? example "examples/05-construct/example_05.py"
-
-    ```python
-    --8 < --"examples/05-construct/example_05.py"
-    ```
+The full example, with the output of each step: [example 05](../examples/05-construct/README.md).

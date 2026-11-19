@@ -87,8 +87,4 @@ rescales coordinates, and CRS transforms stay outside `wireframes`.
 
 ![Topography, orebody outline and drillholes](../examples/00-basics/basics.png)
 
-??? example "examples/00-basics/example_00.py"
-
-    ```python
-    --8 < --"examples/00-basics/example_00.py"
-    ```
+The full example, with the output of each step: [example 00](../examples/00-basics/README.md).

@@ -47,8 +47,4 @@ A `length_unit` argument that disagrees with the unit a DXF declares raises `Inv
 
 ![Orebody read back from a Datamine pair](../examples/01-files/files.png)
 
-??? example "examples/01-files/example_01.py"
-
-    ```python
-    --8 < --"examples/01-files/example_01.py"
-    ```
+The full example, with the output of each step: [example 01](../examples/01-files/README.md).

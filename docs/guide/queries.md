@@ -31,8 +31,4 @@ inside = iv.filter(iv["inside"])
 
 ![Signed distance and block fractions](../examples/04-queries/queries.png)
 
-??? example "examples/04-queries/example_04.py"
-
-    ```python
-    --8 < --"examples/04-queries/example_04.py"
-    ```
+The full example, with the output of each step: [example 04](../examples/04-queries/README.md).

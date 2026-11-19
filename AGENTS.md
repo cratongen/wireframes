@@ -21,7 +21,7 @@ mise run lint       # rustfmt --check, clippy -D warnings, ruff check + format -
 mise run verify     # lint + test; must pass before finishing any task
 mise run bench      # criterion benchmarks; pass a filter to run a subset
 mise run oracle     # compare with Manifold, trimesh and scipy (dev-only oracles)
-mise run examples   # rerun examples/NN-*/*.py
+mise run examples   # rerun examples/NN-*/example_NN.py, rewrite their README.md pages and figures
 mise run docs       # mkdocs serve
 mise run docs-build # mkdocs build --strict
 mise run compat     # install check across pip, uv, pixi, and conda

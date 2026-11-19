@@ -56,8 +56,4 @@ that touch along an edge or at a vertex come out as separate pieces.
 
 ![A hole drawn from the validation report, and volume by slab](../examples/02-measure-repair/measure_repair.png)
 
-??? example "examples/02-measure-repair/example_02.py"
-
-    ```python
-    --8 < --"examples/02-measure-repair/example_02.py"
-    ```
+The full example, with the output of each step: [example 02](../examples/02-measure-repair/README.md).

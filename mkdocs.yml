@@ -32,3 +32,10 @@ nav:
       - Queries: guide/queries.md
       - Construction: guide/construction.md
       - Plotting: guide/plotting.md
+  - Examples:
+      - Meshes, strings, points and tables: examples/00-basics/README.md
+      - Reading and writing files: examples/01-files/README.md
+      - Measuring, validating and repairing: examples/02-measure-repair/README.md
+      - Booleans, clipping and cut and fill: examples/03-booleans/README.md
+      - Points, rays, drillholes and blocks: examples/04-queries/README.md
+      - Building surfaces and solids: examples/05-construct/README.md

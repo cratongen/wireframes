@@ -69,8 +69,4 @@ change.
 
 ![Sections of the orebody against a mining block](../examples/03-booleans/booleans.png)
 
-??? example "examples/03-booleans/example_03.py"
-
-    ```python
-    --8 < --"examples/03-booleans/example_03.py"
-    ```
+The full example, with the output of each step: [example 03](../examples/03-booleans/README.md).
