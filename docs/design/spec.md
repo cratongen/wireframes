@@ -204,7 +204,9 @@ No other dependency without a line in this table.
    `clip_by_surface` and `split_by_plane` of a solid run `validate` on every result
    and return it only when `is_solid` holds; otherwise they return
    `Error::Kernel` with the report and the rounded mesh, never the mesh itself. A
-   fix needs snap rounding of the arrangement, which is not implemented. Tests that
+   fix needs snap rounding of the arrangement, which is not implemented;
+   `rounding.md` in this folder records the reduced cases and the chosen method.
+   Tests that
    meet the limit read the mesh from the error and keep their checks on it, and
    report the failure rate, never hide it.
 

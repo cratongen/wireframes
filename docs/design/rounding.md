@@ -1,0 +1,354 @@
+# Rounding exact results to f64
+
+Status: design, not implemented. The API contract stays in `spec.md`; this file
+records why booleans, `clip_by_surface` and `split_by_plane` refuse results today,
+which materialization method replaces the refusal, and how we prove it.
+
+## 1. The refusals, reproduced and reduced
+
+Every case from README (M4 known gaps), CHANGELOG (Known issues) and spec
+tolerance rule 5 was rerun on 2026-11-19 at commit `ee20f54`. Each one that still
+raises `Error::Kernel` was cut down to the smallest input found that still fails
+and committed as an ignored test in `crates/boolean/tests/rounding.rs`, with its
+inputs in `crates/boolean/tests/data/rounding/*.txt` (decimal text that parses back
+to the same `f64`). The running test
+`reduced_rounding_cases_return_solids_or_kernel_errors` checks that every reduced
+case fails as a kernel error, never as an input error or a panic.
+
+| Listed case | Reproduced | Reduced test (faces of a + b) |
+|---|---|---|
+| Prisms whose caps differ by one ulp | `b - a` refuses; union, intersection and `a - b` pass | `difference_of_prisms_whose_caps_differ_by_one_ulp_is_empty_or_a_solid` (12 + 12) |
+| Pits and pushbacks clipped by the same topography | boxes clipped by one DTM: difference refuses; square pit and pushback, union refuses | `booleans_of_boxes_clipped_by_the_same_topography` (20 + 20), `booleans_of_a_triangular_pit_and_its_pushback_clipped_by_the_same_ground` (32 + 42, 3 ring directions, 1 bench) |
+| Touching pushback slivers (`pushback_pair_touching.npz`) | union, intersection and `pit - pushback` refuse | `booleans_of_touching_pushback_slivers` (18 + 28) |
+| Runaway pushback pair (`pushback_pair_runaway.npz`) | all four refuse; the union is not even closed (4 boundary edges) | four tests `booleans_of_the_runaway_pushback_pair_reduced_for_*` (124 + 136 to 164) |
+| Face-sharing stopes rotated to strike | union refuses | `union_of_a_tessellated_stope_and_a_box_rotated_to_strike` (68 + 12: an 8 x 1 x 1 grid box and a plain box) |
+| Union 11 of 12 in example 07 | drive united with crosscuts 1 and 2, then with crosscut 11, refuses | `union_of_a_rounded_drive_with_a_crosscut` (156 + 52 after cropping) |
+| Octagonal pit clipped by flat ground at UTM | flat ground at 119 elevations from 200.5 to 259.5 m: no refusal. Tilted ground (200 seeded planes, seed 20261119, slopes up to 0.2): octagon 9, hexagon 0, square 1 | `square_pit_at_utm_clipped_by_tilted_ground_is_two_solids` (30 + 2) |
+| 188 of 648 inclined splits of `sphere(2)` | 188 of 648; `sphere(1)` refuses 10 of 320 | `split_of_an_icosphere_through_its_centre_is_two_solids` (80 faces, plane through vertex 12 with normal (1, 1, 1)) |
+
+The flat-ground octagon clip no longer refuses; README and CHANGELOG still list it.
+The tilted sweep is the closest case that still fails.
+
+Reduction worked in two ways. Cropping both inputs with six plane splits around a
+problem face shrank the crosscut chain. It could not shrink the compact pairs,
+because the caps it adds outnumber the faces it removes. Generator parameters
+shrank the rest: fewer ring directions and benches, fewer stope panels, and the
+smallest subset of earlier crosscuts.
+
+### Mechanisms
+
+For each self-intersecting or overlapping face pair of the rounded result, a
+diagnostic matched both faces to the input face whose plane holds them, then
+measured the angle between those planes and how far the nearer vertex lies from
+the other plane, in ulps of the largest coordinate. Four mechanisms cover every
+pair:
+
+- **M1, sub-ulp shell.** The whole exact shell is thinner than the f64 spacing.
+  The difference of the ulp prisms rounds to two faces on three vertices, an
+  inward shell of zero volume.
+- **M2, two inputs that agree only to rounding.** Faces of `a` and `b` lie at
+  angles below 1e-9 rad or with a vertex within one ulp of the other plane. The
+  exact result holds slivers and pockets between them thinner than an ulp, and
+  rounding the implicit points on their intersection curves folds the slivers
+  across each other. Clipped boxes, pit and pushback, both pushback pairs.
+- **M3, one input whose faces agree only to rounding.** A tessellated wall
+  rotated to strike, or a drive that earlier unions rounded, has neighbouring
+  faces that are planar only to rounding. Implicit points where the other input
+  crosses them round off the wall, and the sub-triangles of adjacent input faces
+  overlap. Rotated stopes (all 22 problem pairs inside one input), crosscut chain.
+- **M4, a vertex within ulps of a transverse cut.** An input vertex lies within an
+  ulp of a cutting face or plane it does not touch exactly. The crossing point on
+  each of its edges lies within an ulp of the vertex, and rounding puts it on the
+  wrong side (angles near 1.5 rad, distances 0 to 0.1 ulp). Tilted ground, the
+  icosphere split.
+
+## 2. Where validity is lost today
+
+The arrangement (`arrangement.rs`), the implicit points (`hp.rs`) and the
+classification (`classify.rs`) are exact. Validity is lost at these places:
+
+1. `ops.rs:115`, in `assemble`: `arr.pts[p].to_f64()` rounds each coordinate of
+   each implicit point to the nearest `f64` (`hp.rs:110`, `round_quotient`). Each
+   point moves by at most half an ulp per coordinate. Nothing checks that faces
+   which were disjoint stay disjoint after the move; a vertex closer than one
+   ulp to a face it does not touch can cross it.
+2. `ops.rs:132`: `collapse_rounded` runs on one shell at a time. Problems between
+   two shells (touching shells of a union, a sliver shell inside another) are
+   never seen.
+3. `ops.rs:165-417`, `collapse_rounded` itself. It merges vertices with equal
+   coordinates, cancels opposite faces on the same three vertices, splits away
+   faces that are collinear, folded or turned (only into a neighbour from the same
+   input face), and collapses short edges. The last stage (lines 250-385) is a
+   heuristic: it calls `validate`, retries splits around problem faces, and at
+   line 370 undoes a round that does not lower the problem count, then returns
+   the shell as it is. It has no operation for a vertex against a face of
+   another input face (M2, M3, M4) and none that removes a shell (M1). Two
+   same-orientation copies of a face survive it (the M1 case).
+4. `ops.rs:714`, `solid_result`: the only guard. It runs `validate` and turns any
+   problem into `Error::Kernel`.
+5. `clip.rs`: the same `assemble` and `solid_result` path, so it loses validity at
+   the same places.
+6. `slice.rs:320`: `split_by_plane` rounds every section point to `f64` before it
+   triangulates the cap (`slice.rs:428`), so the cap and the cut side faces are
+   built on rounded points, not exact ones. `coincident` (`slice.rs:150`) merges
+   section points whose rounded projections are equal. `clean`
+   (`slice.rs:172-215`) runs `collapse_rounded` without normals, so the
+   validate-driven stage never runs for splits. `slice.rs:495` refuses.
+
+## 3. Methods compared
+
+Notation: `p` is an exact output vertex, `r(p)` its coordinate-wise nearest
+`f64`, `u(p)` the ulp of each coordinate of `p`. Rounding moves `p` by
+`|r(p) - p| <= u(p) / 2` per coordinate, at most `rho(p) = |u(p)| / 2` in length.
+For an output face `f` of area `A_f` and perimeter `P_f` whose corners move by at
+most `rho_f`, every point of `f` moves by at most `rho_f` (a convex combination of
+corner motions), so `f` sweeps a region inside `f + B(rho_f)`. By Steiner's
+formula for a flat triangle,
+
+```text
+vol(f + B(rho)) = 2 A_f rho + (pi / 2) P_f rho^2 + (4 / 3) pi rho^3 =: T(f, rho).
+```
+
+Moving one closed surface into another changes the winding number of a point
+only when a face sweeps across it, so the volume change is bounded:
+
+```text
+|vol(out) - vol(exact)| <= sum over moved faces of T(f, rho_f).          (V)
+```
+
+Each method below either fits (V) with a documented `rho_f` or does not.
+
+**Separation lemma (S).** If every vertex lies farther than `rho_v + rho_f` from
+every face it does not belong to, every edge farther than `rho_e + rho_e'` from
+every edge it does not share a vertex with, and every corner of a face farther
+than the sum of the motions from the opposite edge, then moving each vertex by at
+most its `rho` keeps the surface embedded and keeps every face's orientation. A
+crossing after the move needs a vertex-face or edge-edge pair to reach distance
+zero, and their distance shrinks by at most the sum of their motions. A face can
+flip only by passing through a degenerate state, which needs a corner to reach its
+opposite edge. Input vertices have `rho = 0`, so only features near implicit
+points can break. (S) is sufficient, not necessary; exact `validate` on the
+rounded mesh decides the necessary and sufficient case.
+
+### A. Iterated snap rounding on a grid derived from the input extent
+
+Pick a grid of spacing `g` per axis, a power of two no finer than the ulp of the
+largest coordinate in the bounding box, so every grid point is an `f64`. Every
+vertex snaps to its grid point; every face that passes through a hot cell (a
+cell holding a vertex) is rerouted through that cell's centre; iterated snap
+rounding repeats until no face passes within half a cell of a vertex it does not
+hold.
+
+- **Correctness.** In 2D, snap rounding is a continuous deformation that only
+  collapses features (Guibas and Marimont), and iterated snap rounding keeps
+  vertices at least half a cell from foreign edges (Halperin and Packer). In 3D,
+  rerouting a face through hot cells needs a retriangulation that does not cross
+  itself; the only general construction with a proof we know is Devillers,
+  Lazard and Lenhart, "3D snap rounding" (SoCG 2018). We have not checked their
+  proof or their bounds line by line; as stated in their abstract, faces move by
+  at most 3/2 cell in L-infinity and the output has `O(n^15)` faces in the worst
+  case.
+- **Termination.** Rerouting only adds vertices at existing hot-cell centres, so
+  the number of (cell, face) insertions is finite: at most hot cells times faces.
+- **Vertex movement.** Up to `3 g / 2` per coordinate for every vertex, inputs
+  included. An input coordinate that is not a multiple of `g` moves: with a UTM
+  northing near 7.5e6, `g >= 2^-30` m (about 9.3e-10 m), so a vertex at
+  `z = 200.1` moves even though it is an exact input.
+- **Volume.** (V) with `rho_f = (3 sqrt(3) / 2) g` on every face.
+- **Coincident input vertices and shared walls.** Equal vertices snap together.
+  Walls that differ by less than a cell become coincident faces, which then must
+  cancel in opposite pairs. Every other input vertex not on the grid moves and must
+  be reported.
+- **Cost.** Every face is tested against every hot cell near it, and in 3D the
+  rerouted faces must be retriangulated; the worst case above is out of reach for
+  meshes of 1e5 faces on a 30 GB machine. Not measured.
+- **Reduced cases resolved.** All of them, if the 3D construction is
+  implemented in full. A simplified 3D rerouting has no proof.
+
+### B. Round, then exactly re-arrange the faces that rounding made cross
+
+Round every vertex. Find the faces whose rounded triangles intersect (exact
+predicates on `f64`). Build the exact arrangement of those faces with the
+existing kernel, keep the cells of winding number one or more, round the new
+implicit points, and repeat until nothing crosses.
+
+- **Correctness of one round.** The exact self-union of a closed oriented mesh is
+  a valid solid, so each round's exact result is valid; only its new points are
+  not `f64`.
+- **Termination.** We cannot bound it. Old vertices are `f64` and do not move, so
+  round `k + 1` can only break faces around the points created in round `k`, but
+  no quantity decreases. Two faces that cross at an angle `theta` put their
+  crossing line anywhere within about `ulp / theta` of where rounding puts it, so
+  a near-coplanar pair (M2, M3) can produce a fresh crossing each round. The
+  number of `f64` points in a bounding box is finite, so the loop ends in theory,
+  but the count is near `2^150`. This repository already had a rounding cleanup
+  that looped until memory ran out. With an iteration cap, B becomes a heuristic
+  that still raises `KernelError`.
+- **Vertex movement.** Each round moves new points by half an ulp; points can
+  drift by the sum over rounds.
+- **Volume.** (V) per round; the total grows with the number of rounds and has no
+  bound without one on the rounds.
+- **Coincident input vertices and shared walls.** Untouched; inputs never move.
+- **Cost.** One exact arrangement per round on the crossing faces; the number of
+  rounds is unbounded.
+- **Reduced cases resolved.** Unknown for each case until run; no proof for any.
+
+### C. Collapse sub-ulp features before materialization, by exact tests
+
+Keep the exact result. Decide, with exact tests on the exact points and their
+roundings, which features rounding cannot place, collapse them in a fixed order,
+then round and certify with exact `validate`. Every coordinate the output uses is
+`r(p)` of some exact result vertex `p`; no operation invents a coordinate. Call
+`H` that set of hot points (input vertices are their own hot points).
+
+Operations, each tested exactly:
+
+- **C1 merge.** Vertices `p != q` with `r(p) = r(q)` become one (today's merge,
+  extended across shells, never merging copies of one exact point). Motion: the
+  rounding only.
+- **C2 edge collapse.** On an edge `pq` whose rounded neighbourhood is degenerate
+  or turned against its exact plane normal, with `|r(p) - r(q)| <= u` per
+  coordinate, link condition holding and no moved face turning: `p` moves to
+  `r(q)`. An input vertex is kept when one end is input. Motion: at most
+  `3 u / 2` per coordinate.
+- **C3 sub-ulp shell removal.** A rounded shell whose exact signed volume
+  (exact sum on the `f64` corners) is zero or of the wrong sign is removed. Its
+  exact volume is then at most `sum T(f, rho_f)` over its faces by (V), because
+  its rounded volume does not exceed zero. Removing an inward shell fills a void
+  by the same bound.
+- **C4 cancellation.** Opposite faces on the same three vertices cancel
+  (today's rule, across shells). Two faces with the same orientation on the same
+  three vertices cannot come from a valid exact solid after C1 to C3: winding
+  numbers on both sides would differ by two. If one appears, certification fails.
+- **C5 hot-point insertion.** A hot point `h` whose rounding box
+  `{x : r(x) = h}` meets an output face `g` that does not have `h` as a corner
+  (exact box-triangle test with `orient3d` on `f64` corners) is inserted into `g`:
+  split `g` at an exact point of `g` inside the box, then give that vertex the
+  coordinates `h`. This is snap rounding's rerouting, with hot cells equal to the
+  rounding boxes of the exact result's own vertices instead of a uniform grid.
+  Motion: at most one box width, `u(h)` per coordinate.
+
+- **Correctness.** The output is valid when exact `validate` reports a solid;
+  every operation keeps each edge used once in each direction (C2 checks the link
+  condition, C3 removes whole shells, C4 removes pairs, C5 splits a face and its
+  edge neighbours conformally). Where (S) holds after C1 to C5 with the motions
+  above, validity follows from the separation lemma without running `validate`.
+  C has no general 3D theorem: two edges from different sheets can pass within
+  an ulp of each other with no hot point near either, and C5 adds no point there.
+- **Termination.** Let `F0` be the faces of the exact result and `H` the hot
+  points; neither grows. Keep a set of (hot point, original face) pairs already
+  inserted; C5 adds one pair and never removes one, so it runs at most
+  `|H| * |F0|` times. C1 and C2 each remove a vertex; C3 and C4 each remove faces;
+  C5 adds at most two vertices' worth of faces. Order the potential as
+  `(|H| * |F0| - inserted pairs, vertices + faces)`: C5 lowers the first part,
+  C1 to C4 keep it and lower the second. The total number of steps is at most
+  `(|H| |F0| + 1) * (V0 + F0 + 2 |H| |F0|)`, a polynomial bound proven before the
+  loop starts, and the loop asserts it.
+- **Vertex movement.** Rounding: half an ulp per coordinate, not reported. Any
+  vertex that ends farther than half an ulp from its exact position (C2, C5, or an
+  input vertex merged into another) is counted. A vertex may take part in several
+  operations, so the bound is the sum of its moves; the implementation refuses any
+  operation that would push one vertex past `2 u` per coordinate from its exact
+  position, and the report states that bound.
+- **Volume.** (V) with `rho_f` the largest total move of a corner of `f`. Shell
+  removal is inside (V) as shown under C3. Cancellation changes nothing.
+- **Coincident input vertices and shared walls.** Equal input vertices are one
+  exact point in the arrangement already; copies of one exact point that keep
+  touching shells apart are never merged. Input vertices move only through C1 or
+  C2 when two distinct input vertices round together or lie an ulp apart in a
+  conflict; each such move is counted separately. Walls that agree only to
+  rounding (M2, M3) become shared vertices through C1 and C5, and the thin pocket
+  between them cancels through C4 or disappears through C3. A face contact
+  between neighbouring solids that the inputs already had stays invalid, as the
+  glossary requires.
+- **Cost.** Results that round cleanly pay one `validate`, which runs today. The
+  operations touch only faces near problems, found from the BVH `validate` already
+  builds. Not measured.
+- **Reduced cases resolved.** M1 by C3 (the ulp prisms). M4 by C1 or C2: the
+  crossing point lies on an input edge within an ulp of its input end, so it rounds
+  onto that end or collapses into it (tilted ground, icosphere). M2 and M3 by C1, C5
+  and C4: the two sheets share hot points, and the faces between them cancel
+  (clipped boxes, pit and pushback, both pushback pairs, rotated stopes, crosscut
+  chain). Each of these is an argument from the measured mechanism; the tests
+  decide.
+
+## 4. Choice: C
+
+C keeps every input vertex where it is unless two inputs collide within an ulp,
+adds no coordinate the exact result did not round to, ends within a bound proven
+before it starts, and costs nothing on results that round cleanly. A moves input
+vertices that do not sit on its grid, and the only 3D construction with a proof
+carries a worst case far beyond these meshes. B has no termination bound, and this
+repository has already met that failure.
+
+C does not reach the owner's target in theory: it has no 3D validity theorem, so
+a case it cannot certify is not proven unrepresentable. The implementation keeps
+`Error::Kernel` for exactly two reasons and names them in the message:
+
+- `non-finite`: an exact coordinate rounds to infinity. No `f64` mesh represents
+  it; this is the only refusal we can prove necessary.
+- `uncertified`: the loop ended within its bound and `validate` still finds a
+  problem. The error carries the report, the mesh and the rounding report.
+
+Any `uncertified` case found in a test is a defect to reduce and analyze, not a
+limit to document. If one survives analysis, the next step is A's 3D construction
+applied to that case's conflict cluster only.
+
+## 5. Changes
+
+Functions, all in `crates/boolean/src`:
+
+- `hp.rs`: `Pt::round_box(&self) -> ([f64; 3], [f64; 3])`, the `f64` box of points
+  that round to `self.to_f64()`, for C5's exact box test.
+- New `round.rs`:
+  - `pub struct RoundingReport { rounded_vertices: usize, moved_vertices: usize,
+    moved_input_vertices: usize, max_move: [f64; 3], move_bound: [f64; 3],
+    merged_vertices: usize, collapsed_edges: usize, inserted_points: usize,
+    removed_shells: usize, cancelled_faces: usize, volume_bound: f64, steps: usize,
+    step_bound: usize }`. `max_move` and `move_bound` are per axis, in the mesh's
+    length unit, rounded up; `volume_bound` is the sum (V), rounded up.
+  - `pub(crate) fn materialize(arr: &Arrangement, shells: &[Shell]) ->
+    Result<(Assembled, RoundingReport)>`: C1 to C5 on the whole output (all
+    shells together), in the order C1, C4, C3, C2, C5, repeated to the bound, then
+    exact `validate`.
+  - `fn hot_boxes`, `fn insert_hot_point`, `fn remove_flat_shells`,
+    `fn step_bound`.
+- `ops.rs`: `assemble` calls `materialize`; `collapse_rounded`, `edge_collapse` and
+  `rounding_problems` move into `round.rs` as C1, C2 and C4, and the
+  validate-count loop with its undo goes away. `solid_result` raises
+  `non-finite` or `uncertified`. `BooleanResult` gains `rounding: RoundingReport`.
+- `clip.rs`: `ClipResult` gains `rounding: [RoundingReport; 2]`.
+- `slice.rs`: `split_by_plane` keeps section points exact (`Pt`) through the cap
+  triangulation and hands both parts to `materialize`; `coincident` and `clean` go
+  away. A new `split_by_plane_report` returns the two meshes and their reports;
+  `split_by_plane` keeps its signature.
+- `crates/py`, `_wireframes.pyi`, `python/wireframes`: `wf.RoundingReport` with the
+  same fields; booleans, `clip_by_surface` and `split_by_plane` take
+  `rounding_report=False` and, when true, return the report after the meshes (and
+  after the repair reports when `repair=True`).
+- `spec.md`: tolerance rule 5 and section 6.2 item 7 are rewritten for C in the
+  commit that changes the behaviour.
+
+## 6. Tests that will prove it
+
+- The 12 ignored tests in `crates/boolean/tests/rounding.rs`, the ignored test in
+  `acceptance_open_pit.rs` and the 6 skipped Python acceptance tests run unchanged
+  and pass.
+- `cutting.rs`: `inclined_splits_through_every_sphere_vertex_cap_the_section`
+  bounds refusals at 188 today; it must reach 0, and the bound tightens to 0.
+- For every reduced case and every operation: each output vertex lies within
+  `move_bound` of its exact source position, compared exactly with
+  `num-rational` (already a dev-dependency); `moved_vertices` equals the count of
+  vertices farther than half an ulp; and `|vol(out) - vol(exact)| <=
+  volume_bound`, with `vol(exact)` summed exactly over the exact result's faces.
+- One unit test per operation C1 to C5 on a hand-built shell, including a shell
+  that needs C5 then C4.
+- A termination test: a constructed worst case (many near-coplanar sheets at UTM
+  coordinates) where `steps <= step_bound`, run under the 4 GB scope first.
+- A proptest of seeded near-coplanar pairs (two boxes, one rotated or offset by a
+  few ulps at UTM coordinates), moderate case count, asserting solids, the
+  volume identity within `volume_bound`, and no `uncertified` error.
+- Determinism: the reduced cases and the stage scenario give the same bytes with
+  `RAYON_NUM_THREADS` 1, 3 and 4.
+- Inputs unchanged: every boolean, clip and split test compares the input meshes
+  before and after the call.
