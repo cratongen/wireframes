@@ -295,7 +295,10 @@ impl PyMesh {
     /// Returns
     /// -------
     /// Polylines
-    ///     One feature per line, with the feature column ``elevation``.
+    ///     One feature per line, with the feature column ``elevation``. A
+    ///     flat area at a level that the surface does not cross there, such
+    ///     as a pit floor, gives its toe; a line that only goes round a flat
+    ///     triangle on the other side of a contour is left out.
     ///
     /// Examples
     /// --------

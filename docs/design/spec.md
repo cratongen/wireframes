@@ -1196,8 +1196,15 @@ Semantics:
   4/5 L, valence flips, tangential relaxation, projection to the input by
   `SurfaceIndex::closest`); boundary edges split only; face attributes copied from
   the closest input face, vertex attributes dropped.
-- `contours`: `slice_by_plane` with origin `(0,0,0)`, normal `(0,0,1)` and
-  `offsets = levels`, with the `offset` column renamed `elevation`.
+- `contours`: per level, `slice_by_plane` with origin `(0,0,0)`, normal `(0,0,1)`
+  and `offsets = [level]` (a vertex on the level counts above, so a flat area at
+  the level is traced where the surface drops below it), followed by each line of
+  `slice_by_plane` with normal `(0,0,-1)` and `offsets = [-level]` that shares no
+  segment (exact coordinates, either direction) with the first trace, reversed to
+  its winding: the toe of a flat area at the level that the surface does not cross
+  there, such as a pit floor or the inside of a berm. A line that shares a segment
+  is the same contour going round a flat triangle on its other side and is left
+  out. The `offset` column is renamed `elevation`.
 
 ## 9. Determinism and parallelism summary
 

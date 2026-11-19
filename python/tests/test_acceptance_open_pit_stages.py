@@ -454,9 +454,13 @@ def test_dtm_never_silently_drops_a_conflicting_height():
         wf.dtm(np.vstack([corners, [[5.0, 5.0, 301.0], [5.0, 5.0, 309.0]]]) + O)
 
 
-@pytest.mark.skip(reason="acceptance: a contour at the elevation of a flat pit floor is empty")
 def test_contour_at_the_pit_floor_traces_the_floor_toe():
     design = cone(170.0, 90.0, n=41, half=200.0)
     toe = design.contours([170.0])
     assert len(toe) == 1 and toe.closed.all()
-    assert abs(toe.area()[0] / (np.pi * 90.0**2) - 1) < 0.05
+    corners = design.coords[design.triangles]
+    flat = (corners[:, :, 2] == 170.0).all(axis=1)
+    a, b, c = (corners[flat, k, :2] for k in range(3))
+    u, w = b - a, c - a
+    floor = 0.5 * np.abs(u[:, 0] * w[:, 1] - u[:, 1] * w[:, 0]).sum()
+    assert close(toe.area()[0], floor, rel=1e-12)
