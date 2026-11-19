@@ -26,3 +26,20 @@ def test_example_runs_and_its_checks_hold(script, monkeypatch):
 def test_every_example_folder_has_one_script():
     folders = sorted(p for p in EXAMPLES.glob("[0-9][0-9]-*") if p.is_dir())
     assert [s.parent for s in SCRIPTS] == folders
+
+
+def test_every_public_name_appears_in_an_example():
+    import re
+
+    import wireframes as wf
+    from wireframes import _wireframes
+
+    source = "\n".join(s.read_text(encoding="utf-8") for s in SCRIPTS)
+    names = {f"wf.{n}" for n in wf.__all__ if not n.startswith("_") and n not in ("errors", "datasets")}
+    for cls_name in dir(_wireframes):
+        cls = getattr(_wireframes, cls_name)
+        if isinstance(cls, type) and not cls_name.startswith("_"):
+            names |= {f"{cls_name}.{m}" for m in dir(cls) if not m.startswith("_")}
+    names |= {f"plot.{n}" for n in ("plan", "section", "surface3d")}
+    missing = sorted(n for n in names if not re.search(rf"\b{re.escape(n.split('.')[-1])}\b", source))
+    assert missing == []
