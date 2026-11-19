@@ -176,11 +176,15 @@ No other dependency without a line in this table.
    `f64`. Repeated and collinear corners that rounding makes are removed per
    output shell (section 6.2 item 7), and so is a sliver that rounding folds onto
    the coplanar neighbour across its longest edge, such as the kink where a stope
-   wall cuts a drive wall quad that is planar only to rounding. Rounding can still
-   fold a sliver onto a face that is not coplanar with it, which gives a
-   self-intersection that the exact arrangement did not have. This is not rare: it
+   wall cuts a drive wall quad that is planar only to rounding, a sliver that
+   rounding turns away from its own plane, and a sliver that rounding tilts into a
+   face of the other input when its neighbour comes from the same input face.
+   Rounding can still leave a self-intersection that the exact arrangement did not
+   have between faces of different inputs. This is not rare: it
    happens whenever two input surfaces agree only to an ulp, so the exact result
-   holds slivers thinner than `f64` can place. Open-pit work hits it often: booleans
+   holds slivers thinner than `f64` can place. Stopes tessellated on different grids
+   and rotated to strike are one case: their shared walls are planar only to
+   rounding, so the exact union keeps pockets an ulp thick between them. Open-pit work hits it often: booleans
    of a pit and its pushback after each was clipped by the topography (their shared
    walls and caps were computed separately and differ by ulps), and
    `clip_by_surface` of polygonal pits with many wall quads by a surface whose
@@ -975,10 +979,25 @@ Arrangement (`arrangement.rs`):
    longest edge to the edge from the middle corner to the neighbour's far corner; it
    is skipped where that edge already exists or where the longest edge was itself
    made by a split, so every split removes an edge the shell came in with and the
-   cleanup ends (flips on rounded points can otherwise cycle without bound). Every
-   step keeps each edge used once in each direction. Equal coordinates in different shells stay apart
+   cleanup ends (flips on rounded points can otherwise cycle without bound). A face
+   that rounding turned away from the exact plane it lies in (the sign of
+   `n . ((b - a) x (c - a))` on the rounded corners, exact, with `n` the input
+   face's normal rounded to `f64` and negated when the face is flipped, is not
+   positive) is split away the same way, whether or not its neighbour is coplanar.
+   Where the split would make an edge that already exists, a flat or turned face
+   loses its shortest edge instead: one end merges into the other (an input vertex
+   is kept) when both are different exact points, the link condition holds, and no
+   face moved by the merge is turned or flat. Last, `validate` runs on each shell;
+   the faces of its degenerate, self-intersection and coplanar-overlap problems and
+   their edge neighbours are split across their longest edge where the neighbour
+   there comes from the same input face and both new faces face its plane. These
+   rounds repeat while the shell's problem count drops; a round that does not lower
+   it is undone. Merges and these splits move the surface by at most the width of a
+   face that rounding turned, folded or flattened. Every step keeps each edge used
+   once in each direction. Equal coordinates in different shells stay apart
    (touching shells), and so do the copies of one exact point within a shell.
-   Rounding can still fold a sliver onto a neighbour (tolerance policy rule 5).
+   Rounding can still leave self-intersections between faces of different inputs
+   (tolerance policy rule 5).
 8. Attributes: output face attributes are `Table::concat` of A's and B's face
    tables taken by `face_source`; vertex attributes keep input rows, null for new
    vertices. An empty result (nothing kept) is `Mesh::empty()` with the merged

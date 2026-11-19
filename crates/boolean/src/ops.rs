@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
-use wireframes_core::predicates::{Sign, collinear3, orient2d_axis, orient3d};
+use wireframes_core::exact::Expansion;
+use wireframes_core::predicates::{Sign, collinear3, kept_axes, orient2d_axis, orient3d};
 use wireframes_core::topology::{Radial, radial_pairs};
 use wireframes_core::{Error, Mesh, Result, Table, units};
 use wireframes_ops::{RepairOptions, RepairReport, repair};
@@ -71,6 +72,21 @@ pub(crate) struct Assembled {
     pub vertex_rows: Vec<Option<u32>>,
     /// (mesh, face) per output triangle.
     pub face_source: Vec<(u8, u32)>,
+    /// Outward normal of the exact plane each triangle lies in, rounded to
+    /// `f64`; empty when unknown.
+    pub normal: Vec<[f64; 3]>,
+}
+
+/// Sign of `n . ((b - a) x (c - a))`, exact on the given `f64` values.
+fn facing(c: [[f64; 3]; 3], n: [f64; 3]) -> Sign {
+    let u = [0, 1, 2].map(|k| Expansion::diff_f64(c[1][k], c[0][k]));
+    let v = [0, 1, 2].map(|k| Expansion::diff_f64(c[2][k], c[0][k]));
+    (0..3)
+        .fold(Expansion::zero(), |acc, k| {
+            let (i, j) = kept_axes(k);
+            acc.sum(&u[i].product(&v[j]).diff(&u[j].product(&v[i])).scale(n[k]))
+        })
+        .sign()
 }
 
 pub(crate) fn assemble(arr: &Arrangement, pieces: &[Shell]) -> Assembled {
@@ -79,6 +95,7 @@ pub(crate) fn assemble(arr: &Arrangement, pieces: &[Shell]) -> Assembled {
         triangles: vec![],
         vertex_rows: vec![],
         face_source: vec![],
+        normal: vec![],
     };
     for piece in pieces {
         let mut shell = Assembled {
@@ -86,6 +103,7 @@ pub(crate) fn assemble(arr: &Arrangement, pieces: &[Shell]) -> Assembled {
             triangles: vec![],
             vertex_rows: vec![],
             face_source: vec![],
+            normal: vec![],
         };
         let mut map: HashMap<(u32, u32), u32> = HashMap::new();
         let mut point = vec![];
@@ -105,6 +123,11 @@ pub(crate) fn assemble(arr: &Arrangement, pieces: &[Shell]) -> Assembled {
                 .push(if flip { [v[0], v[2], v[1]] } else { v });
             let f = &arr.faces[sub.face as usize];
             shell.face_source.push((f.mesh, f.index));
+            let n = arr.planes[sub.face as usize]
+                .normal_exp()
+                .clone()
+                .map(|x| x.estimate());
+            shell.normal.push(if flip { n.map(|x| -x) } else { n });
         }
         let (shell, _) = collapse_rounded(shell, &point);
         let base = out.vertices.len() as u32;
@@ -113,6 +136,7 @@ pub(crate) fn assemble(arr: &Arrangement, pieces: &[Shell]) -> Assembled {
         out.triangles
             .extend(shell.triangles.iter().map(|t| t.map(|i| i + base)));
         out.face_source.extend(shell.face_source);
+        out.normal.extend(shell.normal);
     }
     out
 }
@@ -124,12 +148,20 @@ pub(crate) fn assemble(arr: &Arrangement, pieces: &[Shell]) -> Assembled {
 /// dropped, opposite faces on the same three vertices cancel, and a face whose
 /// corners are collinear is removed by splitting its neighbour across its
 /// longest edge at its middle corner. A sliver whose middle corner rounds to
-/// strictly inside that coplanar neighbour (a fold) is removed the same way;
-/// both tests are exact on the rounded points. Each step keeps every edge paired, and
-/// none moves a point, so the surface is the same set of points. `point` is
-/// the exact point of each vertex; copies of one exact point, where the shell
-/// touches itself, stay apart, and so do the other vertices that round onto
-/// them. Also returns the exact point of each kept vertex.
+/// strictly inside that coplanar neighbour (a fold) is removed the same way,
+/// and so, when `normal` is known, is a face that rounding turned away from
+/// its exact plane (`n . ((b - a) x (c - a)) <= 0`); all three tests are exact
+/// on the rounded points. Where that split would duplicate an edge, a flat or
+/// turned face loses its shortest edge instead: one end merges into the other
+/// when the link condition holds and no moved face turns. When `normal` is
+/// known, faces that `validate` still finds degenerate, self-intersecting or
+/// overlapping, with their edge neighbours, get the split too where the
+/// neighbour across the longest edge comes from the same input face and both
+/// new faces face its plane; such rounds repeat while the problem count
+/// drops, and a round that does not lower it is undone. Each step keeps every
+/// edge paired. `point` is the exact point of each vertex; copies of one exact
+/// point, where the shell touches itself, stay apart and never merge. Also
+/// returns the exact point of each kept vertex.
 pub(crate) fn collapse_rounded(shell: Assembled, point: &[u32]) -> (Assembled, Vec<u32>) {
     let n = shell.vertices.len();
     let key = |i: usize| shell.vertices[i].map(|x| (x + 0.0).to_bits());
@@ -150,13 +182,18 @@ pub(crate) fn collapse_rounded(shell: Assembled, point: &[u32]) -> (Assembled, V
         }
         start = w;
     }
+    let has_normals = !shell.normal.is_empty();
     let mut tris: Vec<[u32; 3]> = vec![];
     let mut src: Vec<(u8, u32)> = vec![];
-    for (t, &s) in shell.triangles.iter().zip(&shell.face_source) {
+    let mut nrm: Vec<[f64; 3]> = vec![];
+    for (f, (t, &s)) in shell.triangles.iter().zip(&shell.face_source).enumerate() {
         let t = t.map(|i| rep[i as usize]);
         if t[0] != t[1] && t[1] != t[2] && t[0] != t[2] {
             tris.push(t);
             src.push(s);
+            if has_normals {
+                nrm.push(shell.normal[f]);
+            }
         }
     }
     let mut alive = vec![true; tris.len()];
@@ -182,10 +219,14 @@ pub(crate) fn collapse_rounded(shell: Assembled, point: &[u32]) -> (Assembled, V
     }
     let v = &shell.vertices;
     let flat = |t: [u32; 3]| collinear3(v[t[0] as usize], v[t[1] as usize], v[t[2] as usize]);
+    let corners = |t: [u32; 3]| t.map(|i| v[i as usize]);
+    let turned = |t: [u32; 3], n: [f64; 3]| facing(corners(t), n) != Sign::Positive;
     let mut edge: HashMap<(u32, u32), usize> = HashMap::new();
+    let mut inc: Vec<Vec<usize>> = vec![vec![]; n];
     for (f, t) in tris.iter().enumerate().filter(|(f, _)| alive[*f]) {
         for k in 0..3 {
             edge.insert((t[k], t[(k + 1) % 3]), f);
+            inc[t[k] as usize].push(f);
         }
     }
     let inside = |g: [u32; 3], m: u32| {
@@ -203,74 +244,165 @@ pub(crate) fn collapse_rounded(shell: Assembled, point: &[u32]) -> (Assembled, V
     // again, so every flip removes an edge of the shell as it came in and the
     // loop ends; without this, flips on rounded points can cycle forever.
     let mut made: HashSet<(u32, u32)> = HashSet::new();
-    while let Some(f) = work.pop() {
-        if !alive[f] {
-            continue;
-        }
-        let t = tris[f];
-        let axis = (0..3)
-            .max_by(|&a, &b| {
-                let spread = |k: usize| {
-                    let c = t.map(|i| v[i as usize][k]);
-                    c.iter().copied().fold(f64::NEG_INFINITY, f64::max)
-                        - c.iter().copied().fold(f64::INFINITY, f64::min)
-                };
-                spread(a).total_cmp(&spread(b))
-            })
-            .expect("three axes");
-        let mut by: [usize; 3] = [0, 1, 2];
-        by.sort_by(|&a, &b| v[t[a] as usize][axis].total_cmp(&v[t[b] as usize][axis]));
-        let i = by[1];
-        let (m, p, q) = (t[i], t[(i + 1) % 3], t[(i + 2) % 3]);
-        let Some(&g) = edge.get(&(q, p)) else {
-            continue;
-        };
-        if g == f || !alive[g] {
-            continue;
-        }
-        let u = tris[g];
-        let d = u[(0..3)
-            .find(|&k| u[k] != p && u[k] != q)
-            .expect("third corner")];
-        if made.contains(&ekey(p, q))
-            || edge.contains_key(&(m, d))
-            || edge.contains_key(&(d, m))
-            || (!flat(t) && !inside(u, m))
-        {
-            continue;
-        }
-        made.insert(ekey(m, d));
-        for (h, w) in [(f, t), (g, u)] {
-            alive[h] = false;
-            for k in 0..3 {
-                if edge.get(&(w[k], w[(k + 1) % 3])) == Some(&h) {
-                    edge.remove(&(w[k], w[(k + 1) % 3]));
-                }
-            }
-        }
-        for nt in [[q, m, d], [m, p, d]] {
-            if d == m {
+    let mut forced: HashSet<usize> = HashSet::new();
+    let mut last = usize::MAX;
+    let mut saved = None;
+    loop {
+        while let Some(f) = work.pop() {
+            if !alive[f] {
                 continue;
             }
-            let h = tris.len();
-            tris.push(nt);
-            src.push(src[g]);
-            alive.push(true);
-            for k in 0..3 {
-                edge.insert((nt[k], nt[(k + 1) % 3]), h);
+            let t = tris[f];
+            let axis = (0..3)
+                .max_by(|&a, &b| {
+                    let spread = |k: usize| {
+                        let c = t.map(|i| v[i as usize][k]);
+                        c.iter().copied().fold(f64::NEG_INFINITY, f64::max)
+                            - c.iter().copied().fold(f64::INFINITY, f64::min)
+                    };
+                    spread(a).total_cmp(&spread(b))
+                })
+                .expect("three axes");
+            let mut by: [usize; 3] = [0, 1, 2];
+            by.sort_by(|&a, &b| v[t[a] as usize][axis].total_cmp(&v[t[b] as usize][axis]));
+            let i = by[1];
+            let (m, p, q) = (t[i], t[(i + 1) % 3], t[(i + 2) % 3]);
+            let Some(&g) = edge.get(&(q, p)) else {
+                continue;
+            };
+            if g == f || !alive[g] {
+                continue;
             }
-            work.push(h);
+            let u = tris[g];
+            let d = u[(0..3)
+                .find(|&k| u[k] != p && u[k] != q)
+                .expect("third corner")];
+            let broken = flat(t) || (has_normals && turned(t, nrm[f]));
+            let refit = !broken
+                && forced.contains(&f)
+                && src[f] == src[g]
+                && d != m
+                && !turned([q, m, d], nrm[g])
+                && !turned([m, p, d], nrm[g]);
+            if !broken && !refit && !inside(u, m) {
+                continue;
+            }
+            if made.contains(&ekey(p, q))
+                || edge.contains_key(&(m, d))
+                || edge.contains_key(&(d, m))
+            {
+                if broken && has_normals {
+                    let len2 = |(a, b): (u32, u32)| {
+                        let (a, b) = (v[a as usize], v[b as usize]);
+                        (0..3).map(|k| (a[k] - b[k]) * (a[k] - b[k])).sum::<f64>()
+                    };
+                    let short = [(t[0], t[1]), (t[1], t[2]), (t[2], t[0])]
+                        .into_iter()
+                        .min_by(|x, y| len2(*x).total_cmp(&len2(*y)))
+                        .expect("three edges");
+                    let mut tries = [(short.0, short.1), (short.1, short.0)];
+                    if shell.vertex_rows[short.0 as usize].is_some() {
+                        tries.reverse();
+                    }
+                    for (gone, keep) in tries {
+                        let Some(nt) = edge_collapse(
+                            &tris, &alive, &edge, &inc, &nrm, gone, keep, point, &turned,
+                        ) else {
+                            continue;
+                        };
+                        for &(h, _) in &nt {
+                            for k in 0..3 {
+                                let e = (tris[h][k], tris[h][(k + 1) % 3]);
+                                if edge.get(&e) == Some(&h) {
+                                    edge.remove(&e);
+                                }
+                            }
+                        }
+                        for (h, w) in nt {
+                            match w {
+                                None => alive[h] = false,
+                                Some(w) => {
+                                    tris[h] = w;
+                                    for k in 0..3 {
+                                        edge.insert((w[k], w[(k + 1) % 3]), h);
+                                    }
+                                    inc[keep as usize].push(h);
+                                    work.push(h);
+                                }
+                            }
+                        }
+                        break;
+                    }
+                }
+                continue;
+            }
+            made.insert(ekey(m, d));
+            for (h, w) in [(f, t), (g, u)] {
+                alive[h] = false;
+                for k in 0..3 {
+                    if edge.get(&(w[k], w[(k + 1) % 3])) == Some(&h) {
+                        edge.remove(&(w[k], w[(k + 1) % 3]));
+                    }
+                }
+            }
+            for nt in [[q, m, d], [m, p, d]] {
+                if d == m {
+                    continue;
+                }
+                let h = tris.len();
+                tris.push(nt);
+                src.push(src[g]);
+                if has_normals {
+                    nrm.push(nrm[g]);
+                }
+                alive.push(true);
+                for k in 0..3 {
+                    edge.insert((nt[k], nt[(k + 1) % 3]), h);
+                    inc[nt[k] as usize].push(h);
+                }
+                work.push(h);
+            }
         }
+        if !has_normals {
+            break;
+        }
+        let (count, bad) = rounding_problems(v, &tris, &alive);
+        if count >= last {
+            if let Some(state) = saved.take() {
+                (tris, alive, src, nrm) = state;
+            }
+            break;
+        }
+        if count == 0 {
+            break;
+        }
+        last = count;
+        saved = Some((tris.clone(), alive.clone(), src.clone(), nrm.clone()));
+        forced = bad
+            .iter()
+            .flat_map(|&f| {
+                let t = tris[f];
+                let edge = &edge;
+                std::iter::once(f)
+                    .chain((0..3).filter_map(move |k| edge.get(&(t[(k + 1) % 3], t[k])).copied()))
+            })
+            .collect();
+        work.extend(forced.iter().copied());
+        work.sort_unstable_by(|a, b| b.cmp(a));
     }
     let mut out = Assembled {
         vertices: vec![],
         triangles: vec![],
         vertex_rows: vec![],
         face_source: vec![],
+        normal: vec![],
     };
     let mut new_id: Vec<Option<u32>> = vec![None; n];
     let mut kept_point = vec![];
     for (f, t) in tris.iter().enumerate().filter(|(f, _)| alive[*f]) {
+        if has_normals {
+            out.normal.push(nrm[f]);
+        }
         out.triangles.push(t.map(|i| {
             *new_id[i as usize].get_or_insert_with(|| {
                 out.vertices.push(shell.vertices[i as usize]);
@@ -282,6 +414,108 @@ pub(crate) fn collapse_rounded(shell: Assembled, point: &[u32]) -> (Assembled, V
         out.face_source.push(src[f]);
     }
     (out, kept_point)
+}
+
+/// Collapse of vertex `gone` onto `keep` along their edge, as the faces it
+/// changes: `None` for the two faces on the edge, the moved face otherwise.
+/// Refused when both are copies of one exact point, when it breaks the link
+/// condition (the shell would stop being manifold), or when a moved face would
+/// turn away from its exact plane's normal or become flat (exact on the
+/// rounded points).
+#[allow(clippy::too_many_arguments)]
+fn edge_collapse(
+    tris: &[[u32; 3]],
+    alive: &[bool],
+    edge: &HashMap<(u32, u32), usize>,
+    inc: &[Vec<usize>],
+    nrm: &[[f64; 3]],
+    gone: u32,
+    keep: u32,
+    point: &[u32],
+    turned: &dyn Fn([u32; 3], [f64; 3]) -> bool,
+) -> Option<Vec<(usize, Option<[u32; 3]>)>> {
+    if point[gone as usize] == point[keep as usize] {
+        return None;
+    }
+    let (&f1, &f2) = (edge.get(&(keep, gone))?, edge.get(&(gone, keep))?);
+    let third = |f: usize| {
+        tris[f]
+            .into_iter()
+            .find(|&x| x != keep && x != gone)
+            .expect("third corner")
+    };
+    let (o1, o2) = (third(f1), third(f2));
+    if f1 == f2 || o1 == o2 {
+        return None;
+    }
+    let around = |x: u32| {
+        let mut fs: Vec<usize> = inc[x as usize]
+            .iter()
+            .copied()
+            .filter(|&h| alive[h] && tris[h].contains(&x))
+            .collect();
+        fs.sort_unstable();
+        fs.dedup();
+        fs
+    };
+    let ring = |x: u32| -> HashSet<u32> {
+        around(x)
+            .iter()
+            .flat_map(|&h| tris[h])
+            .filter(|&y| y != x)
+            .collect()
+    };
+    let (rk, rg) = (ring(keep), ring(gone));
+    if rk.intersection(&rg).any(|&y| y != o1 && y != o2) {
+        return None;
+    }
+    let mut out = vec![(f1, None), (f2, None)];
+    for h in around(gone) {
+        if h == f1 || h == f2 {
+            continue;
+        }
+        let w = tris[h].map(|x| if x == gone { keep } else { x });
+        if turned(w, nrm[h]) {
+            return None;
+        }
+        out.push((h, Some(w)));
+    }
+    Some(out)
+}
+
+/// Problems `validate` finds in the live faces of a shell, counting every kind
+/// but unused and duplicate vertices, and the faces of degenerate,
+/// self-intersecting and coplanar-overlap problems, in increasing order.
+fn rounding_problems(v: &[[f64; 3]], tris: &[[u32; 3]], alive: &[bool]) -> (usize, Vec<usize>) {
+    use wireframes_core::MeshProblemKind as K;
+    let ids: Vec<usize> = (0..tris.len()).filter(|&f| alive[f]).collect();
+    let Ok(report) =
+        Mesh::new(v.to_vec(), ids.iter().map(|&f| tris[f]).collect()).and_then(|m| m.validate(0.0))
+    else {
+        return (usize::MAX, vec![]);
+    };
+    let mut bad = vec![];
+    let mut count = 0;
+    for p in &report.problems {
+        if matches!(p.kind, K::UnusedVertex | K::DuplicateVertex) {
+            continue;
+        }
+        count += 1;
+        if matches!(
+            p.kind,
+            K::DegenerateFace | K::SelfIntersection | K::CoplanarOverlap
+        ) {
+            bad.extend(
+                [p.face, p.other]
+                    .into_iter()
+                    .flatten()
+                    .map(|f| ids[f as usize]),
+            );
+        }
+    }
+    bad.sort_unstable();
+    bad.dedup();
+    (count, bad)
 }
 
 fn ekey(a: u32, b: u32) -> (u32, u32) {
@@ -559,6 +793,7 @@ mod tests {
             vertices,
             triangles,
             vertex_rows: (0..n as u32).map(|i| (i < 4).then_some(i)).collect(),
+            normal: vec![],
         }
     }
 
@@ -790,6 +1025,7 @@ mod tests {
             vertices: v,
             triangles: t,
             vertex_rows: vec![None; n],
+            normal: vec![],
         };
         assert!(is_closed_manifold(&s.triangles));
         let (out, kept) = collapse_rounded(s, &point);

@@ -257,7 +257,6 @@ def test_decline_through_the_stope_block_matches_stope_by_stope(stopes):
     assert close(cut.volume + common.volume, u.volume)
 
 
-@pytest.mark.skip(reason="acceptance: thin vein minus a straight drive self-intersects after rounding")
 def test_thin_vein_minus_a_straight_drive_is_a_solid():
     d, _ = ug.drive(np.array([[20, -40, 0.0], [60, 30, 0.0]]))
     v, *_ = ug.vein(np.array([0.0, -20, 20]), 90.0, 70.0, 150.0, 50.0, 0.1)
@@ -309,7 +308,6 @@ def test_fault_that_ends_inside_the_orebody_is_refused(lens31):
         lens31.clip_by_surface(f)
 
 
-@pytest.mark.skip(reason="acceptance: lofted orebody clipped by an inclined planar fault self-intersects")
 def test_lofted_orebody_clipped_by_an_inclined_planar_fault(lens31):
     f = plane_grid(O + [37.0, 0, 200], [0, 1.0, 0], [0.2, 0, 1.0], 30, 20, 300, 200)
     below, above = lens31.clip_by_surface(f)
@@ -317,7 +315,6 @@ def test_lofted_orebody_clipped_by_an_inclined_planar_fault(lens31):
     assert close(below.volume + above.volume, lens31.volume)
 
 
-@pytest.mark.skip(reason="acceptance: clip of a box by a planar grid fault returns an open mesh")
 def test_clip_of_a_stope_by_an_inclined_planar_fault_is_closed():
     stope = box(DEEP + [60, 0, 0], DEEP + [80, 16, 24])
     f = plane_grid(DEEP + [40, 16, 40], [1.0, 0.3, 0], [0.1, 0.2, 1.0], 25, 25, 200, 200)

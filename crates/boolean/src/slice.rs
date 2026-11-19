@@ -187,6 +187,7 @@ fn clean(
             .iter()
             .map(|(_, f)| f.map_or((1, 0), |f| (0, f)))
             .collect(),
+        normal: vec![],
     };
     let (mut out, mut point) = collapse_rounded(asm, &ids);
     loop {
