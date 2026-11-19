@@ -395,3 +395,23 @@ fn point_parts_round_trip() {
         );
     }
 }
+
+#[test]
+fn non_finite_points_name_their_line_or_byte() {
+    let head = "# vtk DataFile Version 2.0\nt\nASCII\nDATASET POLYDATA\nPOINTS 3 double\n";
+    let ascii = format!("{head}0 0 0\n1 nan 0\n0 1 0\nPOLYGONS 1 4\n3 0 1 2\n");
+    let e = vtk::read(ascii.as_bytes()).unwrap_err().to_string();
+    assert_eq!(e, "line 7: point 1 coordinate 1 is not finite");
+    let head = head.replace("ASCII", "BINARY");
+    let mut b = head.as_bytes().to_vec();
+    for x in [0.0, 0.0, 0.0, 1.0, 0.0, f64::INFINITY, 0.0, 1.0, 0.0] {
+        b.extend(f64::to_be_bytes(x));
+    }
+    b.extend(b"\nPOLYGONS 1 4\n");
+    let at = head.len() + 5 * 8;
+    let e = vtk::read(&b).unwrap_err().to_string();
+    assert_eq!(
+        e,
+        format!("point 1 coordinate 2 is not finite (at byte {at})")
+    );
+}

@@ -817,6 +817,20 @@ impl<'a> Legacy<'a> {
         t
     }
 
+    /// Locates the `k`-th value of an array whose data starts at `pos`. `line`
+    /// counts the newlines before `pos`, so a token is on `self.line + 1`.
+    fn not_finite(&mut self, pos: usize, line: u64, k: usize, size: usize) -> Error {
+        let m = format!("point {} coordinate {} is not finite", k / 3, k % 3);
+        if self.binary {
+            return Error::format(format!("{m} (at byte {})", pos + k * size));
+        }
+        (self.pos, self.line) = (pos, line);
+        for _ in 0..=k {
+            self.token();
+        }
+        Error::format_at(self.line + 1, m)
+    }
+
     fn need_line(&mut self, what: &str) -> Result<Vec<String>> {
         self.line_tokens()
             .ok_or_else(|| self.err(format!("file ends before {what}")))
@@ -1032,7 +1046,11 @@ pub fn read(r: &[u8]) -> Result<Data> {
                 let n = count(&t, 1, line)?;
                 let ty = legacy_ty(&t, 2, line)?;
                 let n3 = n.checked_mul(3).ok_or_else(|| c.err("too many points"))?;
+                let (pos, at) = (c.pos, c.line);
                 points = to_points(c.values(n3, ty)?.to_f64());
+                if let Some(k) = points.iter().flatten().position(|x| !x.is_finite()) {
+                    return Err(c.not_finite(pos, at, k, ty.size()));
+                }
             }
             "VERTICES" | "LINES" | "POLYGONS" | "TRIANGLE_STRIPS" | "CELLS" => {
                 let a = count(&t, 1, line)?;

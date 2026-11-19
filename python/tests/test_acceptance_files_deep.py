@@ -952,9 +952,6 @@ def test_nonfinite_coordinates_fail_naming_the_file_and_place(tmp_path, name, kw
         wf.read(path)
 
 
-@pytest.mark.skip(
-    reason="acceptance: non-finite coordinates in dxf, vtk, vtu and datamine do not name file or place"
-)
 @pytest.mark.parametrize(("name", "kw"), NONFINITE_UNLOCATED, ids=[n for n, _ in NONFINITE_UNLOCATED])
 def test_nonfinite_coordinates_fail_naming_the_file_and_place_everywhere(tmp_path, name, kw):
     path = write_with_nan(tmp_path, name, kw)

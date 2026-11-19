@@ -283,7 +283,7 @@ fn xml_ty(name: &str) -> Result<Ty> {
     })
 }
 
-fn decode_array(t: &Tag, content: &[u8], ctx: &Ctx) -> Result<Array> {
+fn decode_array(t: &Tag, content: &[u8], ctx: &Ctx, coords: bool) -> Result<Array> {
     let name = t.attr("Name").unwrap_or("").to_string();
     let ncomp = match t.attr("NumberOfComponents") {
         Some(_) => t.count("NumberOfComponents")?,
@@ -339,6 +339,13 @@ fn decode_array(t: &Tag, content: &[u8], ctx: &Ctx) -> Result<Array> {
         }
         other => return Err(Error::format(format!("unknown DataArray format {other:?}"))),
     };
+    if coords && let Some(k) = values.to_f64().iter().position(|x| !x.is_finite()) {
+        return Err(what(Error::format(format!(
+            "point {} coordinate {} is not finite",
+            k / 3,
+            k % 3
+        ))));
+    }
     Ok(Array {
         name,
         ncomp,
@@ -777,7 +784,7 @@ pub fn read(r: &[u8]) -> Result<Data> {
                     })?;
                     &head[t.after..next.start]
                 };
-                let a = decode_array(t, content, &ctx)?;
+                let a = decode_array(t, content, &ctx, sec == "Points")?;
                 let piece = pieces
                     .last_mut()
                     .ok_or_else(|| Error::format("DataArray outside a Piece"))?;
@@ -1043,5 +1050,18 @@ mod tests {
                 assert!(at.is_some_and(|a| a >= start && a <= full.len()), "{e}");
             }
         }
+    }
+
+    #[test]
+    fn a_non_finite_point_names_its_array_byte_offset() {
+        let mut b = triangle(false);
+        let one = 1.0f64.to_le_bytes();
+        let k = b.windows(8).position(|w| w == one).unwrap();
+        b[k..k + 8].copy_from_slice(&f64::NAN.to_le_bytes());
+        let e = read(&b).unwrap_err().to_string();
+        assert!(
+            e.contains("with data at byte") && e.ends_with("point 1 coordinate 0 is not finite"),
+            "{e}"
+        );
     }
 }
