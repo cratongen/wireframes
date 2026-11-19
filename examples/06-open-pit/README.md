@@ -622,35 +622,23 @@ InvalidInput: points[64] and breaklines part 0 vertex 0 share the plan position 
 ```
 
 **Surfaces that agree only to rounding.** Exact predicates decide every crossing, but the output vertices are
-written as 64-bit floating-point numbers. Subtracting the clipped stage 1 pit from the clipped stage 2 pit hits
+written as 64-bit floating-point numbers. Subtracting the clipped stage 1 pit from the clipped stage 2 pit meets
 the limit of that rounding: both pits carry a cap cut from the same topography triangles, and where the caps
 overlap they agree only to the last digit. The exact difference holds slivers thinner than a 64-bit number can
-place, and rounding folds them into their neighbours. The rounded mesh is closed and its volume is right to
-rounding, but `validate()` finds the folds, so the difference raises `wf.KernelError` rather than return a mesh
-that is not a solid. The error says the input is not at fault, `error.report` lists the folds, and `error.mesh`
-holds the rounded result if you want to inspect it. Section 2 avoids the problem by subtracting the closed
-shells, which share exact walls, and clipping once.
+place, and rounding them would fold them into their neighbours. So the boolean first inserts each pit's cap
+vertices into the other pit's cap where they lie within rounding of it, and flips edges until the two caps match
+there. The caps then coincide exactly, the slivers vanish, and the difference is a solid. No input vertex moves;
+the change is bounded and reported (the booleans guide, "Rounding"). Section 2 still subtracts the closed
+shells and clips once, which keeps every wall exact.
 
 ```python
-try:
-    pits[1] - pits[0]
-except wf.KernelError as error:
-    summary = error.report.summary
-    print(f"{type(error).__name__}: {error}")
-    print(
-        f"closed: {summary['is_closed']}, self-intersections: {summary['self_intersections']}, "
-        f"volume off by {error.mesh.volume - stages[1].volume:+.1e} m3"
-    )
-    assert summary["is_closed"] and not summary["is_solid"]
-else:
-    raise AssertionError(
-        "this difference is expected to hit the rounding limit; update section 5 if it passes"
-    )
+pushback = pits[1] - pits[0]
+assert pushback.is_solid
+print(f"solid: {pushback.is_solid}, {pushback.volume:,.1f} m3 against stage 2 at {stages[1].volume:,.1f} m3")
 ```
 
 ```text
-KernelError: kernel limitation, not an input defect: rounding the exact result to f64 left a mesh that is not a solid (snap rounding is not implemented): self_intersections=68, coplanar_overlaps=3; the error's report lists each problem and its mesh holds the result
-closed: True, self-intersections: 68, volume off by +5.4e-08 m3
+solid: True, 673,495.6 m3 against stage 2 at 673,495.6 m3
 ```
 
 Full script: [`example_06.py`](example_06.py), run by `mise run examples`.

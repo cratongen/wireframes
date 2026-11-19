@@ -144,43 +144,36 @@ fn difference_of_prisms_whose_caps_differ_by_one_ulp_is_empty_or_a_solid() {
 }
 
 #[test]
-#[ignore = "rounding: boxes clipped by one topography have caps that agree only to rounding"]
 fn booleans_of_boxes_clipped_by_the_same_topography() {
     booleans_are_solids_with_exact_volumes("clipped_boxes");
 }
 
 #[test]
-#[ignore = "rounding: a pit and its pushback clipped by one ground share walls that agree only to rounding"]
 fn booleans_of_a_triangular_pit_and_its_pushback_clipped_by_the_same_ground() {
     booleans_are_solids_with_exact_volumes("pit_pushback");
 }
 
 #[test]
-#[ignore = "rounding: touching pushback slivers have walls that agree only to rounding"]
 fn booleans_of_touching_pushback_slivers() {
     booleans_are_solids_with_exact_volumes("touching_slivers");
 }
 
 #[test]
-#[ignore = "rounding: the union of the runaway pushback pair folds slivers and leaves boundary edges"]
 fn booleans_of_the_runaway_pushback_pair_reduced_for_union() {
     booleans_are_solids_with_exact_volumes("runaway_union");
 }
 
 #[test]
-#[ignore = "rounding: the intersection of the runaway pushback pair is a sliver an ulp thick"]
 fn booleans_of_the_runaway_pushback_pair_reduced_for_intersection() {
     booleans_are_solids_with_exact_volumes("runaway_intersection");
 }
 
 #[test]
-#[ignore = "rounding: the difference of the runaway pushback pair folds slivers between near-coplanar walls"]
 fn booleans_of_the_runaway_pushback_pair_reduced_for_difference() {
     booleans_are_solids_with_exact_volumes("runaway_difference");
 }
 
 #[test]
-#[ignore = "rounding: the reversed difference of the runaway pushback pair folds slivers between near-coplanar walls"]
 fn booleans_of_the_runaway_pushback_pair_reduced_for_the_reversed_difference() {
     booleans_are_solids_with_exact_volumes("runaway_difference_reversed");
 }

@@ -3,6 +3,7 @@
 mod arrangement;
 mod classify;
 pub mod clip;
+mod conform;
 pub mod cutfill;
 mod hp;
 pub mod ops;

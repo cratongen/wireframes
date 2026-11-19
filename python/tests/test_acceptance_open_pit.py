@@ -361,7 +361,6 @@ def test_booleans_of_solids_whose_caps_differ_by_one_ulp():
     assert refused == 0, "rounding left results that are not solids"
 
 
-@pytest.mark.skip(reason="acceptance: rounding folds slivers of near-coplanar caps into self-intersections")
 def test_pushback_as_difference_of_pits_clipped_by_the_same_topography():
     c = np.array([[-20.0, -20.0], [20.0, -20.0], [20.0, 20.0], [-20.0, 20.0]])
     topo = wf.dtm(np.column_stack([c, [4.0, 6.0, 5.5, 4.5]]))

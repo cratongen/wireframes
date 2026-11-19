@@ -323,7 +323,7 @@ for name, block in blocks.items():
 
 ```text
 footwall   : development    2,079 m3, stoped   201,982 m3, in place    79,465 m3, sum - block -9.8e-08 m3
-hangingwall: development    1,028 m3, stoped    97,493 m3, in place    39,634 m3, sum - block +1.1e-07 m3
+hangingwall: development    1,028 m3, stoped    97,493 m3, in place    39,634 m3, sum - block +1.2e-07 m3
 ```
 
 ```python
@@ -563,8 +563,8 @@ orebody      total             421,681      1,180.7         3.33    3,935.0
 dilution     stoped waste      131,911        356.2         0.00        0.0
 stope feed   ore + waste       431,386      1,194.7         2.36    2,822.4
 dilution is 31% of the stoped volume
-gold in the six parts - gold in the orebody = -3.2e-10 kg
-stoped ore + dilution - stoped = +6.2e-09 m3
+gold in the six parts - gold in the orebody = -2.2e-10 kg
+stoped ore + dilution - stoped = +1.5e-08 m3
 ```
 
 The dilution is high, 31 percent of the stoped volume, because the stope walls are vertical while the lens dips
@@ -797,15 +797,16 @@ InvalidInput: loft links one ring per section; section 6 has 2 parts
 
 **A chain of booleans on rounded results.** Exact predicates decide every crossing, but each result is written
 with 64-bit floating-point coordinates, so the new vertices along each intersection line are rounded. A boolean
-that takes such a result as input sees those rounded vertices as exact, and long, thin triangles near them can
-fold over each other. Joining the crosscuts to the 80 m level drive one at a time shows it: the first unions are
-valid solids, then one union raises `wf.KernelError`, because rounding its exact result left self-intersections.
-The error says the input is not at fault; `error.report` lists the problems and `error.mesh` holds the rounded
-result. `repair()` does not remove self-intersections.
+that takes such a result as input sees those rounded vertices as exact, and long, thin triangles near them would
+fold over each other once rounded again. Joining the crosscuts to the 80 m level drive one at a time shows it:
+union 11 used to fail there. Each boolean now collapses or snaps what rounding cannot place, checks the result
+exactly, and returns a solid, with how far it moved any vertex and how much the volume can differ from the
+exact result reported. A result the rounding cannot certify would raise `wf.KernelError` with the rounded mesh
+and its validation report; none of these does.
 
-Two habits avoid it, and section 3 uses both: put pieces that do not touch together with `wf.concat` and run one
-boolean, and build each quantity from the original solids rather than from earlier results (the dilution in
-section 5).
+Two habits still help, and section 3 uses both: put pieces that do not touch together with `wf.concat` and run
+one boolean, and build each quantity from the original solids rather than from earlier results (the dilution in
+section 5). Fewer rounded inputs mean fewer vertices moved.
 
 ```python
 a, v, area = profile(5.0)
@@ -814,28 +815,15 @@ chain = prism(O + np.column_stack([np.full(a.size, -160.0), y_drive + a, 80.0 + 
 for k, crosscut in enumerate(crosscuts[80.0], start=1):
     try:
         chain = chain | crosscut
-    except wf.KernelError as error:
-        print(f"union {k}: {type(error).__name__}: {error}")
-        assert error.report.summary["is_closed"] and error.report.summary["self_intersections"] > 0
-        break
-    summary = chain.validate().summary
-    print(f"union {k}: solid {chain.is_solid}, self-intersections {summary['self_intersections']}")
-else:
-    raise AssertionError("this chain of unions is expected to fail validation; update section 7 if it passes")
+    except wf.KernelError as error:  # a result the rounding could not certify; error.mesh holds it
+        print(f"union {k}: {error.report.summary}")
+        raise
+    assert chain.is_solid
+print(f"{k} unions, solid: {chain.is_solid}, {chain.volume:,.1f} m3")
 ```
 
 ```text
-union 1: solid True, self-intersections 0
-union 2: solid True, self-intersections 0
-union 3: solid True, self-intersections 0
-union 4: solid True, self-intersections 0
-union 5: solid True, self-intersections 0
-union 6: solid True, self-intersections 0
-union 7: solid True, self-intersections 0
-union 8: solid True, self-intersections 0
-union 9: solid True, self-intersections 0
-union 10: solid True, self-intersections 0
-union 11: KernelError: kernel limitation, not an input defect: rounding the exact result to f64 left a mesh that is not a solid (snap rounding is not implemented): self_intersections=21; the error's report lists each problem and its mesh holds the result
+12 unions, solid: True, 14,407.3 m3
 ```
 
 Full script: [`example_07.py`](example_07.py), run by `mise run examples`.

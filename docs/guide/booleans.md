@@ -53,12 +53,14 @@ stope-by-stope union does not depend on the order of the stopes.
 
 Exact predicates decide every crossing, and the result is exact until its new vertices are written as f64. Where
 two inputs agree only to the last digit, the exact result can hold slivers thinner than f64 can place, and
-rounding folds them into their neighbours. The rounded mesh is closed and its volume is right to rounding, but
-`validate` finds self-intersections in it. Booleans, `clip_by_surface` and `split_by_plane` of a solid check every
-result and raise `wf.KernelError` instead of returning a mesh that is not a solid. The error is a limit of the
-kernel, not a fault in your input: `error.report` holds the `MeshReport` of the rounded result and `error.mesh` the
-result itself, so you can still read its volume. `repair` does not remove self-intersections; a fix needs snap
-rounding, which wireframes does not implement yet.
+rounding them alone would fold them into their neighbours. Booleans, `clip_by_surface` and `split_by_plane`
+therefore round with exact tests: vertices that round together become one, a vertex within rounding of a face it
+does not touch is inserted into that face, and pieces whose rounded volume is zero go. Where two inputs agree to
+rounding with different triangulations, such as two pits clipped by the same topography, each input's vertices
+are inserted into the other's faces there and edges are flipped until both match, before the exact arrangement
+runs. No vertex ends more than four ulps of its largest coordinate from its exact position, and the volume of the
+result differs from the exact result's by at most a bound computed with it. Every result is then checked with
+`validate`.
 
 Open-pit work meets this when it combines pieces that were each clipped by the same topography: their caps come
 from the same topography triangles cut at different places.
@@ -70,22 +72,25 @@ closed1 = wf.datasets.pit(sky, radius=60).close_to_elevation(600)
 closed2 = wf.datasets.pit(sky, radius=90).close_to_elevation(600)
 pit1 = closed1.clip_by_surface(topography)[0]
 pit2 = closed2.clip_by_surface(topography)[0]
-try:
-    pushback = pit2 - pit1
-except wf.KernelError as error:
-    print(error.report.summary["self_intersections"], error.mesh.volume)
+pushback = pit2 - pit1
+pushback.is_solid  # True
 ```
 
-Combine the closed, unclipped solids first and clip once:
+Combining the closed, unclipped solids first and clipping once keeps every wall exact, so nothing needs to move:
 
 ```python
 pushback = (closed2 - closed1).clip_by_surface(topography)[0]
 pushback.is_solid  # True
 ```
 
+A result the rounding cannot certify raises `wf.KernelError` whose message starts with `uncertified`;
+`error.report` holds the `MeshReport` of the rounded result and `error.mesh` the result itself, closed, so you can
+still read its volume. None of the cases known to the tests raises it. An exact coordinate beyond the f64 range
+raises it with `non-finite`.
+
 Underground work meets it in long chains of booleans. Each result carries rounded vertices along its intersection
-lines, and a boolean that takes it as input treats them as exact; long, thin triangles near them can then fold
-over each other after a few steps. Two habits avoid it. Put pieces that do not touch into one mesh with
+lines, and a boolean that takes it as input treats them as exact; long, thin triangles near them would fold over
+each other once rounded again. Two habits keep the number of moved vertices down. Put pieces that do not touch into one mesh with
 `wf.concat` and run one boolean, instead of one boolean per piece. And build each reported quantity from the
 original solids rather than from an earlier result:
 
@@ -101,7 +106,7 @@ dilution = (stopes - orebody).volume - ((stopes & development) - orebody).volume
 ```
 
 [Example 06](../examples/06-open-pit/README.md) shows both orders of clipping, and
-[example 07](../examples/07-underground/README.md) shows a chain of unions that raises `wf.KernelError` at its
+[example 07](../examples/07-underground/README.md) shows a chain of twelve unions that used to fail at its
 eleventh step.
 
 ## Cutting

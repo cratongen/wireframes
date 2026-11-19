@@ -351,7 +351,6 @@ def test_octagonal_pit_clipped_by_flat_ground_is_a_solid():
     assert close(below.volume, pit_volume(8, rings, 200.0, 205.0), rel=SHAPE)
 
 
-@pytest.mark.skip(reason="acceptance: union of a previous pit and its pushback is not a solid")
 def test_previous_pit_and_pushback_unite_into_the_next_pit():
     ground = flat(215.0, half=2000.0, origin=np.zeros(3))
     first, second = (
@@ -370,7 +369,6 @@ def load_pair(name):
     return wf.Mesh(z["av"], z["at"]), wf.Mesh(z["bv"], z["bt"])
 
 
-@pytest.mark.skip(reason="acceptance: booleans of touching pushback slivers are not solids")
 def test_booleans_of_touching_pushback_slivers_are_solids():
     pit, pushback = load_pair("pushback_pair_touching.npz")
     assert pit.is_solid and pushback.is_solid
@@ -413,13 +411,11 @@ def test_intersection_of_previous_pit_and_pushback_pieces_stays_small():
     intersect_runaway_pair()
 
 
-@pytest.mark.skip(reason="acceptance: rounded slivers between walls that agree to an ulp self-intersect")
 def test_intersection_of_previous_pit_and_pushback_pieces_is_a_thin_solid():
     _, solid, volume = intersect_runaway_pair()
     assert solid == "True" and float(volume) < 1e-6
 
 
-@pytest.mark.skip(reason="acceptance: union and difference of pit and pushback pieces self-intersect")
 def test_union_and_difference_of_previous_pit_and_pushback_pieces():
     pit, pushback = load_pair("pushback_pair_runaway.npz")
     assert pit.is_solid and pushback.is_solid

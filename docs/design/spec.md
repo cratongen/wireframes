@@ -194,11 +194,16 @@ No other dependency without a line in this table.
    that face, the two vertices become one (an input vertex is kept); C5
    otherwise, `h` is inserted into the face, on the edge the box meets (splitting
    both faces on that edge) or inside it. The hot box spans an ulp of `h` per
-   axis; a round where it finds nothing retries with an ulp of `h` plus the
-   largest ulp of the face's corners, the reach the separation lemma allows. Each
+   axis; a round where it finds nothing retries with twice the sum of the rounding
+   radii (half-ulp vector lengths) of `h` and of the face's corners on every axis,
+   the reach the separation lemma allows. Flat faces `validate` reports lose their
+   middle corner to the longest edge the same way (C5 on the face across it), no
+   operation puts two copies of one exact point on one face, and opposite faces on
+   the same coordinates whose corners differ only by such copies have them joined
+   and cancel. Each
    (exact point, original face) pair is inserted at most once, and no vertex ends
-   more than four ulps per axis from the exact position of any exact vertex that
-   ends at it (`move_bound`), in the per-shell cleanup as well. For a result these
+   more than four ulps of its largest coordinate, on any axis, from the exact
+   position of any exact vertex that ends at it (`move_bound`), in the per-shell cleanup as well. For a result these
    operations do not certify, the error carries the closed mesh that the
    per-shell cleanup gives without that cap, and its report states how far that
    mesh moved each vertex (`move_bound` raised to `max_move`). Every decision is an exact test on the
@@ -213,13 +218,28 @@ No other dependency without a line in this table.
    rounded mesh; its message starts with `uncertified` (the operations ended
    within their bound and `validate` still finds a problem) or `non-finite` (an
    exact coordinate rounds outside the `f64` range, which no `f64` mesh can
-   hold). Cases that still meet `uncertified` today are inputs whose surfaces
-   agree only to an ulp with different triangulations, where edges of the two
-   pass within an ulp of each other with no vertex near: booleans of a pit and its
-   pushback clipped by one topography and stopes tessellated on different grids
-   and rotated to strike. Prefer operations on the exact inputs: clip the
-   difference (`(s2 - s1).clip_by_surface(topo)`) rather than taking the
-   difference of clipped pieces. Tests that meet the limit read the mesh from the
+   hold). A boolean or clip whose result is `uncertified` first conforms its inputs
+   and runs once more (`conform.rs`): each vertex of one input whose hot box meets a
+   face of the other, not at a corner, is inserted into that face (on the edge the
+   box meets, or inside), by coordinates, so it becomes a vertex of both; then every
+   face of one input whose three corners are vertices of the other has its edges
+   recovered in the other by flips of strictly convex quads in the projection along
+   its plane's dominant axis (Sloan's edge insertion), only through faces within
+   four ulps of that plane. Each insertion and flip is kept only when its new faces
+   are not flat and cross or overlap no face near them (the pair test `validate`
+   uses); conforming is dropped when the copy of a closed input is not a solid or
+   the copy of an open surface crosses itself. Where the two inputs agree to rounding they then share
+   faces exactly, and the exact arrangement treats them as coincident. No input
+   vertex moves; each insertion and flip replaces faces across tetrahedra whose
+   exact volumes, summed, bound how far each input changed, and that sum is added
+   to `volume_bound` (`|vol(op(a', b')) - vol(op(a, b))| <= vol(a xor a') +
+   vol(b xor b')`). The report counts the points inserted (`inserted_points`) and
+   the edges flipped (`flipped_edges`), and adds the steps and the step bound of
+   conforming. The result of the conformed inputs is returned only when it is
+   certified. No case in the tests meets `uncertified`. Operations on the exact
+   inputs still move nothing: clip the difference
+   (`(s2 - s1).clip_by_surface(topo)`) rather than taking the difference of clipped
+   pieces. Tests that meet the limit read the mesh from the
    error and keep their checks on it, and report the failure rate, never hide it.
 
 ## 3. wireframes-core

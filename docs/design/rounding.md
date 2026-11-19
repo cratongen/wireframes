@@ -389,15 +389,17 @@ Measured on the reduced cases and on the 648 inclined splits of `sphere(2)`
 - **Hot box.** The design used the rounding box of `h`. The implementation first
   tries one ulp of `h` per axis, rounded outward to `f64` ends so that the exact
   separating-axis test runs on `f64` values. A round where that box finds nothing
-  retries with one ulp of `h` plus the largest ulp of the face's corners, the
-  reach the separation lemma (S) allows. With the narrow box alone, 6 of the 648
+  retries with twice the sum of the rounding radii of `h` and of the face's
+  farthest-rounding corner on every axis, the reach the separation lemma (S)
+  allows (see "Isotropic reach" below). With the narrow box alone, 6 of the 648
   splits stayed uncertified: crossings that round two ulps from the vertex next to
   them. With the wide box alone, 18 did, because it acts on the first candidate it
   finds. Narrow then wide leaves none.
 - **Move cap.** The design capped a vertex at two ulps per axis from its exact
   position. Collapsing those crossings onto their vertex needs two and a half, so
-  the cap is four ulps per axis (`move_bound`), checked for every collapse in both
-  the per-shell cleanup and the operations over all shells.
+  the cap is four ulps of the vertex's largest coordinate on every axis
+  (`move_bound`), checked for every collapse in both the per-shell cleanup and the
+  operations over all shells.
 - **Step bound.** `step_bound` adds the per-shell bound (each flip removes an edge
   the cleanup did not make; at most `3 f0 / 2 + v0 f0` such edges per round and
   `f0^2 + 1` rounds) to the bound over all shells (`v f` insertions, each adding at
@@ -406,7 +408,54 @@ Measured on the reduced cases and on the 648 inclined splits of `sphere(2)`
 - **Splits** follow the design: section points stay exact through the cap CDT, and
   both parts go through `materialize`. `coincident` remains, but on exact points it
   only joins section points at the same exact position; `clean` is gone.
-- **What remains uncertified.** Surfaces that agree only to an ulp with different
-  triangulations (M2 and M3 with crossing edges) leave face pairs where no corner
-  of either face lies within reach of the other: two edges pass within an ulp of
-  each other with no hot point near either. This is the gap section 3.C names.
+- **Isotropic reach.** The wide hot box and the move cap are the same on every
+  axis: the rounding radius of a point is the length of its half-ulp vector, set by
+  its largest coordinate. At UTM northings an x or y ulp is about 9.3e-10 m and a z
+  ulp at 300 m about 5.7e-14 m; the runaway pair holds vertices with equal x and y
+  whose z values spread over about 3.5e-11 m, which a per-axis box never joins
+  while a face rounding by half an x ulp can still tilt across them.
+- **Flat faces and copies.** The loop also takes `validate`'s degenerate faces: the
+  middle corner of a flat face is inserted on that face's longest edge (C5 on the
+  face across it), which is the cleanup's flip. No insertion or collapse may put two
+  copies of one exact point on one face. Two opposite faces on the same three
+  coordinates whose corners differ only by such copies have the copies joined, so
+  they cancel (C4). The loop validates a mesh of the vertices its live faces use.
+
+## 8. Conforming inputs that agree to rounding
+
+C2 and C5 work from hot points, so they cannot help where surfaces of the two
+inputs agree only to an ulp with different triangulations (M2, M3): their edges
+pass within an ulp of each other with no vertex near, the gap section 3.C names.
+The reduced cases for clipped boxes, the pit and pushback, the rotated stopes and
+the runaway pair all stayed uncertified after section 7, with nearly every problem
+pair a face of `a` and a face of `b`, parallel and opposite.
+
+The fix moves the snapping before the arrangement. When a boolean or a clip is
+uncertified, `conform.rs` makes copies of both inputs: every vertex of one input
+whose narrow hot box meets a face of the other, not at a corner, is inserted into
+that face; then every face of one input whose three corners are now vertices of the
+other has its three edges recovered in the other by flips (Sloan 1993, in the
+projection along the face's dominant normal axis, only through strictly convex
+quads within four ulps of the face's plane). Both triangulations then hold the same
+faces wherever the surfaces agree to rounding, and the exact arrangement sees those
+faces as coincident and classifies them exactly, so no sliver is left to round.
+Every insertion and flip is kept only when its new faces are not flat and cross or
+overlap no face near them (exact pair tests, found through a BVH of the input faces).
+
+- **No input vertex moves.** Insertions add vertices of the other input at their own
+  coordinates.
+- **Volume.** An interior insertion replaces a face by three across the tetrahedron
+  of its corners and the point; an edge insertion does so on both faces of the edge;
+  a flip replaces two faces across the tetrahedron of the quad. The symmetric
+  difference between an input and its copy lies in the union of those tetrahedra,
+  so `vol(a xor a') + vol(b xor b')` is at most the sum of their exact volumes,
+  which bounds `|vol(op(a', b')) - vol(op(a, b))|` and is added to `volume_bound`.
+  The rational check `public_booleans_of_reduced_cases_stay_within_their_bounds`
+  compares the public result with the exact result of the original inputs.
+- **Termination.** Each vertex enters the other input at most once, each adding two
+  live faces, so live faces stay below `F = f + 2 v`; flips keep that count. There
+  are at most `6 F` edge recoveries, each crossing at most `3 F` edges and allowed
+  `c^2 + 4` attempts for its `c` crossing edges. The bound is computed before the
+  first step and asserted, and its steps join the report's.
+- **Result.** The result of the conformed inputs is returned only when certified;
+  otherwise the first, uncertified result is the error.

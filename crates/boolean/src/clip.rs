@@ -5,9 +5,10 @@ use wireframes_ops::{RepairOptions, RepairReport, repair};
 use crate::BooleanOptions;
 use crate::arrangement::{self, Arrangement};
 use crate::classify::{self, Sample, Target};
+use crate::conform::conform;
 use crate::hp::Pt;
 use crate::ops::{Piece, assemble, build_mesh, prepare, shells, solid_result};
-use crate::round::RoundingReport;
+use crate::round::{self, RoundingReport};
 
 pub struct ClipResult {
     pub below: Mesh,
@@ -154,24 +155,45 @@ pub fn clip_by_surface(solid: &Mesh, surface: &Mesh, opts: &BooleanOptions) -> R
     )?;
     let (a, ra) = prepare(solid, "solid", opts.repair)?;
     let (b, rb) = prepare_surface(surface, opts.repair)?;
-    let arr = arrangement::build(&a, &b)?;
-    let [below, above] = pieces(&arr)?;
-    let mut out = vec![];
-    let mut rounding = vec![];
-    for piece in [below, above] {
-        let (asm, r, certified) = assemble(&arr, &shells(&arr, &piece)?)?;
-        rounding.push(r);
-        let mesh = build_mesh(
-            asm,
-            (a.vertex_attributes(), b.vertex_attributes()),
-            (a.face_attributes(), b.face_attributes()),
-            labels.clone(),
-        )?;
-        out.push(solid_result(mesh, certified, "the exact clip")?);
+    type Piece2 = (Mesh, RoundingReport, bool);
+    let run = |a: &Mesh, b: &Mesh| -> Result<[Piece2; 2]> {
+        let arr = arrangement::build(a, b)?;
+        let mut out = vec![];
+        for piece in pieces(&arr)? {
+            let (asm, r, certified) = assemble(&arr, &shells(&arr, &piece)?)?;
+            let mesh = build_mesh(
+                asm,
+                (a.vertex_attributes(), b.vertex_attributes()),
+                (a.face_attributes(), b.face_attributes()),
+                labels.clone(),
+            )?;
+            out.push((mesh, r, certified));
+        }
+        Ok(out.try_into().map_err(|_| ()).expect("two pieces"))
+    };
+    let mut parts = run(&a, &b)?;
+    if !(parts[0].2 && parts[1].2)
+        && let Some(c) = conform(&a, &b)?
+    {
+        let mut again = run(&c.meshes[0], &c.meshes[1])?;
+        if again[0].2 && again[1].2 {
+            for (k, part) in again.iter_mut().enumerate() {
+                let r = &mut part.1;
+                if k == 0 {
+                    r.inserted_points += c.inserted;
+                    r.flipped_edges += c.flips;
+                    r.steps += c.steps;
+                }
+                r.step_bound = r.step_bound.saturating_add(c.step_bound);
+                r.volume_bound = round::up(r.volume_bound + c.volume);
+            }
+            parts = again;
+        }
     }
-    let above = out.pop().expect("two pieces");
-    let below = out.pop().expect("two pieces");
-    let rounding: [RoundingReport; 2] = rounding.try_into().expect("two pieces");
+    let [(lo, rlo, clo), (hi, rhi, chi)] = parts;
+    let below = solid_result(lo, clo, "the exact clip")?;
+    let above = solid_result(hi, chi, "the exact clip")?;
+    let rounding = [rlo, rhi];
     Ok(ClipResult {
         below,
         above,

@@ -7,6 +7,7 @@ use wireframes_ops::{RepairOptions, RepairReport, repair};
 
 use crate::arrangement::{self, Arrangement};
 use crate::classify::{self, Status};
+use crate::conform::conform;
 use crate::hp;
 use crate::round::{self, Assembled, Draft, RoundingReport};
 
@@ -354,16 +355,37 @@ pub fn boolean(a: &Mesh, b: &Mesh, op: Op, opts: &BooleanOptions) -> Result<Bool
     let labels = units::check_same("b", (&a.crs, &a.length_unit), (&b.crs, &b.length_unit))?;
     let (a, ra) = prepare(a, "a", opts.repair)?;
     let (b, rb) = prepare(b, "b", opts.repair)?;
-    let arr = arrangement::build(&a, &b)?;
-    let kept = kept(&arr, op)?;
-    let (asm, rounding, certified) = assemble(&arr, &shells(&arr, &kept)?)?;
-    let face_source = asm.face_source.clone();
-    let mesh = build_mesh(
-        asm,
-        (a.vertex_attributes(), b.vertex_attributes()),
-        (a.face_attributes(), b.face_attributes()),
-        labels,
-    )?;
+    let run = |a: &Mesh, b: &Mesh| -> Result<(Mesh, Vec<(u8, u32)>, RoundingReport, bool)> {
+        let arr = arrangement::build(a, b)?;
+        let kept = kept(&arr, op)?;
+        let (asm, rounding, certified) = assemble(&arr, &shells(&arr, &kept)?)?;
+        let face_source = asm.face_source.clone();
+        let mesh = build_mesh(
+            asm,
+            (a.vertex_attributes(), b.vertex_attributes()),
+            (a.face_attributes(), b.face_attributes()),
+            labels.clone(),
+        )?;
+        Ok((mesh, face_source, rounding, certified))
+    };
+    let (mut mesh, mut face_source, mut rounding, mut certified) = run(&a, &b)?;
+    if !certified && let Some(c) = conform(&a, &b)? {
+        let (m, fs, mut r, ok) = run(&c.meshes[0], &c.meshes[1])?;
+        if ok {
+            r.inserted_points += c.inserted;
+            r.flipped_edges += c.flips;
+            r.steps += c.steps;
+            r.step_bound = r.step_bound.saturating_add(c.step_bound);
+            r.volume_bound = round::up(r.volume_bound + c.volume);
+            mesh = m;
+            face_source = fs
+                .into_iter()
+                .map(|(k, f)| (k, c.src[k as usize][f as usize]))
+                .collect();
+            rounding = r;
+            certified = true;
+        }
+    }
     let mesh = solid_result(mesh, certified, "the exact result")?;
     Ok(BooleanResult {
         mesh,

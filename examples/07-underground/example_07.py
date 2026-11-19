@@ -699,15 +699,16 @@ else:
 # %% [markdown]
 # **A chain of booleans on rounded results.** Exact predicates decide every crossing, but each result is written
 # with 64-bit floating-point coordinates, so the new vertices along each intersection line are rounded. A boolean
-# that takes such a result as input sees those rounded vertices as exact, and long, thin triangles near them can
-# fold over each other. Joining the crosscuts to the 80 m level drive one at a time shows it: the first unions are
-# valid solids, then one union raises `wf.KernelError`, because rounding its exact result left self-intersections.
-# The error says the input is not at fault; `error.report` lists the problems and `error.mesh` holds the rounded
-# result. `repair()` does not remove self-intersections.
+# that takes such a result as input sees those rounded vertices as exact, and long, thin triangles near them would
+# fold over each other once rounded again. Joining the crosscuts to the 80 m level drive one at a time shows it:
+# union 11 used to fail there. Each boolean now collapses or snaps what rounding cannot place, checks the result
+# exactly, and returns a solid, with how far it moved any vertex and how much the volume can differ from the
+# exact result reported. A result the rounding cannot certify would raise `wf.KernelError` with the rounded mesh
+# and its validation report; none of these does.
 #
-# Two habits avoid it, and section 3 uses both: put pieces that do not touch together with `wf.concat` and run one
-# boolean, and build each quantity from the original solids rather than from earlier results (the dilution in
-# section 5).
+# Two habits still help, and section 3 uses both: put pieces that do not touch together with `wf.concat` and run
+# one boolean, and build each quantity from the original solids rather than from earlier results (the dilution in
+# section 5). Fewer rounded inputs mean fewer vertices moved.
 
 # %%
 a, v, area = profile(5.0)
@@ -716,11 +717,8 @@ chain = prism(O + np.column_stack([np.full(a.size, -160.0), y_drive + a, 80.0 + 
 for k, crosscut in enumerate(crosscuts[80.0], start=1):
     try:
         chain = chain | crosscut
-    except wf.KernelError as error:
-        print(f"union {k}: {type(error).__name__}: {error}")
-        assert error.report.summary["is_closed"] and error.report.summary["self_intersections"] > 0
-        break
-    summary = chain.validate().summary
-    print(f"union {k}: solid {chain.is_solid}, self-intersections {summary['self_intersections']}")
-else:
-    raise AssertionError("this chain of unions is expected to fail validation; update section 7 if it passes")
+    except wf.KernelError as error:  # a result the rounding could not certify; error.mesh holds it
+        print(f"union {k}: {error.report.summary}")
+        raise
+    assert chain.is_solid
+print(f"{k} unions, solid: {chain.is_solid}, {chain.volume:,.1f} m3")

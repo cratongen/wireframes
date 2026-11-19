@@ -33,8 +33,12 @@ pub struct RoundingReport {
     pub merged_vertices: usize,
     /// Edges collapsed (C2).
     pub collapsed_edges: usize,
-    /// Rounded vertices inserted into faces they lie within rounding of (C5).
+    /// Rounded vertices inserted into faces they lie within rounding of (C5),
+    /// including input vertices inserted into the other input's faces.
     pub inserted_points: usize,
+    /// Edges of an input flipped to match the other input's faces where the
+    /// two agree to rounding.
+    pub flipped_edges: usize,
     /// Shells of zero or wrong-sign rounded volume removed (C3).
     pub removed_shells: usize,
     /// Faces removed in opposite pairs on the same three vertices (C4).
@@ -84,7 +88,7 @@ pub(crate) fn half_ulp(x: f64) -> f64 {
     ((a.next_up() - a) / 2.0).max(f64::from_bits(1))
 }
 
-fn up(x: f64) -> f64 {
+pub(crate) fn up(x: f64) -> f64 {
     (x * (1.0 + 64.0 * f64::EPSILON)).next_up()
 }
 
@@ -343,7 +347,7 @@ pub(crate) fn collapse_rounded(
                             up(span[keep as usize][a]
                                 .max(span[gone as usize][a] + (g[a] - k[a]).abs()))
                         });
-                        if cap && (0..3).any(|a| grown[a] > move_cap(k[a])) {
+                        if cap && (0..3).any(|a| grown[a] > move_cap(k)) {
                             continue;
                         }
                         let Some(nt) = edge_collapse(
@@ -671,7 +675,7 @@ fn overlap_on(axis: &Ev, pts: &[[f64; 3]], lo: [f64; 3], hi: [f64; 3]) -> bool {
 
 /// Whether the convex hull of `pts` (a segment or a triangle) meets the
 /// closed box `[lo, hi]`, by the separating axis theorem with exact signs.
-fn box_meets(pts: &[[f64; 3]], lo: [f64; 3], hi: [f64; 3]) -> bool {
+pub(crate) fn box_meets(pts: &[[f64; 3]], lo: [f64; 3], hi: [f64; 3]) -> bool {
     for k in 0..3 {
         if pts.iter().all(|p| p[k] < lo[k]) || pts.iter().all(|p| p[k] > hi[k]) {
             return false;
@@ -698,28 +702,27 @@ fn box_meets(pts: &[[f64; 3]], lo: [f64; 3], hi: [f64; 3]) -> bool {
 
 /// The box about `h` within which a face with corners `c` can reach `h` once
 /// both are rounded, rounded outward: an ulp of `h` on each axis, or, when
-/// `wide`, an ulp of `h` plus the largest ulp of a corner, which holds every
-/// point whose distance to `h` on each axis is at most the sum of their
-/// rounding errors (the condition of the separation lemma).
-fn hot_box(h: [f64; 3], c: &[[f64; 3]], wide: bool) -> ([f64; 3], [f64; 3]) {
-    let w: [f64; 3] = [0, 1, 2].map(|k| {
-        let corner = c.iter().map(|p| half_ulp(p[k])).fold(0.0, f64::max);
-        if wide {
-            2.0 * (half_ulp(h[k]) + corner)
-        } else {
-            2.0 * half_ulp(h[k])
-        }
-    });
+/// `wide`, on every axis the sum of the rounding radii of `h` and of the
+/// face's farthest-rounding corner (the length of their half-ulp vectors),
+/// which holds every point the separation lemma lets a rounded face reach.
+pub(crate) fn hot_box(h: [f64; 3], c: &[[f64; 3]], wide: bool) -> ([f64; 3], [f64; 3]) {
+    let radius = |p: [f64; 3]| up(norm(p.map(half_ulp)));
+    let w: [f64; 3] = if wide {
+        let reach = up(2.0 * (radius(h) + c.iter().map(|&p| radius(p)).fold(0.0, f64::max)));
+        [reach; 3]
+    } else {
+        h.map(|x| 2.0 * half_ulp(x))
+    };
     (
         [0, 1, 2].map(|k| (h[k] - w[k]).next_down()),
         [0, 1, 2].map(|k| (h[k] + w[k]).next_up()),
     )
 }
 
-/// How far, per axis, a vertex may end from the exact position of any exact
-/// vertex that ends at it: four ulps of its coordinate.
-fn move_cap(x: f64) -> f64 {
-    8.0 * half_ulp(x)
+/// How far, on every axis, a vertex at `p` may end from the exact position of
+/// any exact vertex that ends at it: four ulps of its largest coordinate.
+fn move_cap(p: [f64; 3]) -> f64 {
+    8.0 * p.map(half_ulp).into_iter().fold(0.0, f64::max)
 }
 
 impl Global {
@@ -727,10 +730,24 @@ impl Global {
         (0..self.tris.len()).filter(|&f| self.alive[f])
     }
 
+    /// The live faces as a mesh of the vertices they use, with the face
+    /// index of each.
     fn mesh(&self) -> Result<(Mesh, Vec<usize>)> {
         let ids: Vec<usize> = self.live().collect();
-        let m = Mesh::new(self.v.clone(), ids.iter().map(|&f| self.tris[f]).collect())?;
-        Ok((m, ids))
+        let mut id: Vec<Option<u32>> = vec![None; self.v.len()];
+        let mut v = vec![];
+        let tris = ids
+            .iter()
+            .map(|&f| {
+                self.tris[f].map(|i| {
+                    *id[i as usize].get_or_insert_with(|| {
+                        v.push(self.v[i as usize]);
+                        v.len() as u32 - 1
+                    })
+                })
+            })
+            .collect();
+        Ok((Mesh::new(v, tris)?, ids))
     }
 
     /// C1: vertices with equal coordinates become one, unless two of them are
@@ -869,6 +886,12 @@ impl Global {
         let mut inserted = 0;
         let mut collapsed = 0;
         for p in &report.problems {
+            if p.kind == K::DegenerateFace
+                && let Some(f) = p.face
+            {
+                inserted += usize::from(self.unflatten(ids[f as usize], done));
+                continue;
+            }
             if !matches!(p.kind, K::SelfIntersection | K::CoplanarOverlap) {
                 continue;
             }
@@ -876,6 +899,10 @@ impl Global {
                 continue;
             };
             let (f, o) = (ids[f as usize], ids[o as usize]);
+            if self.join_opposite(f, o) {
+                collapsed += 1;
+                continue;
+            }
             'pair: for (a, b) in [(f, o), (o, f)] {
                 if !self.alive[a] || !self.alive[b] {
                     break;
@@ -914,11 +941,95 @@ impl Global {
         (inserted, collapsed)
     }
 
-    /// C2: vertex `h` and vertex `c`, whose coordinates are within an ulp of
-    /// each other on every axis, become one: the input vertex is kept when
-    /// one of them is, else `c`. Refused for copies of one exact point and
-    /// when the kept coordinates would lie more than two ulps from the exact
-    /// position of a vertex that ends there.
+    /// C4 for faces `f` and `o` on the same three coordinates with opposite
+    /// orientation whose corners differ by copies of one exact point: the
+    /// copies in `o` become those of `f`, so the faces cancel. Returns whether
+    /// it joined any.
+    fn join_opposite(&mut self, f: usize, o: usize) -> bool {
+        if !self.alive[f] || !self.alive[o] {
+            return false;
+        }
+        let (tf, to) = (self.tris[f], self.tris[o]);
+        let at = |i: u32| self.v[i as usize].map(|x| (x + 0.0).to_bits());
+        let Some(k) = (0..3).find(|&k| at(to[k]) == at(tf[0])) else {
+            return false;
+        };
+        let opposite = at(to[(k + 2) % 3]) == at(tf[1]) && at(to[(k + 1) % 3]) == at(tf[2]);
+        if !opposite {
+            return false;
+        }
+        let pairs = [
+            (tf[0], to[k]),
+            (tf[1], to[(k + 2) % 3]),
+            (tf[2], to[(k + 1) % 3]),
+        ];
+        if pairs
+            .iter()
+            .any(|&(x, y)| x != y && self.point[x as usize] != self.point[y as usize])
+        {
+            return false;
+        }
+        let mut joined = false;
+        for (keep, gone) in pairs {
+            if keep == gone {
+                continue;
+            }
+            joined = true;
+            self.to[gone as usize] = keep;
+            for g in 0..self.tris.len() {
+                if self.alive[g] && self.tris[g].contains(&gone) {
+                    self.tris[g] = self.tris[g].map(|i| if i == gone { keep } else { i });
+                }
+            }
+        }
+        joined
+    }
+
+    /// C5 for a face `f` whose corners are collinear: its middle corner, on
+    /// the segment of the other two, is inserted on that edge of the face
+    /// across it, which leaves `f` with a repeated corner, so it goes.
+    fn unflatten(&mut self, f: usize, done: &mut HashSet<(u32, u32)>) -> bool {
+        if !self.alive[f] {
+            return false;
+        }
+        let t = self.tris[f];
+        let c = t.map(|i| self.v[i as usize]);
+        if !collinear3(c[0], c[1], c[2]) {
+            return false;
+        }
+        let axis = (0..3)
+            .max_by(|&a, &b| {
+                let spread = |k: usize| {
+                    c.iter().map(|p| p[k]).fold(f64::NEG_INFINITY, f64::max)
+                        - c.iter().map(|p| p[k]).fold(f64::INFINITY, f64::min)
+                };
+                spread(a).total_cmp(&spread(b))
+            })
+            .expect("three axes");
+        let mut by = [0usize, 1, 2];
+        by.sort_by(|&a, &b| c[a][axis].total_cmp(&c[b][axis]));
+        let i = by[1];
+        let (m, e) = (t[i], (i + 1) % 3);
+        let (a, b) = (t[e], t[(e + 1) % 3]);
+        let Some(g) = self.live().find(|&x| {
+            let u = self.tris[x];
+            (0..3).any(|k| u[k] == b && u[(k + 1) % 3] == a)
+        }) else {
+            return false;
+        };
+        let key = (self.point[m as usize], self.orig[g]);
+        if done.contains(&key) || !self.insert(m, f, Some(e)) {
+            return false;
+        }
+        done.insert(key);
+        true
+    }
+
+    /// C2: vertex `h` and vertex `c`, within each other's hot box, become one:
+    /// the input vertex is kept when one of them is, else `c`. Refused for
+    /// copies of one exact point, when the kept coordinates would lie past
+    /// [`move_cap`] from the exact position of a vertex that ends there, and
+    /// when a face would hold two copies of one exact point.
     fn collapse(&mut self, h: u32, c: u32) -> bool {
         if self.point[h as usize] == self.point[c as usize] {
             return false;
@@ -932,7 +1043,17 @@ impl Global {
         let span: [f64; 3] = [0, 1, 2].map(|a| {
             up(self.span[keep as usize][a].max(self.span[gone as usize][a] + (g[a] - k[a]).abs()))
         });
-        if (0..3).any(|a| span[a] > move_cap(k[a])) {
+        if (0..3).any(|a| span[a] > move_cap(k)) {
+            return false;
+        }
+        let pk = self.point[keep as usize];
+        let joins_a_copy = self.live().any(|f| {
+            let t = self.tris[f];
+            t.contains(&gone)
+                && t.iter()
+                    .any(|&x| x != keep && x != gone && self.point[x as usize] == pk)
+        });
+        if joins_a_copy {
             return false;
         }
         self.span[keep as usize] = span;
@@ -967,6 +1088,11 @@ impl Global {
     /// vertex go. False when the edge has no single opposite face.
     fn insert(&mut self, h: u32, g: usize, e: Option<usize>) -> bool {
         let t = self.tris[g];
+        let ph = self.point[h as usize];
+        let copy = |x: u32| x != h && self.point[x as usize] == ph;
+        if t.iter().any(|&x| copy(x)) {
+            return false;
+        }
         match e {
             None => {
                 self.alive[g] = false;
@@ -990,6 +1116,9 @@ impl Global {
                 let u = self.tris[g2];
                 let k = (0..3).find(|&k| u[k] == b).expect("runs the edge");
                 let d = u[(k + 2) % 3];
+                if copy(d) {
+                    return false;
+                }
                 self.alive[g] = false;
                 self.alive[g2] = false;
                 self.push([a, h, c], g);
@@ -1270,7 +1399,7 @@ fn run(d: &Draft, cap: bool) -> Result<(Rounded, bool)> {
     report.moved_input_vertices = moved_input.len();
     for p in &out.vertices {
         for k in 0..3 {
-            report.move_bound[k] = report.move_bound[k].max(move_cap(p[k]));
+            report.move_bound[k] = report.move_bound[k].max(move_cap(*p));
         }
     }
     let after: Vec<[[f64; 3]; 3]> = out
@@ -1790,6 +1919,58 @@ pub(crate) mod checks {
         for name in REDUCED {
             let (a, b) = pair(name);
             booleans_round_within_their_bounds(&a, &b);
+        }
+    }
+
+    /// Six times the exact volume of the exact result of `pieces`.
+    fn exact_volume6(arr: &Arrangement, pieces: &[Shell]) -> Q {
+        let d = ops::draft(arr, pieces);
+        let exact: Vec<[Q; 3]> = d
+            .point
+            .iter()
+            .map(|&p| hp::rational(&arr.pts[p as usize]))
+            .collect();
+        d.triangles.iter().fold(q(0.0), |acc, t| {
+            acc + det(
+                &exact[t[0] as usize],
+                &exact[t[1] as usize],
+                &exact[t[2] as usize],
+            )
+        })
+    }
+
+    fn volume6(m: &Mesh) -> Q {
+        m.triangles().iter().fold(q(0.0), |acc, t| {
+            let c = t.map(|i| m.vertices()[i as usize].map(q));
+            acc + det(&c[0], &c[1], &c[2])
+        })
+    }
+
+    /// The public booleans of every reduced case, conforming included, are
+    /// solids within `volume_bound` of the exact result of the inputs as
+    /// given, and leave the inputs as they were.
+    #[test]
+    fn public_booleans_of_reduced_cases_stay_within_their_bounds() {
+        let mut cases: Vec<(Mesh, Mesh)> = REDUCED.iter().map(|n| pair(n)).collect();
+        cases.push(ulp_prisms());
+        for (a, b) in cases {
+            let (a0, b0) = (a.clone(), b.clone());
+            let arr = crate::arrangement::build(&a, &b).expect("arrangement");
+            for op in [ops::Op::Union, ops::Op::Intersection, ops::Op::Difference] {
+                let kept = ops::kept(&arr, op).expect("classified");
+                let exact = exact_volume6(&arr, &ops::shells(&arr, &kept).expect("shells"));
+                let r = ops::boolean(&a, &b, op, &ops::BooleanOptions::default()).expect("solid");
+                assert!(
+                    r.mesh.is_empty() || r.mesh.validate(0.0).expect("report").summary.is_solid()
+                );
+                let gap = abs(volume6(&r.mesh) - exact);
+                assert!(gap <= q(6.0 * r.rounding.volume_bound), "{op:?}");
+                assert!(r.rounding.steps <= r.rounding.step_bound);
+                for k in 0..3 {
+                    assert!(r.rounding.max_move[k] <= r.rounding.move_bound[k]);
+                }
+            }
+            assert_eq!((a, b), (a0, b0));
         }
     }
 
