@@ -927,7 +927,14 @@ pub fn slice_by_plane(mesh: &Mesh, origin: [f64; 3], normal: [f64; 3], offsets: 
 
 pub struct CutFill { pub cut: f64, pub fill: f64, pub net: f64, pub cut_area: f64, pub fill_area: f64, pub area: f64 }
 pub fn cut_fill(base: &Mesh, design: &Mesh, boundary: Option<&Polylines>) -> Result<CutFill>;
+
+#[doc(hidden)]
+pub fn arrangement_size(a: &Mesh, b: &Mesh) -> Result<usize>; // sub-triangle count; benchmarks only, inputs unchecked
 ```
+
+`arrangement_size` exists so the criterion benches can time the arrangement
+apart from validation and classification. It is not part of the Python API, and
+callers must pass meshes that already validate as solids.
 
 ### 6.2 Semantics
 
@@ -1658,8 +1665,7 @@ triangulate, loft, extrude, plot` (lazy attribute), `__version__`.
 | `test` | `py:build` first, then `cargo test --workspace --exclude wireframes-py`, then `pytest python/tests` |
 | `lint` | `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `ruff check`, `ruff format --check` |
 | `verify` | `lint` then `test` |
-| `bench` | `cargo bench` (criterion), interleaved rounds, medians |
-| `examples` | `py:build`, then `examples/run.py`: runs each `examples/NN-*/example_NN.py` cell by cell (`# %%` code, `# %% [markdown]` text, `# %% [hidden]` run but not shown) and writes `README.md` next to it with the printed output and the figures saved by `common.save`; `docs/hooks.py` publishes the pages, scripts and figures in the site |
+| `bench` | `cargo bench` (criterion) over every crate with benches: booleans, arrangement, validation and slicing (`crates/boolean/benches`), queries (`crates/query/benches`), every reader and writer (`crates/io/benches`) and the DTM (`crates/build/benches`); pass a filter to run a subset || `examples` | `py:build`, then `examples/run.py`: runs each `examples/NN-*/example_NN.py` cell by cell (`# %%` code, `# %% [markdown]` text, `# %% [hidden]` run but not shown) and writes `README.md` next to it with the printed output and the figures saved by `common.save`; `docs/hooks.py` publishes the pages, scripts and figures in the site |
 | `docs`, `docs-build`, `compat` | as in AGENTS.md |
 | `oracle` | `py:build`, then `pytest -m oracle -s`: the oracle suite of section 12 with its counts |
 

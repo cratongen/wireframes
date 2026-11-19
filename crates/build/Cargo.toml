@@ -15,8 +15,13 @@ wireframes-query.workspace = true
 spade.workspace = true
 
 [dev-dependencies]
+criterion.workspace = true
 proptest.workspace = true
 rayon.workspace = true
+
+[[bench]]
+name = "build"
+harness = false
 
 [lints]
 workspace = true

@@ -1238,6 +1238,7 @@ dependencies = [
 name = "wireframes-build"
 version = "0.1.0"
 dependencies = [
+ "criterion",
  "proptest",
  "rayon",
  "spade",
