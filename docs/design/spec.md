@@ -1572,6 +1572,9 @@ triangulate, loft, extrude, plot` (lazy attribute), `__version__`.
 Proptest cases: 256 per property by default (`PROPTEST_CASES` overrides), seeds
 fixed in CI via `proptest-regressions` files committed.
 
+`meshio` and `trimesh` are dev-only dependencies used inside tests as independent
+writers and readers; tests that need them skip when they are missing.
+
 ## 12. Invariants and theory checks
 
 Standing tests, by crate. Each is a Rust test (`tests/invariants.rs` per crate) and,
