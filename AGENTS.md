@@ -75,9 +75,13 @@ mise run compat     # install check across pip, uv, pixi, and conda
 
 ## Domain glossary
 
-- **Solid**: closed, manifold, outward-oriented triangle mesh (`is_closed` and
-  zero self-intersections, non-manifold edges, inconsistent windings, or inward
-  shells) representing a 3D geological domain, stope, or excavation.
+- **Solid**: one or more closed, manifold, outward-oriented triangle shells
+  (`is_closed` and zero self-intersections, non-manifold edges, inconsistent
+  windings, or inward shells) representing a 3D geological domain, stope, or
+  excavation. Shells may touch each other along edges or at vertices when their
+  interiors do not overlap; `validate` counts those contacts
+  (`touching_shell_edges`, `touching_shell_vertices`) as information, not
+  defects. A shell that touches itself is not a solid.
 - **Surface / DTM**: open triangle mesh representing topography, a fault, an
   unconformity, a pit shell, or a stratigraphic horizon.
 - **String**: a 3D polyline (`Polylines`) representing pit crests and toes,

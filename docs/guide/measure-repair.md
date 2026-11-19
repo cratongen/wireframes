@@ -22,8 +22,10 @@ duplicate and unused vertices, boundary and non-manifold edges, non-manifold ver
 shells, inward shells, self-intersections and coplanar overlaps, and adds `is_closed` and `is_solid`.
 `report.problems` is a table with one row per problem and the face, vertex and edge involved.
 
-A solid is closed, manifold, consistently and outward wound, and free of self-intersections. Every check uses
-exact predicates; `tolerance` only widens the duplicate-vertex test.
+A solid is closed, manifold, consistently and outward wound, and free of self-intersections. Its closed shells
+may touch each other along edges or at vertices: the summary counts those contacts in `touching_shell_edges`
+and `touching_shell_vertices`, and they leave `is_solid` true. Every check uses exact predicates; `tolerance`
+only widens the duplicate-vertex test within one shell.
 
 ## Repair
 
@@ -37,13 +39,16 @@ report.summary  # count per action
 ```
 
 Steps run in order: weld, remove degenerate faces, remove duplicate faces, remove unused vertices, orient,
-fill holes. Orienting flips the fewest faces to agree with each shell's first face, then flips whole shells
+fill holes. Welding keeps closed shells that touch apart: each keeps its own copy of a shared vertex, and the
+report lists a `vertex_split` row where the input shared one between shells. Pass `weld_touching_shells=True`
+to merge those vertices as well. Orienting flips the fewest faces to agree with each shell's first face, then flips whole shells
 outward by nesting parity. `repair` never touches self-intersections, and running it on its own output changes
 nothing.
 
 ## Components and transforms
 
-`components()` splits a mesh into edge-connected pieces and `component_labels()` labels each triangle.
+`components()` splits a mesh into edge-connected pieces and `component_labels()` labels each triangle. Shells
+that touch along an edge or at a vertex come out as separate pieces.
 `transform(matrix)` applies a `(4, 4)` affine matrix and flips the winding when the determinant is negative;
 `translate`, `flip` and `to_length_unit` cover the common cases.
 

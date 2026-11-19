@@ -19,14 +19,32 @@ The volumes obey inclusion and exclusion to rounding:
 
 - `vol(a | b) + vol(a & b) == vol(a) + vol(b)`
 - `vol(a - b) == vol(a) - vol(a & b)`
-- `vol(a ^ b) == vol(a | b) - vol(a & b)`
+- `vol(a ^ b) == vol(a | b) - vol(a & b) == vol(a) + vol(b) - 2 vol(a & b)`
 
-!!! note "Symmetric difference"
-    `a ^ b` holds `a - b` and `b - a` in one mesh. The two pieces meet along the intersection curve, so
-    `validate` reports duplicate vertices there and the result is not a solid you can feed to another boolean
-    or query. Compute `a - b` and `b - a` separately when you need solids.
+## Touching shells
 
-Solids that touch only along an edge or at a vertex give a non-manifold result, which raises `InvalidInput`.
+A solid may hold several closed shells that touch each other along edges or at vertices, as long as their
+interiors do not overlap. Two stopes that share a corner, or `a - b` and `b - a` meeting along their
+intersection curve, are one valid solid. Every boolean accepts such solids and returns them:
+
+```python
+a = wf.datasets.box([0, 0, 0], [1, 1, 1])
+b = wf.datasets.box([1, 1, 0], [2, 2, 1])  # shares the edge x = y = 1 with a
+two = a | b
+two.validate().summary["touching_shell_edges"]  # 1: information, not a defect
+two.is_solid  # True
+(two | wf.datasets.box([0.5, 0.5, 0], [1.5, 1.5, 1])).volume  # 2.5: results chain
+```
+
+Each shell of a result keeps its own vertices where it touches another, and `validate` reports the contacts in
+`touching_shell_edges` and `touching_shell_vertices`. Inputs may share those vertices by index instead; both
+forms validate. `a ^ b` holds `a - b` and `b - a` as separate shells along the intersection curve.
+
+Validation still refuses contacts that are not between separate closed shells: duplicate vertices inside one
+shell, a vertex of one shell resting inside another shell's face, coplanar overlapping faces (two solids that
+share a face; their union merges them instead), and contacts where the interiors overlap. A result in which
+one shell touches itself, such as an L-shaped body whose two arms meet along an edge, has no valid form and
+raises `wf.InvalidInput` ("a shell touches itself along an edge or vertex").
 
 ## Cutting
 

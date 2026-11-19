@@ -167,12 +167,12 @@ tonnage without warning. `wireframes` enforces three rules:
   ```sh
   mise exec -- uv run --no-sync pytest python/tests/test_booleans.py -k "volume_identity and closed_output"
   ```
-- **Status**: partial. Union, intersection, difference, `clip_by_surface`,
-  `split_by_plane`, `slice_by_plane` and `cut_fill` work, and the acceptance
-  check passes. Known gaps:
-  - `symmetric_difference` of solids whose surfaces cross is not a solid: its
-    `a - b` and `b - a` pieces keep separate vertices along the intersection
-    curve (spec 6.2 item 8). The Rust test for a solid result stays ignored.
+- **Status**: partial. Union, intersection, difference, symmetric difference,
+  `clip_by_surface`, `split_by_plane`, `slice_by_plane` and `cut_fill` work, and
+  the acceptance check passes. Solids may hold shells that touch along edges or
+  at vertices; booleans accept and return them. Known gaps:
+  - A result shell that touches itself along an edge or at a vertex raises
+    `InvalidInput`, because no valid solid represents it.
   - A split whose section is narrower than about 1e-154 loses its cap, because
     the implicit-point orientation test underflows. Its Rust test stays ignored.
   - The Manifold oracle comparison and a CI pipeline do not exist yet.

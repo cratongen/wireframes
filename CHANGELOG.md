@@ -29,12 +29,21 @@ All notable changes to wireframes are listed here. The format follows
   and intersection in `locate`, a Datamine triangle-id alias test, and
   DataFrame conversion tests that check null handling.
 - `mise run compat`, which installs the wheel with pip, uv, pixi and conda.
+- Solids of touching shells: `validate` counts contacts between closed shells
+  in `touching_shell_edges` and `touching_shell_vertices` and keeps them
+  solid; booleans and `clip_by_surface` accept and return such solids, so
+  results chain. `repair` keeps touching shells apart (`vertex_split` actions)
+  unless `weld_touching_shells=True`.
 
 ### Changed
 
 - Test names now match the README milestone acceptance filters.
-- Spec 6.2 item 8 now states that `symmetric_difference` of crossing solids is
-  not a solid.
+- `symmetric_difference` of crossing solids is a valid solid: `a - b` and
+  `b - a` are separate shells touching along the intersection curve.
+- Union of solids that share only an edge or a vertex, and differences that
+  leave bodies joined at an edge or vertex, return separate shells instead of
+  raising `InvalidInput`.
+- `components` splits shells that touch along an edge.
 
 ### Removed
 
@@ -43,8 +52,7 @@ All notable changes to wireframes are listed here. The format follows
 
 ### Known issues
 
-- `symmetric_difference` of solids whose surfaces cross keeps duplicate
-  vertices along the intersection curve.
+- A boolean result shell that touches itself raises `InvalidInput`.
 - A split whose section is narrower than about 1e-154 loses its cap.
 - `loft` does not branch, `extrude` has no path sweep, and `offset` is not a
   Minkowski offset.
