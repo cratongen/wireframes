@@ -484,8 +484,9 @@ Every `Expansion` operation is exact for any finite input. An operation whose
 itself on a signed integer times a power of two, and its result keeps that form.
 Inputs in the usual range never leave the `f64` form.
 
-Each predicate first evaluates with a semi-static interval filter; on an uncertain
-sign it evaluates in homogeneous coordinates with `Expansion`. `to_f64` rounds the
+Each predicate on implicit points evaluates in homogeneous coordinates with
+`Expansion` every time; there is no floating-point filter in front of it yet
+(section 14). `to_f64` rounds the
 exact quotient to nearest (`estimate` of numerator and denominator expansions, then
 one correction step verified with an expansion comparison).
 
