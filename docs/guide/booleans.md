@@ -42,9 +42,10 @@ forms validate. `a ^ b` holds `a - b` and `b - a` as separate shells along the i
 
 Validation still refuses contacts that are not between separate closed shells: duplicate vertices inside one
 shell, a vertex of one shell resting inside another shell's face, coplanar overlapping faces (two solids that
-share a face; their union merges them instead), and contacts where the interiors overlap. A result in which
-one shell touches itself, such as an L-shaped body whose two arms meet along an edge, has no valid form and
-raises `wf.InvalidInput` ("a shell touches itself along an edge or vertex").
+share a face; their union merges them instead), and contacts where the interiors overlap. One shell may touch
+itself on the same terms, such as an L-shaped body whose two arms meet along an edge, or a ring of stopes that
+closes around a gap: the result is a solid with one shell and the contact in `touching_shell_edges`, so a
+stope-by-stope union does not depend on the order of the stopes.
 
 ## Cutting
 

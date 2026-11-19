@@ -148,7 +148,7 @@ class Mesh:
         """Length unit label."""
     @property
     def is_closed(self) -> bool:
-        """Whether every edge of the non-degenerate faces joins exactly two faces, or more that pair into touching shells."""
+        """Whether every edge of the non-degenerate faces joins exactly two faces, or more that pair into wedges of solid."""
     @property
     def is_solid(self) -> bool:
         """Whether ``validate()`` finds a solid."""

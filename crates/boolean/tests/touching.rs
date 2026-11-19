@@ -339,18 +339,58 @@ fn clip_keeps_touching_shells_apart() {
 }
 
 #[test]
-fn a_shell_touching_itself_is_refused() {
+fn a_shell_touching_itself_is_a_solid() {
     let l = run(
         &fixtures::box_mesh([0.0; 3], [2.0; 3]),
         &fixtures::box_mesh([1.0; 3], [3.0; 3]),
         Op::Difference,
     );
     let column = fixtures::box_mesh([-1.0; 3], [1.0, 1.0, 3.0]);
-    let e = boolean(&l, &column, Op::Difference, &BooleanOptions::default()).unwrap_err();
-    assert!(
-        e.to_string().contains("touches itself along an edge"),
-        "{e}"
+    let [_, _, d, _] = check_identities(&l, &column);
+    let s = summary(&d);
+    assert_eq!((s.shells, s.touching_shell_edges), (1, 1), "{s:?}");
+    assert!(close(volume(&d), 5.0));
+}
+
+#[test]
+fn closing_a_loop_of_cells_in_any_order_gives_the_same_solid() {
+    let mut cells = fixtures::EDGE_LOOP.to_vec();
+    cells.push([1, 0, 0]);
+    let cell = |c: [i32; 3]| fixtures::voxels(&[c]);
+    for gap_last in [true, false] {
+        let mut order = cells.clone();
+        if !gap_last {
+            order.swap(4, 5);
+        }
+        let mut u = cell(order[0]);
+        for (k, &c) in order.iter().enumerate().skip(1) {
+            u = run(&u, &cell(c), Op::Union);
+            assert!(close(volume(&u), (k + 1) as f64), "{gap_last} {k}");
+        }
+        let s = summary(&u);
+        assert_eq!((s.shells, s.touching_shell_edges), (1, 0), "{s:?}");
+    }
+    let open = fixtures::voxels(&fixtures::EDGE_LOOP);
+    let s = summary(&run(&open, &fixtures::cube(), Op::Intersection));
+    assert_eq!((s.shells, s.touching_shell_edges), (1, 0));
+}
+
+#[test]
+fn a_shell_touching_itself_along_an_edge_with_single_umbrella_ends() {
+    let mut u = fixtures::voxels(&fixtures::EDGE_LOOP);
+    for c in [[0, 0, -1], [1, 0, -1], [1, 1, -1]] {
+        u = run(&u, &fixtures::voxels(&[c]), Op::Union);
+    }
+    assert!(close(volume(&u), 8.0));
+    let s = summary(&u);
+    assert_eq!(
+        (s.shells, s.touching_shell_edges, s.touching_shell_vertices),
+        (1, 1, 2),
+        "{s:?}"
     );
+    let filled = run(&u, &fixtures::voxels(&[[1, 0, 0]]), Op::Union);
+    assert_eq!(summary(&filled).touching_shell_edges, 0);
+    assert!(close(volume(&filled), 9.0));
 }
 
 #[test]
@@ -449,8 +489,10 @@ fn many_shells_on_one_edge_and_one_vertex() {
     assert!(close(volume(&i), 0.25));
     let d = run(&fan, &core, Op::Difference);
     assert!(close(volume(&d), 2.0 - 0.25));
-    let e = boolean(&fan, &core, Op::Union, &BooleanOptions::default()).unwrap_err();
-    assert!(e.to_string().contains("touches itself"), "{e}");
+    let u = run(&fan, &core, Op::Union);
+    assert!(close(volume(&u), 2.0 + 0.25));
+    let s = summary(&u);
+    assert_eq!((s.shells, s.touching_shell_edges), (1, 2), "{s:?}");
 
     let octants = Mesh::concat(&[
         &fixtures::box_mesh([0.0; 3], [1.0; 3]),
@@ -493,8 +535,8 @@ fn a_cavity_touching_the_outer_shell_at_its_vertices() {
     let side = fixtures::box_mesh([1.5, -1.0, -1.0], [4.0, 4.0, 4.0]);
     check_identities(&m, &side);
     let cut = fixtures::box_mesh([-1.0, -1.0, 0.5], [4.0, 4.0, 4.0]);
-    let e = boolean(&m, &cut, Op::Intersection, &BooleanOptions::default()).unwrap_err();
-    assert!(e.to_string().contains("touches itself"), "{e}");
+    let [_, i, _, _] = check_identities(&m, &cut);
+    assert!(summary(&i).touching_shell_vertices > 0);
     let u = run(&m, &inner, Op::Union);
     assert!(close(volume(&u), 4.5));
 

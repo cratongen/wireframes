@@ -53,10 +53,15 @@ pub(crate) fn prepare(
     Ok((m, r))
 }
 
-/// One output piece: sub-triangle ids with a flip flag. Pieces get separate
-/// vertex copies, so two pieces may touch without making the output
-/// non-manifold.
+/// Sub-triangle ids with a flip flag.
 pub(crate) type Piece = Vec<(u32, bool)>;
+
+/// One output shell: sub-triangle ids with a flip flag and, per corner, the
+/// umbrella of faces about that corner's point it belongs to. Shells, and
+/// umbrellas within a shell, get separate vertex copies, so shells may touch
+/// each other and a shell may touch itself without making the output
+/// non-manifold.
+pub(crate) type Shell = Vec<(u32, bool, [u32; 3])>;
 
 pub(crate) struct Assembled {
     pub vertices: Vec<[f64; 3]>,
@@ -67,7 +72,7 @@ pub(crate) struct Assembled {
     pub face_source: Vec<(u8, u32)>,
 }
 
-pub(crate) fn assemble(arr: &Arrangement, pieces: &[Piece]) -> Assembled {
+pub(crate) fn assemble(arr: &Arrangement, pieces: &[Shell]) -> Assembled {
     let mut out = Assembled {
         vertices: vec![],
         triangles: vec![],
@@ -81,13 +86,16 @@ pub(crate) fn assemble(arr: &Arrangement, pieces: &[Piece]) -> Assembled {
             vertex_rows: vec![],
             face_source: vec![],
         };
-        let mut map: HashMap<u32, u32> = HashMap::new();
-        for &(s, flip) in piece {
+        let mut map: HashMap<(u32, u32), u32> = HashMap::new();
+        let mut point = vec![];
+        for &(s, flip, umbrella) in piece {
             let sub = &arr.subs[s as usize];
-            let v = sub.v.map(|p| {
-                *map.entry(p).or_insert_with(|| {
+            let v = [0, 1, 2].map(|c| {
+                let p = sub.v[c];
+                *map.entry((p, umbrella[c])).or_insert_with(|| {
                     shell.vertices.push(arr.pts[p as usize].to_f64());
                     shell.vertex_rows.push(arr.source_row(p));
+                    point.push(p);
                     shell.vertices.len() as u32 - 1
                 })
             });
@@ -97,7 +105,7 @@ pub(crate) fn assemble(arr: &Arrangement, pieces: &[Piece]) -> Assembled {
             let f = &arr.faces[sub.face as usize];
             shell.face_source.push((f.mesh, f.index));
         }
-        let shell = collapse_rounded(shell);
+        let shell = collapse_rounded(shell, &point);
         let base = out.vertices.len() as u32;
         out.vertices.extend(shell.vertices);
         out.vertex_rows.extend(shell.vertex_rows);
@@ -115,17 +123,29 @@ pub(crate) fn assemble(arr: &Arrangement, pieces: &[Piece]) -> Assembled {
 /// dropped, opposite faces on the same three vertices cancel, and a face whose
 /// corners are collinear is removed by splitting its neighbour across its
 /// longest edge at its middle corner. Each step keeps every edge paired, and
-/// none moves a point, so the surface is the same set of points.
-fn collapse_rounded(shell: Assembled) -> Assembled {
+/// none moves a point, so the surface is the same set of points. `point` is
+/// the exact point of each vertex; copies of one exact point, where the shell
+/// touches itself, stay apart, and so do the other vertices that round onto
+/// them.
+fn collapse_rounded(shell: Assembled, point: &[u32]) -> Assembled {
     let n = shell.vertices.len();
     let key = |i: usize| shell.vertices[i].map(|x| (x + 0.0).to_bits());
     let mut order: Vec<usize> = (0..n).collect();
     order.sort_by_key(|&i| (key(i), shell.vertex_rows[i].is_none(), i));
     let mut rep: Vec<u32> = (0..n as u32).collect();
-    for w in 1..n {
-        if key(order[w]) == key(order[w - 1]) {
-            rep[order[w]] = rep[order[w - 1]];
+    let mut start = 0;
+    for w in 1..=n {
+        if w < n && key(order[w]) == key(order[start]) {
+            continue;
         }
+        let mut ps: Vec<u32> = order[start..w].iter().map(|&i| point[i]).collect();
+        ps.sort_unstable();
+        if ps.windows(2).all(|p| p[0] != p[1]) {
+            for &i in &order[start + 1..w] {
+                rep[i] = order[start] as u32;
+            }
+        }
+        start = w;
     }
     let mut tris: Vec<[u32; 3]> = vec![];
     let mut src: Vec<(u8, u32)> = vec![];
@@ -246,11 +266,12 @@ fn ekey(a: u32, b: u32) -> (u32, u32) {
     if a < b { (a, b) } else { (b, a) }
 }
 
-/// The shells of a closed piece, each a piece ordered as in `piece` and the
-/// shells ordered by first sub-triangle. Sub-triangles join across edges with
-/// two of them, and across edges with more in the pairs that bound wedges of
-/// solid, found by exact radial order about the edge.
-pub(crate) fn shells(arr: &Arrangement, piece: &Piece) -> Result<Vec<Piece>> {
+/// The shells of a closed piece, each ordered as in `piece` and the shells
+/// ordered by first sub-triangle. Sub-triangles join across edges with two of
+/// them, and across edges with more in the pairs that bound wedges of solid,
+/// found by exact radial order about the edge. Corners of joined
+/// sub-triangles at the ends of the edge share an umbrella.
+pub(crate) fn shells(arr: &Arrangement, piece: &Piece) -> Result<Vec<Shell>> {
     let tri = |k: usize| {
         let (s, flip) = piece[k];
         let v = arr.subs[s as usize].v;
@@ -277,12 +298,22 @@ pub(crate) fn shells(arr: &Arrangement, piece: &Piece) -> Result<Vec<Piece>> {
         let (a, b) = (root(parent, a), root(parent, b));
         parent[a.max(b) as usize] = a.min(b);
     };
+    let mut corners: Vec<u32> = (0..3 * piece.len() as u32).collect();
+    let corner = |k: u32, p: u32| {
+        let v = arr.subs[piece[k as usize].0 as usize].v;
+        3 * k + v.iter().position(|&x| x == p).expect("corner on the edge") as u32
+    };
+    let link = |parent: &mut [u32], corners: &mut [u32], f: u32, g: u32, p: u32, q: u32| {
+        join(parent, f, g);
+        join(corners, corner(f, p), corner(g, p));
+        join(corners, corner(f, q), corner(g, q));
+    };
     let mut keys: Vec<(u32, u32)> = at.keys().copied().collect();
     keys.sort_unstable();
     for (p, q) in keys {
         let ks = &at[&(p, q)];
         if ks.len() == 2 {
-            join(&mut parent, ks[0], ks[1]);
+            link(&mut parent, &mut corners, ks[0], ks[1], p, q);
             continue;
         }
         if ks.len() < 2 {
@@ -314,7 +345,7 @@ pub(crate) fn shells(arr: &Arrangement, piece: &Piece) -> Result<Vec<Piece>> {
         match radial_pairs(&forward, turn, same) {
             Radial::Paired(pairs) => {
                 for [a, b] in pairs {
-                    join(&mut parent, ks[a], ks[b]);
+                    link(&mut parent, &mut corners, ks[a], ks[b], p, q);
                 }
             }
             _ => {
@@ -325,15 +356,16 @@ pub(crate) fn shells(arr: &Arrangement, piece: &Piece) -> Result<Vec<Piece>> {
         }
     }
     let mut index: HashMap<u32, usize> = HashMap::new();
-    let mut out: Vec<Piece> = vec![];
-    for (k, &entry) in piece.iter().enumerate() {
+    let mut out: Vec<Shell> = vec![];
+    for (k, &(s, flip)) in piece.iter().enumerate() {
         let r = root(&mut parent, k as u32);
         let next = out.len();
         let i = *index.entry(r).or_insert(next);
         if i == out.len() {
             out.push(vec![]);
         }
-        out[i].push(entry);
+        let umbrella = [0, 1, 2].map(|c| root(&mut corners, 3 * k as u32 + c));
+        out[i].push((s, flip, umbrella));
     }
     Ok(out)
 }
@@ -405,8 +437,23 @@ pub(crate) fn build_mesh(
     Ok(mesh.with_crs(labels.0).with_length_unit(labels.1))
 }
 
-pub(crate) const SELF_TOUCH: &str =
-    "result is not manifold: a shell touches itself along an edge or vertex";
+/// Whether an assembled result is closed and manifold. Shells, and umbrellas
+/// within a shell, hold separate vertex copies, so this is plain
+/// [`is_closed_manifold`] unless a shell touches itself along an edge whose
+/// ends it does not touch, which no vertex copy can separate; such a mesh is
+/// accepted when its edges pair into wedges of solid and its vertices are
+/// manifold.
+pub(crate) fn is_closed_result(mesh: &Mesh) -> Result<bool> {
+    if mesh.is_empty() || is_closed_manifold(mesh.triangles()) {
+        return Ok(true);
+    }
+    let s = mesh.validate(0.0)?.summary;
+    Ok(s.is_closed
+        && s.boundary_edges == 0
+        && s.non_manifold_edges == 0
+        && s.non_manifold_vertices == 0
+        && s.inconsistent_edges == 0)
+}
 
 fn keep_rule(op: Op, mesh: usize, st: Status) -> Option<bool> {
     use Status::*;
@@ -437,9 +484,6 @@ pub fn boolean(a: &Mesh, b: &Mesh, op: Op, opts: &BooleanOptions) -> Result<Bool
         })
         .collect();
     let asm = assemble(&arr, &shells(&arr, &kept)?);
-    if !asm.triangles.is_empty() && !is_closed_manifold(&asm.triangles) {
-        return Err(Error::invalid(SELF_TOUCH));
-    }
     let face_source = asm.face_source.clone();
     let mesh = build_mesh(
         asm,
@@ -447,6 +491,11 @@ pub fn boolean(a: &Mesh, b: &Mesh, op: Op, opts: &BooleanOptions) -> Result<Bool
         (a.face_attributes(), b.face_attributes()),
         labels,
     )?;
+    if !is_closed_result(&mesh)? {
+        return Err(Error::invalid(
+            "internal: rounding the result to f64 left it open or non-manifold",
+        ));
+    }
     Ok(BooleanResult {
         mesh,
         face_source,
@@ -512,10 +561,17 @@ mod tests {
                 [2, 3, 4],
             ],
         );
-        let out = collapse_rounded(s);
+        let out = collapse_rounded(s, &[0, 1, 2, 3, 4]);
         check(&out);
         assert_eq!(out.triangles.len(), 4);
         assert_eq!(out.vertex_rows, [Some(0), Some(2), Some(1), Some(3)]);
+    }
+
+    #[test]
+    fn copies_of_one_exact_point_stay_apart() {
+        let s = shell(vec![A, B, C, D, D], vec![[0, 2, 1], [0, 1, 3], [1, 2, 4]]);
+        let out = collapse_rounded(s, &[0, 1, 2, 3, 3]);
+        assert_eq!((out.vertices.len(), out.triangles.len()), (5, 3));
     }
 
     #[test]
@@ -532,7 +588,7 @@ mod tests {
                 [1, 2, 3],
             ],
         );
-        let out = collapse_rounded(s);
+        let out = collapse_rounded(s, &[0, 1, 2, 3, 4]);
         check(&out);
         assert_eq!(out.triangles.len(), 6);
         let area = |t: &[u32; 3]| {

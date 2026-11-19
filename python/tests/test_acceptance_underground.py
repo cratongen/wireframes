@@ -345,7 +345,6 @@ def test_drillholes_through_stope_corners_edges_and_faces(stopes):
     assert inside_length(u, along_shared_faces) == 90.0
 
 
-@pytest.mark.skip(reason="acceptance: union refuses a shell that touches itself until the gap is filled")
 def test_sequential_union_of_stopes_closing_around_a_gap():
     def cell(i, j, k):
         lo = O + 10.0 * np.array([i, j, k], float)
@@ -652,7 +651,6 @@ def test_underground_results_do_not_depend_on_thread_count():
     assert len(digests) == 1
 
 
-@pytest.mark.skip(reason="acceptance: union refuses a shell that touches itself until the gap is filled")
 def test_union_of_the_stope_block_in_any_grouping():
     parts = stope_block()
     order = np.random.default_rng(4).permutation(len(parts))

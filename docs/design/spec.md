@@ -69,8 +69,11 @@ Each line: the decision, then why.
 18. A valid solid may consist of several closed, outward-oriented, manifold shells
     that touch each other along edges or at vertices, as long as their interiors do
     not overlap (owner decision, 2026-11-19). Contact between shells is information,
-    not a defect: `validate` counts it, booleans accept it and return it. A single
-    shell that touches itself stays a defect.
+    not a defect: `validate` counts it, booleans accept it and return it. A shell
+    may also touch itself along edges or at vertices on the same terms (revised
+    2026-11-19 after the underground acceptance round: refusing it made unions
+    depend on their order, since an intermediate union of stopes closing around a
+    gap touches itself until the gap is filled).
 
 ## 1. Workspace
 
@@ -128,7 +131,8 @@ No other dependency without a line in this table.
   normal is `(b - a) x (c - a)`; signed volume is positive for an outward solid.
 - **Solid**: a mesh whose `MeshSummary::is_solid()` is true (section 3.12): one or
   more closed, outward, manifold shells whose interiors do not overlap; shells may
-  touch each other at exactly coincident edges and vertices.
+  touch each other, and a shell may touch itself, at exactly coincident edges and
+  vertices.
 - Determinism: results never depend on thread count. Parallel maps collect in input
   order. Parallel sums split work into fixed chunks of 4096 items (independent of
   thread count), sum each chunk with Neumaier compensated summation, then sum the
@@ -579,24 +583,26 @@ Semantics:
 - DuplicateVertex: within `tolerance` (Euclidean) of an earlier vertex; at
   `tolerance = 0` exact equality. Grid hash with cell `max(tolerance, tiny)` and
   neighbour cells; `other` = the earliest such vertex. Exempt: an earlier vertex
-  with exactly equal coordinates whose shells are all closed and all different from
-  the vertex's own closed shells (a contact between shells).
+  with exactly equal coordinates when the shells of both are all closed (a contact
+  between shells, or of a shell with itself).
 - UnusedVertex: no face uses the vertex.
 - BoundaryEdge (1 face), NonManifoldEdge (3 or more faces, except a contact in
   `Shells::contacts`), NonManifoldVertex (faces around the vertex form more than one
-  fan, joined through `Shells::links`, unless each fan lies in a different closed
-  shell),
+  fan, joined through `Shells::links`, unless every fan lies in a closed shell),
   InconsistentWinding (two faces run the shared edge in the same direction).
 - Shells: `Shells::new` on the non-degenerate faces. A shell is closed when none of
   its faces has a boundary, non-manifold or inconsistent edge.
-- Contacts between closed shells: `touching_shell_vertices` counts the exact
-  coordinates where vertices of two or more closed shells meet (shared index or
-  coincident copies). At every edge whose exact endpoints are such points and whose
-  faces come from two or more closed shells, `radial_pairs_at` on all those faces
-  must pair each face with a face of its own shell; then the edge counts once in
-  `touching_shell_edges`, else the first mixed pair (or, when `Unbalanced`, the first
-  two faces of different shells) is a `SelfIntersection` (the interiors overlap
-  there). `Coincident` adds nothing: the coplanar overlap or duplicate face is
+- Contacts of closed shells: a contact point is an exact coordinate where more than
+  one vertex umbrella (fan) of closed shells meets, by shared index or coincident
+  copies. Every edge location with more than two faces of closed shells that has a
+  contact point at one end, or is in `Shells::contacts`, is a candidate:
+  `radial_pairs_at` on all its faces must pair each face with a face it is linked to
+  across that edge (`Shells::links`); then the edge counts once in
+  `touching_shell_edges`, else the first unlinked pair (or, when `Unbalanced`, the
+  first two faces) is a `SelfIntersection` (the interiors overlap there).
+  `touching_shell_vertices` counts the contact points and the ends of the counted
+  edges. A shell touching itself along an edge can have ends where its faces form
+  one umbrella; that edge is then shared by index. `Coincident` adds nothing: the coplanar overlap or duplicate face is
   reported already. Contacts are only at exactly coincident vertices and edges; a
   vertex of one shell on the interior of another shell's edge or face stays a
   `SelfIntersection`.
@@ -941,7 +947,8 @@ Arrangement (`arrangement.rs`):
    whose rounded corners are exactly collinear (`collinear3`) is removed by
    splitting the face across its longest edge at its middle corner (the new faces
    keep that face's source). Every step keeps each edge used once in each
-   direction. Equal coordinates in different shells stay apart (touching shells).
+   direction. Equal coordinates in different shells stay apart (touching shells), and
+   so do the copies of one exact point within a shell.
    Rounding can still fold a sliver onto a neighbour (tolerance policy rule 5).
 8. Attributes: output face attributes are `Table::concat` of A's and B's face
    tables taken by `face_source`; vertex attributes keep input rows, null for new
@@ -950,10 +957,12 @@ Arrangement (`arrangement.rs`):
    are solids (exact topology), and a valid input to further booleans: parts that
    touch along an edge or at a vertex, including the `a - b` and `b - a` parts of
    `SymmetricDifference` along the intersection curve, are separate shells. A result
-   shell that touches itself along an edge or at a vertex is no valid solid and errors
-   with `InvalidInput("result is not manifold: a shell touches itself along an edge or
-   vertex")`; `clip_by_surface` uses the same split per piece and the message
-   `"clip result is not manifold: a shell touches itself along an edge or vertex"`.
+   shell that touches itself gets one vertex copy per umbrella of faces about each
+   exact point, the umbrellas found through the same radial pairs; where it touches
+   itself along an edge whose ends it does not touch, that edge keeps its four faces
+   on shared vertices. `clip_by_surface` uses the same split per piece. A result that
+   is not closed and manifold after rounding errors with `InvalidInput("internal:
+   rounding the result to f64 left it open or non-manifold")`.
 
 `clip_by_surface`: `above` is the part of the solid on the side the surface normals
 point to, `below` the other; both are closed and outward, capped by the pieces of
@@ -1579,7 +1588,8 @@ wireframes-core
   boitata reports a non-manifold vertex.
 - Closed shells touching at a vertex or along an edge, by shared index or by
   coincident copies, are solids with the expected contact counts; a contact whose
-  interiors overlap is a `SelfIntersection`.
+  interiors overlap is a `SelfIntersection`. The same holds for one shell touching
+  itself (`fixtures::voxels` of `EDGE_LOOP` and `VERTEX_CHAIN`).
 - P `validate` is invariant under face order permutation (counts), vertex index
   relabelling (counts), and rigid translation by integers (counts).
 - A unit cube and an icosphere report `is_solid`; removing one face gives exactly 3

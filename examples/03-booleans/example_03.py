@@ -66,6 +66,21 @@ again = parts["a ^ b"] | block
 assert again.is_solid and abs(again.volume - union) <= 1e-9 * union
 
 # %% [markdown]
+# A shell may also touch itself. Five 10 m stopes that ring a gap meet along one edge before the last stope
+# fills it; the union is one shell with that contact, and adding the stopes in another order gives the same
+# solid.
+
+# %%
+cell = lambda i, j, k: wf.datasets.box(10.0 * np.array([i, j, k]), 10.0 * np.array([i + 1, j + 1, k + 1]))
+ring = cell(0, 0, 0)
+for c in [(0, 0, 1), (1, 0, 1), (1, 1, 1), (1, 1, 0)]:
+    ring = ring | cell(*c)
+s = ring.validate().summary
+print(f"ring of stopes {ring.volume:,.0f} m3, {s['shells']} shell, {s['touching_shell_edges']} touching edge")
+full = ring | cell(1, 0, 0)
+assert s["is_solid"] and s["touching_shell_edges"] == 1 and full.is_solid and full.volume == 6000.0
+
+# %% [markdown]
 # A section along strike shows where each part of the outline came from.
 
 # %%

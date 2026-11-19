@@ -1,9 +1,23 @@
 use wireframes_core::Mesh;
 
 /// Combinatorial closure: every directed edge once with its reverse, and one
-/// fan per vertex. Geometric checks are reported separately (rounding to f64
-/// can create slivers the exact arrangement did not have).
+/// fan per vertex; or, where a shell touches itself along an edge that no
+/// vertex copy can separate, edges that pair into wedges of solid and
+/// manifold vertices by `validate`. Geometric checks are reported separately
+/// (rounding to f64 can create slivers the exact arrangement did not have).
 pub fn closed_manifold(m: &Mesh) -> bool {
+    one_fan_per_vertex(m) || {
+        let s = m.validate(0.0).unwrap().summary;
+        s.is_closed
+            && s.boundary_edges == 0
+            && s.non_manifold_edges == 0
+            && s.non_manifold_vertices == 0
+            && s.inconsistent_edges == 0
+            && s.degenerate_faces == 0
+    }
+}
+
+fn one_fan_per_vertex(m: &Mesh) -> bool {
     use std::collections::HashMap;
     let mut dir: HashMap<(u32, u32), u32> = HashMap::new();
     for t in m.triangles() {

@@ -49,6 +49,10 @@ All notable changes to wireframes are listed here. The format follows
   leave bodies joined at an edge or vertex, return separate shells instead of
   raising `InvalidInput`.
 - `components` splits shells that touch along an edge.
+- A shell may touch itself along an edge or at a vertex: `validate` counts the
+  contact in `touching_shell_edges` and `touching_shell_vertices`, and booleans
+  and `clip_by_surface` return such shells instead of raising `InvalidInput`.
+  Unions of stopes no longer depend on their order.
 
 ### Removed
 
@@ -88,7 +92,6 @@ All notable changes to wireframes are listed here. The format follows
 
 ### Known issues
 
-- A boolean result shell that touches itself raises `InvalidInput`.
 - A boolean result can fail validation after its exact vertices are rounded to
   f64: rounding can fold a sliver thinner than the float spacing onto a
   neighbouring face. Seen in chains of grid-box booleans and in booleans of

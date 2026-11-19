@@ -52,8 +52,9 @@ pub(crate) struct PyMeshReport {
 impl PyMeshReport {
     /// Problem counts by kind, plus ``shells``, the contact counts
     /// ``touching_shell_edges`` and ``touching_shell_vertices`` (closed shells
-    /// that touch along coincident edges or at coincident vertices without
-    /// overlapping; information, not defects), ``is_closed`` and ``is_solid``.
+    /// that touch each other or themselves along coincident edges or at
+    /// coincident vertices without overlapping; information, not defects),
+    /// ``is_closed`` and ``is_solid``.
     #[getter]
     fn summary<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
         summary_dict(py, &self.inner.summary)
@@ -139,7 +140,7 @@ impl PyMesh {
     }
 
     /// Whether every edge of the non-degenerate faces joins exactly two faces,
-    /// or more that pair into shells touching there.
+    /// or more that pair into wedges of solid touching there.
     #[getter]
     fn is_closed(&self) -> bool {
         self.inner.is_closed()

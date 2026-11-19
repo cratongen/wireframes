@@ -103,8 +103,10 @@ def test_touching_shells_are_valid_and_chain(box):
     assert d[0] == pytest.approx(-0.5) and d[1] == pytest.approx(-0.5)
     assert d[2] == pytest.approx(0.5) and d[3] == pytest.approx(0.0)
     l_shape = box([0, 0, 0], [2, 2, 2]) - box([1, 1, 1], [3, 3, 3])
-    with pytest.raises(wf.InvalidInput, match="touches itself"):
-        l_shape - box([-1, -1, -1], [1, 1, 3])
+    pinched = l_shape - box([-1, -1, -1], [1, 1, 3])
+    s = pinched.validate().summary
+    assert pinched.is_solid and s["shells"] == 1 and s["touching_shell_edges"] == 1
+    assert pinched.volume == pytest.approx(7.0 - 2.0)
 
 
 def test_coplanar_cases(box):

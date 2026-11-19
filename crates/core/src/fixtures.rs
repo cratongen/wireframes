@@ -302,6 +302,63 @@ pub fn edge_touching_cubes(welded: bool) -> Mesh {
         .expect("same faces")
 }
 
+/// Boundary of a union of unit cells `[i, i + 1] x [j, j + 1] x [k, k + 1]`,
+/// one vertex index per lattice point, faces wound outward.
+pub fn voxels(cells: &[[i32; 3]]) -> Mesh {
+    let has = |c: [i32; 3]| cells.contains(&c);
+    let mut ids: std::collections::BTreeMap<[i32; 3], u32> = Default::default();
+    let mut v = vec![];
+    let mut t = vec![];
+    for &c in cells {
+        for axis in 0..3 {
+            for side in [0, 1] {
+                let mut n = c;
+                n[axis] += 2 * side - 1;
+                if has(n) {
+                    continue;
+                }
+                let (a, b) = ((axis + 1) % 3, (axis + 2) % 3);
+                let q: Vec<u32> = [(0, 0), (1, 0), (1, 1), (0, 1)]
+                    .iter()
+                    .map(|&(da, db)| {
+                        let mut p = c;
+                        p[axis] += side;
+                        p[a] += da;
+                        p[b] += db;
+                        *ids.entry(p).or_insert_with(|| {
+                            v.push(p.map(f64::from));
+                            v.len() as u32 - 1
+                        })
+                    })
+                    .collect();
+                if side == 1 {
+                    t.extend([[q[0], q[1], q[2]], [q[0], q[2], q[3]]]);
+                } else {
+                    t.extend([[q[0], q[2], q[1]], [q[0], q[3], q[2]]]);
+                }
+            }
+        }
+    }
+    mesh(v, t)
+}
+
+/// Five cells in a loop whose ends touch along the edge from `(1, 1, 0)` to
+/// `(1, 1, 1)`: one closed shell touching itself along an edge.
+pub const EDGE_LOOP: [[i32; 3]; 5] = [[0, 0, 0], [0, 0, 1], [1, 0, 1], [1, 1, 1], [1, 1, 0]];
+
+/// Eight cells in a chain whose ends touch at the point `(1, 1, 1)`: one
+/// closed shell touching itself at a vertex.
+pub const VERTEX_CHAIN: [[i32; 3]; 8] = [
+    [0, 0, 0],
+    [-1, 0, 0],
+    [-1, 0, 1],
+    [-1, 0, 2],
+    [0, 0, 2],
+    [1, 0, 2],
+    [1, 1, 2],
+    [1, 1, 1],
+];
+
 /// The unit cube and its copy moved by `(1, 1, 1)`: closed shells touching
 /// at the vertex `(1, 1, 1)`, with coincident copies of it.
 pub fn vertex_touching_cubes() -> Mesh {

@@ -170,9 +170,8 @@ tonnage without warning. `wireframes` enforces three rules:
 - **Status**: partial. Union, intersection, difference, symmetric difference,
   `clip_by_surface`, `split_by_plane`, `slice_by_plane` and `cut_fill` work, and
   the acceptance check passes. Solids may hold shells that touch along edges or
-  at vertices; booleans accept and return them. Known gaps:
-  - A result shell that touches itself along an edge or at a vertex raises
-    `InvalidInput`, because no valid solid represents it.
+  at vertices, and a shell may touch itself the same way; booleans accept and
+  return them. Known gaps:
   - The Manifold oracle comparison and a CI pipeline do not exist yet.
   - The semi-static filter in front of the exact predicates is not written.
 

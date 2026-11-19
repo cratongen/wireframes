@@ -327,10 +327,10 @@ pub struct Shells {
     /// Shell per face, numbered by first face; `u32::MAX` for faces `edges` skips.
     pub of: Vec<u32>,
     pub count: usize,
-    /// Edges with more than two faces that do not pair, or whose pairs put
-    /// one shell on the edge more than once.
+    /// Edges with more than two faces that do not pair into wedges of solid.
     pub non_manifold: Vec<u32>,
-    /// Edges with more than two faces whose pairs each bound a different shell.
+    /// Edges with more than two faces that pair into wedges of solid: shells
+    /// touching each other, or one shell touching itself, along the edge.
     pub contacts: Vec<u32>,
     paired: std::collections::HashMap<u32, Vec<[u32; 2]>>,
 }
@@ -377,22 +377,8 @@ impl Shells {
                 }
             }
         }
-        let mut contacts = vec![];
-        let mut ids: Vec<u32> = paired.keys().copied().collect();
-        ids.sort_unstable();
-        for id in ids {
-            let mut roots: Vec<u32> = paired[&id]
-                .iter()
-                .map(|p| root(&mut parent, p[0]))
-                .collect();
-            roots.sort_unstable();
-            if roots.windows(2).any(|w| w[0] == w[1]) {
-                paired.remove(&id);
-                non_manifold.push(id);
-            } else {
-                contacts.push(id);
-            }
-        }
+        let mut contacts: Vec<u32> = paired.keys().copied().collect();
+        contacts.sort_unstable();
         non_manifold.sort_unstable();
         let mut of = vec![u32::MAX; n];
         let mut label: std::collections::HashMap<u32, u32> = std::collections::HashMap::new();

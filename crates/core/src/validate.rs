@@ -79,12 +79,12 @@ pub struct MeshSummary {
     pub self_intersections: usize,
     pub coplanar_overlaps: usize,
     pub unused_vertices: usize,
-    /// Edge locations where closed shells touch: exactly coincident edges of
-    /// different shells whose interiors do not overlap there. Information,
-    /// not a defect.
+    /// Edge locations where closed shells touch each other or themselves:
+    /// exactly coincident edges with more than two faces that pair into
+    /// wedges of solid. Information, not a defect.
     pub touching_shell_edges: usize,
-    /// Point locations where vertices of different closed shells coincide,
-    /// ends of touching edges included. Information, not a defect.
+    /// Point locations where more than one vertex umbrella of closed shells
+    /// meets, ends of touching edges included. Information, not a defect.
     pub touching_shell_vertices: usize,
     pub is_closed: bool,
 }
@@ -243,10 +243,11 @@ fn problem(kind: MeshProblemKind) -> MeshProblem {
 /// and the contacts between closed shells. `tolerance` is the distance within
 /// which a vertex duplicates an earlier one of its own shell.
 ///
-/// Closed shells may touch each other at exactly coincident vertices and
-/// edges, by shared or by separate vertex indices, when their interiors do not
-/// overlap there; such contacts are counted in `touching_shell_vertices` and
-/// `touching_shell_edges` and are not problems.
+/// Closed shells may touch each other, and a closed shell may touch itself, at
+/// exactly coincident vertices and edges, by shared or by separate vertex
+/// indices, when their interiors do not overlap there; such contacts are
+/// counted in `touching_shell_vertices` and `touching_shell_edges` and are not
+/// problems.
 pub fn validate(mesh: &Mesh, tolerance: f64) -> Result<MeshReport> {
     use MeshProblemKind::*;
     let tolerance = tolerance::check("tolerance", tolerance)?;
@@ -345,6 +346,7 @@ pub fn validate(mesh: &Mesh, tolerance: f64) -> Result<MeshReport> {
         }
     }
 
+    let mut umbrellas: Vec<usize> = (0..v.len()).map(|i| used[i] as usize).collect();
     for vert in 0..v.len() as u32 {
         let fan = edges.faces_of_vertex(vert);
         if fan.len() < 2 {
@@ -370,16 +372,15 @@ pub fn validate(mesh: &Mesh, tolerance: f64) -> Result<MeshReport> {
                 join(&mut parent, i, j);
             }
         }
-        let mut fans: Vec<u32> = (0..fan.len() as u32)
+        let fans: Vec<u32> = (0..fan.len() as u32)
             .filter(|&i| root(&mut parent, i) == i)
             .map(|i| shells.of[fan[i as usize] as usize])
             .collect();
+        umbrellas[vert as usize] = fans.len();
         if fans.len() < 2 {
             continue;
         }
-        fans.sort_unstable();
-        let apart = fans.windows(2).all(|w| w[0] != w[1]);
-        if !apart || fans.iter().any(|&s| !closed_shell[s as usize]) {
+        if fans.iter().any(|&s| !closed_shell[s as usize]) {
             problems.push(MeshProblem {
                 vertex: Some(vert),
                 ..problem(NonManifoldVertex)
@@ -401,10 +402,7 @@ pub fn validate(mesh: &Mesh, tolerance: f64) -> Result<MeshReport> {
     let all_closed = |s: &[u32]| !s.is_empty() && s.iter().all(|&k| closed_shell[k as usize]);
     let apart = |i: u32, j: u32| {
         let (a, b) = (&vertex_shells[i as usize], &vertex_shells[j as usize]);
-        key(v[i as usize]) == key(v[j as usize])
-            && all_closed(a)
-            && all_closed(b)
-            && a.iter().all(|s| b.binary_search(s).is_err())
+        key(v[i as usize]) == key(v[j as usize]) && all_closed(a) && all_closed(b)
     };
     for (i, &w) in earliest_within_by(v, tolerance, |i, j| !apart(i, j))
         .iter()
@@ -420,19 +418,18 @@ pub fn validate(mesh: &Mesh, tolerance: f64) -> Result<MeshReport> {
     }
 
     let canon = earliest_within(v, 0.0);
-    let mut at_point: HashMap<u32, Vec<u32>> = HashMap::new();
+    let mut at_point: HashMap<u32, (usize, Vec<u32>)> = HashMap::new();
     for i in 0..v.len() {
-        at_point
-            .entry(canon[i])
-            .or_default()
-            .extend_from_slice(&vertex_shells[i]);
+        let e = at_point.entry(canon[i]).or_default();
+        e.0 += umbrellas[i];
+        e.1.extend_from_slice(&vertex_shells[i]);
     }
     let mut contact_points: Vec<u32> = at_point
         .into_iter()
-        .filter_map(|(c, mut s)| {
+        .filter_map(|(c, (n, mut s))| {
             s.sort_unstable();
             s.dedup();
-            (s.len() > 1 && all_closed(&s)).then_some(c)
+            (n > 1 && all_closed(&s)).then_some(c)
         })
         .collect();
     contact_points.sort_unstable();
@@ -442,7 +439,8 @@ pub fn validate(mesh: &Mesh, tolerance: f64) -> Result<MeshReport> {
         let t = tris[f];
         for e in 0..3 {
             let (a, b) = (t[e], t[(e + 1) % 3]);
-            if is_contact(a) && is_contact(b) {
+            let id = edges.face_edges[f][e];
+            if is_contact(a) || is_contact(b) || shells.contacts.binary_search(&id).is_ok() {
                 let (a, b) = (canon[a as usize], canon[b as usize]);
                 at_edge
                     .entry([a.min(b), a.max(b)])
@@ -457,35 +455,42 @@ pub fn validate(mesh: &Mesh, tolerance: f64) -> Result<MeshReport> {
             let mut s: Vec<u32> = fs.iter().map(|&f| shells.of[f as usize]).collect();
             s.sort_unstable();
             s.dedup();
-            s.len() > 1 && all_closed(&s)
+            fs.len() > 2 && all_closed(&s)
         })
         .collect();
     contact_edges.sort_unstable();
+    let linked = |f: u32, g: u32| {
+        edges.face_edges[f as usize].iter().any(|&id| {
+            edges.face_edges[g as usize].contains(&id)
+                && shells
+                    .links(&edges, id)
+                    .iter()
+                    .any(|&l| l == [f, g] || l == [g, f])
+        })
+    };
     let mut touching_shell_edges = 0;
+    let mut edge_ends = contact_points.clone();
     for ([a, b], fs) in &contact_edges {
-        let shell = |f: u32| shells.of[f as usize];
         let mixed = |x: u32, y: u32| MeshProblem {
             face: Some(x.max(y)),
             other: Some(x.min(y)),
             ..problem(SelfIntersection)
         };
         match radial_pairs_at(mesh, fs, v[*a as usize], v[*b as usize]) {
-            Radial::Paired(pairs) => {
-                match pairs.iter().find(|p| shell(fs[p[0]]) != shell(fs[p[1]])) {
-                    Some(p) => problems.push(mixed(fs[p[0]], fs[p[1]])),
-                    None => touching_shell_edges += 1,
+            Radial::Paired(pairs) => match pairs.iter().find(|p| !linked(fs[p[0]], fs[p[1]])) {
+                Some(p) => problems.push(mixed(fs[p[0]], fs[p[1]])),
+                None => {
+                    touching_shell_edges += 1;
+                    edge_ends.extend([*a, *b]);
                 }
-            }
+            },
             Radial::Coincident => {}
-            Radial::Unbalanced => {
-                let g = *fs
-                    .iter()
-                    .find(|&&g| shell(g) != shell(fs[0]))
-                    .expect("two shells");
-                problems.push(mixed(fs[0], g));
-            }
+            Radial::Unbalanced => problems.push(mixed(fs[0], fs[1])),
         }
     }
+
+    edge_ends.sort_unstable();
+    edge_ends.dedup();
 
     let mut members: Vec<Vec<u32>> = vec![vec![]; shells.count];
     for f in valid() {
@@ -567,7 +572,7 @@ pub fn validate(mesh: &Mesh, tolerance: f64) -> Result<MeshReport> {
         coplanar_overlaps: count(CoplanarOverlap),
         unused_vertices: count(UnusedVertex),
         touching_shell_edges,
-        touching_shell_vertices: contact_points.len(),
+        touching_shell_vertices: edge_ends.len(),
         is_closed: degenerate.contains(&false)
             && count(BoundaryEdge) == 0
             && count(NonManifoldEdge) == 0,
@@ -725,6 +730,88 @@ mod tests {
         }
         let s = summary(&fixtures::cube());
         assert_eq!((s.touching_shell_edges, s.touching_shell_vertices), (0, 0));
+    }
+
+    /// `m` with a separate copy of each vertex per umbrella of faces around it.
+    fn split_umbrellas(m: &Mesh) -> Mesh {
+        let edges = EdgeMap::new(m, None);
+        let shells = Shells::new(m, &edges);
+        let tris = m.triangles();
+        let mut parent: Vec<u32> = (0..3 * tris.len() as u32).collect();
+        let corner =
+            |f: u32, i: u32| 3 * f + tris[f as usize].iter().position(|&x| x == i).unwrap() as u32;
+        for id in 0..edges.edges.len() as u32 {
+            for [f, g] in shells.links(&edges, id) {
+                for i in edges.edges[id as usize] {
+                    join(&mut parent, corner(f, i), corner(g, i));
+                }
+            }
+        }
+        let mut v = vec![];
+        let mut ids: HashMap<u32, u32> = HashMap::new();
+        let t = (0..tris.len() as u32)
+            .map(|f| {
+                tris[f as usize].map(|i| {
+                    let r = root(&mut parent, corner(f, i));
+                    *ids.entry(r).or_insert_with(|| {
+                        v.push(m.vertices()[i as usize]);
+                        v.len() as u32 - 1
+                    })
+                })
+            })
+            .collect();
+        Mesh::new(v, t).unwrap()
+    }
+
+    #[test]
+    fn a_closed_shell_touching_itself_is_solid() {
+        for (name, cells, edges, points) in [
+            ("edge", &fixtures::EDGE_LOOP[..], 1, 2),
+            ("vertex", &fixtures::VERTEX_CHAIN[..], 0, 1),
+        ] {
+            let shared = fixtures::voxels(cells);
+            let apart = split_umbrellas(&shared);
+            assert!(apart.n_vertices() > shared.n_vertices(), "{name}");
+            for m in [shared, apart] {
+                let r = validate(&m, 0.0).unwrap();
+                let s = &r.summary;
+                assert!(
+                    s.is_solid() && r.problems.is_empty(),
+                    "{name}: {:?}",
+                    r.problems
+                );
+                assert_eq!(s.shells, 1, "{name}");
+                assert_eq!(
+                    (s.touching_shell_edges, s.touching_shell_vertices),
+                    (edges, points),
+                    "{name}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_shell_touching_itself_along_an_edge_with_single_umbrella_ends_is_solid() {
+        let mut cells = fixtures::EDGE_LOOP.to_vec();
+        cells.extend([[0, 0, -1], [1, 0, -1], [1, 1, -1]]);
+        let r = validate(&fixtures::voxels(&cells), 0.0).unwrap();
+        let s = &r.summary;
+        assert!(s.is_solid() && r.problems.is_empty(), "{:?}", r.problems);
+        assert_eq!(
+            (s.shells, s.touching_shell_edges, s.touching_shell_vertices),
+            (1, 1, 2)
+        );
+    }
+
+    #[test]
+    fn a_shell_touching_itself_with_overlapping_interiors_stays_a_defect() {
+        let mut cells = fixtures::EDGE_LOOP.to_vec();
+        cells.push([1, 0, 0]);
+        let whole = fixtures::voxels(&cells);
+        assert!(summary(&whole).is_solid());
+        let loop_ = fixtures::voxels(&fixtures::EDGE_LOOP);
+        let both = Mesh::concat(&[&loop_, &fixtures::voxels(&[[1, 0, 0]])]).unwrap();
+        assert!(!summary(&both).is_solid());
     }
 
     #[test]
