@@ -44,6 +44,29 @@ fn overlay(ring: &[[f64; 3]], centre: [f64; 3], axis: [f64; 3]) -> Vec<[f64; 3]>
         .collect()
 }
 
+/// Start of the lexicographically smallest rotation of a ring, so the result does
+/// not depend on where the ring was digitized from.
+fn canonical_start(ring: &[[f64; 3]]) -> usize {
+    let n = ring.len();
+    let key = |p: &[f64; 3]| p.map(|c| if c == 0.0 { 0.0 } else { c });
+    let cmp = |a: &[f64; 3], b: &[f64; 3]| {
+        let (a, b) = (key(a), key(b));
+        a[0].total_cmp(&b[0])
+            .then(a[1].total_cmp(&b[1]))
+            .then(a[2].total_cmp(&b[2]))
+    };
+    (1..n).fold(0, |best, s| {
+        let order = (0..n)
+            .map(|i| cmp(&ring[(s + i) % n], &ring[(best + i) % n]))
+            .find(|o| o.is_ne());
+        if order == Some(std::cmp::Ordering::Less) {
+            s
+        } else {
+            best
+        }
+    })
+}
+
 /// Band between rings `a` and `b` (overlay coordinates), both starting at their
 /// aligned vertex and running the same way, that minimizes the total overlay
 /// triangle area. Returns local corner indices: `(false, i)` is `a[i % m]`,
@@ -138,7 +161,7 @@ pub fn loft(sections: &Polylines, opts: &LoftOptions) -> Result<Mesh> {
         }
         closed.push(is_closed);
     }
-    let centres: Vec<[f64; 3]> = (0..k)
+    let mut centres: Vec<[f64; 3]> = (0..k)
         .map(|s| {
             if closed[s] {
                 ring_centre(&rings[s])
@@ -173,6 +196,9 @@ pub fn loft(sections: &Polylines, opts: &LoftOptions) -> Result<Mesh> {
         if along < 0.0 {
             rings[s].reverse();
         }
+        let start = canonical_start(&rings[s]);
+        rings[s].rotate_left(start);
+        centres[s] = ring_centre(&rings[s]);
     }
     let mut verts = vec![];
     let mut ids: Vec<Vec<u32>> = vec![];
@@ -399,6 +425,46 @@ mod tests {
                     panic!("section is Int64")
                 };
                 assert_eq!(sec.iter().filter(|&&s| s < 0).count(), 2);
+            }
+        }
+    }
+
+    #[test]
+    fn result_does_not_depend_on_start_vertex_or_direction_of_a_ring() {
+        let ellipse = |x: f64, n: usize, phase: f64| -> Vec<[f64; 3]> {
+            (0..n)
+                .map(|k| {
+                    let t = std::f64::consts::TAU * k as f64 / n as f64 + phase;
+                    [x, 40.0 * t.cos(), 10.0 * t.sin()]
+                })
+                .collect()
+        };
+        let (a, b) = (ellipse(0.0, 8, 0.0), ellipse(25.0, 11, 0.37));
+        let run = |a: Vec<[f64; 3]>, b: Vec<[f64; 3]>| {
+            let p = Polylines::from_parts(vec![a, b], vec![true; 2], None).unwrap();
+            loft(&p, &LoftOptions::default()).unwrap()
+        };
+        let want = run(a.clone(), b.clone());
+        for shift in 0..11 {
+            for reverse in [false, true] {
+                let mut r = b.clone();
+                r.rotate_left(shift);
+                if reverse {
+                    r.reverse();
+                }
+                let mut q = a.clone();
+                q.rotate_left(shift % 8);
+                let got = run(q, r);
+                assert_eq!(
+                    got.vertices(),
+                    want.vertices(),
+                    "shift {shift} reverse {reverse}"
+                );
+                assert_eq!(
+                    got.triangles(),
+                    want.triangles(),
+                    "shift {shift} reverse {reverse}"
+                );
             }
         }
     }

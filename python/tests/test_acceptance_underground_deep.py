@@ -163,7 +163,6 @@ def test_loft_of_similar_l_shaped_sections_is_a_frustum():
     assert close(m.volume, 10.0 / 3 * (a + b + np.sqrt(a * b)))
 
 
-@pytest.mark.skip(reason="acceptance: loft depends on where and in which direction a ring is digitized")
 def test_loft_does_not_depend_on_start_vertex_or_digitizing_direction():
     a, b = ellipse(0, 8), ellipse(25, 11, phase=0.37)
     ref = loft([a, b]).volume
