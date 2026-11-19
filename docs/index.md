@@ -3,9 +3,14 @@
 `wireframes` reads, writes, plots, measures and combines 3D solids, surfaces and strings for mining, geology and
 petroleum. A Rust core does the geometry with exact predicates; you call it from Python as `import wireframes as wf`.
 
+No release is published yet: there are no wheels on PyPI, so `pip install wireframes` does not work. Build the
+wheel from a clone of the repository; this needs a Rust toolchain.
+
 ```sh
-pip install wireframes            # numpy is the only required dependency
-pip install "wireframes[plot]"    # adds matplotlib for wf.plot
+pip install maturin
+maturin build --release --out dist   # in the repository root
+pip install dist/wireframes-*.whl    # numpy is the only required dependency
+pip install matplotlib               # optional, for wf.plot (the wireframes[plot] extra)
 ```
 
 ## A first look
@@ -50,4 +55,5 @@ pages and figures; every example asserts the invariant it shows.
 - Results do not depend on the number of threads.
 - Every object is immutable; methods return new objects.
 
-Speed has not been measured against other packages yet.
+The [performance page](performance.md) gives medians against trimesh, manifold3d and scipy, with the machine,
+versions and commands behind each number.

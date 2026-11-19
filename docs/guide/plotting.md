@@ -1,6 +1,6 @@
 # Plotting
 
-`wf.plot` draws static matplotlib figures. It needs `pip install "wireframes[plot]"`; `import wireframes` alone never
+`wf.plot` draws static matplotlib figures. It needs matplotlib (the `wireframes[plot]` extra); `import wireframes` alone never
 imports matplotlib. Each function takes one container or a list of them, an optional `ax`, and returns
 `(fig, ax)`; with `ax` given, it draws there.
 
