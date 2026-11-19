@@ -1582,8 +1582,11 @@ triangulate, loft, extrude, plot` (lazy attribute), `__version__`.
 | `bench` | `cargo bench` (criterion), interleaved rounds, medians |
 | `examples`, `docs`, `docs-build`, `compat` | as in AGENTS.md |
 
-Proptest cases: 256 per property by default (`PROPTEST_CASES` overrides), seeds
-fixed in CI via `proptest-regressions` files committed.
+Proptest cases: 256 per property by default (`PROPTEST_CASES` overrides). The
+`[env]` table of `mise.toml` sets `PROPTEST_RNG_SEED`, so every run through `mise`
+generates the same cases; committed `proptest-regressions` files replay earlier
+failures on top of them. To explore new cases, override the seed for one run
+(`PROPTEST_RNG_SEED=<n> mise run test`).
 
 `meshio` and `trimesh` are dev-only dependencies used inside tests as independent
 writers and readers; tests that need them skip when they are missing.

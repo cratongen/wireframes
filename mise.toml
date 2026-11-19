@@ -1,6 +1,7 @@
 [env]
 _.path = ["~/.cargo/bin"]
 UV_PYTHON = "3.13"
+PROPTEST_RNG_SEED = "20261119"
 
 [tools]
 micromamba = "2.9.0-0"
