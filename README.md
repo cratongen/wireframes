@@ -105,10 +105,7 @@ tonnage without warning. `wireframes` enforces three rules:
    in the returned report.
 4. **Standing volume identity**: every boolean test suite and property test checks
    `vol(A union B) + vol(A intersect B) = vol(A) + vol(B)` within `f64`
-   materialization rounding, alongside `Mesh.validate().summary.is_closed`. The
-   C++ `Manifold` library, through its `manifold3d` Python package, is a
-   dev-only test oracle (`mise run oracle`) and benchmark baseline, never a
-   dependency of `wireframes`.
+   materialization rounding, alongside `Mesh.validate().summary.is_closed`.
 
 ## Roadmap
 
@@ -176,9 +173,7 @@ tonnage without warning. `wireframes` enforces three rules:
   the acceptance check passes. Solids may hold shells that touch along edges or
   at vertices, and a shell may touch itself the same way; booleans accept and
   return them. Known gaps:
-  - A CI pipeline does not exist yet. The oracle suite (`mise run oracle`)
-    compares booleans with Manifold, measures and queries with trimesh, and the
-    DTM and convex solids with scipy (spec section 12).
+  - A CI pipeline does not exist yet.
   - The semi-static filter in front of the exact predicates is not written.
   - Neighbouring solids that share a wall cannot sit in one valid mesh. Two
     shells that share all or part of a face, or part of an edge, or where a
@@ -198,9 +193,7 @@ tonnage without warning. `wireframes` enforces three rules:
     strike, a drive united with crosscuts one at a time (union 11 of 12 in
     example 07), 188 of 648 inclined splits of an icosphere through its
     vertices, and clips of an octagonal pit by flat ground at UTM scale.
-    In the oracle suite, 39 of the 960 boolean results compared with
-    Manifold raise `wf.KernelError`, and all 960, counting the meshes those
-    errors carry, match Manifold's volume and area within the stated bound. Six Python acceptance tests stay
+    Six Python acceptance tests stay
     skipped and one Rust acceptance test stays ignored until snap rounding
     lands.
 
@@ -265,28 +258,27 @@ tonnage without warning. `wireframes` enforces three rules:
 
 ## Performance
 
-`mise run bench` runs the criterion benches and `mise run bench:compare` times the
-same kernels from Python against trimesh, manifold3d and scipy, interleaving rounds
-and reporting medians with the load average. The table below gives Python medians of
-5 rounds in milliseconds, measured on 2026-11-19 on a 13th Gen Intel Core i9-13980HX
-(32 logical CPUs, wireframes on 32 threads) at commit `5d5ab30`. The
-[performance page](docs/performance.md) lists the commands, versions, ranges, load,
-the criterion results for every kernel and reader, and what each column times. Booleans,
+`mise run bench` runs the criterion benches. The table below gives criterion medians
+measured on 2026-11-19 on a 13th Gen Intel Core i9-13980HX (32 logical CPUs,
+wireframes on 32 threads) at commit `5d5ab30`. The
+[performance page](docs/performance.md) lists the commands, versions, confidence
+intervals, load and the results for every kernel and reader. Booleans,
 `clip_by_surface` and `split_by_plane` now run `validate` on each result; the boolean
-rows predate that, and its cost is not measured.
+rows predate that, and its cost is not measured. Comparison with other libraries:
+not measured.
 
-| Operation | Dataset | wireframes | trimesh | PyVista / VTK | Manifold |
-|---|---|---|---|---|---|
-| STL binary write, read | 100k-triangle torus | 5.21, 8.23 | 2.64, 3.07 | not measured | n/a |
-| PLY binary write, read | 100k-triangle torus | 1.35, 3.13 | 1.03, 0.684 | not measured | n/a |
-| Mesh validation (`validate`) | 100k-triangle torus | 117 | 43.3 (`is_volume`, no self-intersection test) | not measured | 19.3 (construction, no self-intersection test) |
-| Exact boolean (`union`) | Two 100k-triangle tori | 941 | 45.6 (Manifold engine) | not measured | 17.2 |
-| Exact boolean (`difference`) | Two 100k-triangle tori | 1049 | 46.2 (Manifold engine) | not measured | 15.2 |
-| Plane slicing (`slice_by_plane`) | 100k-triangle torus across 50 sections | 84.5 | 123 | not measured | 20.0 |
-| Point-in-solid (`contains`), index built in the call | 1e5 points in a 100k-triangle torus | 200 | 52373 | not measured | n/a |
-| Signed distance, index built in the call | 1e5 points, 100k-triangle torus | 221 | 47672 | not measured | n/a |
-| Exact block fraction (`block_fraction`) | 100 x 100 x 50 blocks, 100k-triangle torus | 288 | n/a | not measured | n/a |
-| DTM (`dtm`) | 1e5 points | 61.4 | n/a (scipy `Delaunay`: 254) | not measured | n/a |
+| Operation | Dataset | Median |
+|---|---|---|
+| STL binary write, read (in memory) | 100k-triangle torus | 3.29 ms, 6.94 ms |
+| PLY binary write, read (in memory) | 100k-triangle torus | 0.720 ms, 2.86 ms |
+| Mesh validation (`validate`) | 100k-triangle torus | 126 ms |
+| Exact boolean (`union`) | Two 100k-triangle tori | 958 ms |
+| Exact boolean (`difference`) | Two 100k-triangle tori | 1.06 s |
+| Plane slicing (`slice_by_plane`) | 100k-triangle torus across 50 sections | 86.3 ms |
+| Point location (`locate_all`), index prebuilt | 1e5 points in a 100k-triangle torus | 4.68 ms |
+| Signed distance, index prebuilt | 1e5 points, 100k-triangle torus | 56.9 ms |
+| Exact block fraction (`block_fraction`) | 100 x 100 x 50 blocks, 100k-triangle torus | 127 ms |
+| DTM (`dtm`) | 1e5 points | 61.6 ms |
 
 ## License
 

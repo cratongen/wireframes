@@ -23,19 +23,14 @@ All notable changes to wireframes are listed here. The format follows
 - Python package `wireframes` with a full `.pyi` stub, seeded datasets, matplotlib
   plots and `to_polars`/`to_pandas`/`to_pyarrow` conversions.
 - Numbered examples for every public capability, and an mkdocs guide.
-- Criterion benches for I/O, booleans, slicing, validation and queries, and
-  `mise run bench:compare`, which times the same kernels from Python against
-  trimesh, manifold3d and scipy. `docs/performance.md` records the timings
+- Criterion benches for I/O, booleans, slicing, validation and queries.
+  `docs/performance.md` records the timings
   taken at commit `5d5ab30`; the cost of the `validate` call that booleans
   now run on each result is not measured.
 - Tests: boitata's validate and repair fixtures ported to `wireframes-ops`,
   thread-count determinism tests for `io` and `build`, commutativity of union
   and intersection in `locate`, a Datamine triangle-id alias test, and
   DataFrame conversion tests that check null handling.
-- Oracle suite (`mise run oracle`): booleans against Manifold, measures,
-  containment and ray hits against trimesh, and the DTM and convex solids
-  against scipy, each with a stated bound and every disagreement settled by
-  exact arithmetic. The oracles sit in the `oracle` dependency group.
 - `mise run compat`, which installs the wheel with pip, uv, pixi and conda.
 - `wf.KernelError` (`Error::Kernel` in Rust), a `RuntimeError` for limits of
   the kernel on valid input. `report` and `mesh` hold the failed result when
@@ -131,10 +126,8 @@ All notable changes to wireframes are listed here. The format follows
   booleans, in booleans of pits clipped by the same topography (their caps
   differ by about one ulp), in unions of stopes rotated to strike, and in
   inclined splits where other vertices lie within an ulp of the plane. For
-  pushbacks, clip the difference of the unclipped pits instead. In the
-  oracle suite, 39 of 960 boolean results compared with Manifold raise
-  `wf.KernelError` (24 of them in nested pairs, 13 in coplanar pairs), and
-  188 of 648 inclined splits of an icosphere through its vertices do. Six
+  pushbacks, clip the difference of the unclipped pits instead. Of 648
+  inclined splits of an icosphere through its vertices, 188 raise it. Six
   Python acceptance tests stay skipped and one Rust acceptance test stays
   ignored until snap rounding lands.
 - `loft` does not branch, `extrude` has no path sweep, and `offset` is not a

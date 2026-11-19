@@ -40,16 +40,6 @@ description = "Criterion benches. Pass a filter to run a subset."
 usage = 'arg "[filter]" default="" help="Criterion filter"'
 run = "cargo bench --workspace --exclude wireframes-py -- '{{usage.filter}}'"
 
-[tasks."bench:compare"]
-description = "Time wireframes against trimesh, manifold3d and scipy with interleaved rounds; pass --only and --rounds"
-depends = ["py:build"]
-run = "uv run --no-sync python python/benches/compare.py"
-
-[tasks.oracle]
-description = "Compare wireframes with Manifold, trimesh and scipy on seeded inputs and print the counts"
-depends = ["py:build"]
-run = "uv run --no-sync pytest -m oracle -s -q python/tests"
-
 [tasks.examples]
 depends = ["py:build"]
 run = "uv run --no-sync python examples/run.py"

@@ -55,5 +55,5 @@ pages and figures; every example asserts the invariant it shows.
 - Results do not depend on the number of threads.
 - Every object is immutable; methods return new objects.
 
-The [performance page](performance.md) gives medians against trimesh, manifold3d and scipy, with the machine,
+The [performance page](performance.md) gives the criterion medians, with the machine,
 versions and commands behind each number.

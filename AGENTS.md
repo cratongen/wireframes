@@ -20,7 +20,6 @@ mise run test       # rust tests, build python module with maturin, run pytest
 mise run lint       # rustfmt --check, clippy -D warnings, ruff check + format --check
 mise run verify     # lint + test; must pass before finishing any task
 mise run bench      # criterion benchmarks; pass a filter to run a subset
-mise run oracle     # compare with Manifold, trimesh and scipy (dev-only oracles)
 mise run examples   # rerun examples/NN-*/example_NN.py, rewrite their README.md pages and figures
 mise run docs       # mkdocs serve
 mise run docs-build # mkdocs build --strict
@@ -104,8 +103,7 @@ mise run compat     # install check across pip, uv, pixi, and conda
   intersection points.
 - Never silently repair or alter input meshes inside boolean, cutting, or volume
   functions.
-- Never add the C++ `Manifold` library as a build or runtime dependency; use it
-  strictly as an external test and benchmark oracle.
+- Never add the C++ `Manifold` library as a build or runtime dependency.
 - Never support closed proprietary formats (DWG, binary Datamine `.dm`) or commit
   client data or files over 1 MB.
 - Never guess or extrapolate performance numbers; write `"not measured"` until a
