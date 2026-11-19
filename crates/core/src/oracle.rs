@@ -140,3 +140,16 @@ pub fn nearest(x: &Q) -> f64 {
         hi
     }
 }
+
+/// The exact value of an expansion.
+pub fn value(e: &crate::exact::Expansion) -> Q {
+    let (neg, mag, exp) = e.to_dyadic();
+    let n = mag
+        .iter()
+        .rev()
+        .fold(num_bigint::BigInt::from(0), |acc, &l| {
+            (acc << 64) + num_bigint::BigInt::from(l)
+        });
+    let v = Q::from_integer(if neg { -n } else { n });
+    v * Q::from_integer(2.into()).pow(i32::try_from(exp).expect("exponent fits i32"))
+}

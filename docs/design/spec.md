@@ -364,8 +364,10 @@ pub struct PointSet {
 
 ### 3.7 predicates.rs
 
-Thin wrappers over `robust` returning `f64` with the exact sign (magnitude is only
-meaningful for its sign):
+Wrappers over `robust` returning `f64` with the exact sign (magnitude is only
+meaningful for its sign). `robust` stays exact while every coordinate is zero or
+has a magnitude in `[2^-120, 2^120]`; outside that range the wrappers evaluate the
+same determinant with `Expansion`, so the sign is exact for any finite input:
 
 ```rust
 pub fn orient2d(a: [f64;2], b: [f64;2], c: [f64;2]) -> f64   // > 0 when c is left of a->b
@@ -386,13 +388,19 @@ raw `orient3d`.
 Exact arithmetic for implicit points (decision 6):
 
 ```rust
-pub struct Expansion(/* Vec<f64>, nonoverlapping, increasing magnitude */);
+pub struct Expansion(/* Vec<f64> nonoverlapping, increasing magnitude; or a signed integer times 2^e */);
 impl Expansion {
     pub fn from_f64(x: f64) -> Self;
     pub fn sum(&self, o: &Self) -> Self; pub fn diff(&self, o: &Self) -> Self;
     pub fn product(&self, o: &Self) -> Self; pub fn scale(&self, b: f64) -> Self;
-    pub fn sign(&self) -> Sign; pub fn estimate(&self) -> f64; // nearest-ish f64
+    pub fn sign(&self) -> Sign;
+    pub fn estimate(&self) -> f64;               // nearest-ish f64 with the exact sign, clamped to the finite range
+    pub fn components(&self) -> Option<&[f64]>;  // None for the integer form
+    pub fn to_dyadic(&self) -> (bool, Vec<u64>, i64); // exact value: ±limbs * 2^exp
 }
+pub fn quotient_estimate(n: &Expansion, d: &Expansion) -> f64; // n / d within a few ulps at any magnitude
+pub fn round_quotient(n: &Expansion, d: &Expansion) -> f64;    // nearest f64, ties to even, ±inf past f64::MAX
+pub fn shell_volume_sign(v: &[[f64;3]], faces: &[[u32;3]]) -> Sign; // exact sign of a closed shell's volume
 
 #[derive(Clone, Debug)]
 pub enum ImplicitPoint {
@@ -412,6 +420,11 @@ pub fn cmp_axis(a: &ImplicitPoint, b: &ImplicitPoint, axis: usize) -> std::cmp::
 pub fn same_point(a: &ImplicitPoint, b: &ImplicitPoint) -> bool;
 pub fn plane_side(p: [f64;3], origin: [f64;3], normal: [f64;3]) -> Sign; // exact sign of (p - origin) . normal
 ```
+
+Every `Expansion` operation is exact for any finite input. An operation whose
+`f64` components would underflow (a product below `2^-968`) or overflow redoes
+itself on a signed integer times a power of two, and its result keeps that form.
+Inputs in the usual range never leave the `f64` form.
 
 Each predicate first evaluates with a semi-static interval filter; on an uncertain
 sign it evaluates in homogeneous coordinates with `Expansion`. `to_f64` rounds the
@@ -586,7 +599,9 @@ Semantics:
   off the other shell, exact point-in-shell by the section 7.1 rule; when every
   vertex lies on the other shell, as for a cavity touching it at all its vertices,
   the first exact point inside one of its edges that is off it). Even depth must
-  have positive signed volume, odd depth negative. `repair` orients by the same
+  have positive signed volume, odd depth negative, by the exact sign of
+  `exact::shell_volume_sign` (an `f64` sum with a proven error bound, exact
+  arithmetic when the bound does not settle the sign). `repair` orients by the same
   depth.
 - SelfIntersection: a pair of non-degenerate faces with `tri_tri` = `Cross` or
   `Touch` where the faces share no vertex, or share exactly one vertex and meet

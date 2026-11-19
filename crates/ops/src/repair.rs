@@ -1,14 +1,15 @@
 use std::collections::{HashMap, HashSet};
 
 use rayon::prelude::*;
-use wireframes_core::predicates::collinear3;
+use wireframes_core::exact::shell_volume_sign;
+use wireframes_core::predicates::{Sign, collinear3};
 use wireframes_core::topology::{Shells, shell_location};
 use wireframes_core::validate::{degenerate_mask, earliest_within};
 use wireframes_core::{
     Aabb, EdgeMap, Mesh, MeshProblemKind, MeshSummary, Result, tolerance, validate,
 };
 
-use crate::measure::{cross, dot, norm, sub, sum_by};
+use crate::measure::{cross, dot, norm, sub};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum HoleFill {
@@ -210,7 +211,6 @@ fn orient(mesh: &Mesh) -> Vec<bool> {
     let skip = degenerate_mask(mesh);
     let edges = EdgeMap::new(mesh, Some(&skip));
     let comps = components(mesh, &skip, &edges);
-    let o = mesh.bounds().map_or([0.0; 3], |b| b.min);
     let closed: Vec<usize> = (0..comps.len())
         .filter(|&c| comps[c].orientable && comps[c].closed)
         .collect();
@@ -229,12 +229,17 @@ fn orient(mesh: &Mesh) -> Vec<bool> {
         .into_par_iter()
         .map(|s| {
             let c = &comps[closed[s]];
-            let vol = sum_by(c.faces.len(), |k| {
-                let p = tris[c.faces[k] as usize].map(|i| sub(v[i as usize], o));
-                let d = dot(p[0], cross(p[1], p[2]));
-                [if c.parity[k] { -d } else { d }]
-            })[0];
-            if vol == 0.0 {
+            let wound: Vec<[u32; 3]> = c
+                .faces
+                .iter()
+                .zip(&c.parity)
+                .map(|(&g, &flip)| {
+                    let t = tris[g as usize];
+                    if flip { [t[0], t[2], t[1]] } else { t }
+                })
+                .collect();
+            let vol = shell_volume_sign(v, &wound);
+            if vol == Sign::Zero {
                 return false;
             }
             let depth = (0..closed.len())
@@ -245,7 +250,7 @@ fn orient(mesh: &Mesh) -> Vec<bool> {
                         && shell_location(v, &face_lists[s], &face_lists[t]) == Some(-1)
                 })
                 .count();
-            (depth % 2 == 0) != (vol > 0.0)
+            (depth % 2 == 0) != (vol == Sign::Positive)
         })
         .collect();
     let mut flip = vec![false; tris.len()];
@@ -697,6 +702,26 @@ mod tests {
                     |x| matches!(x, RepairAction::VertexMerged { vertex, .. } if *vertex == i as u32)
                 ));
             }
+        }
+    }
+
+    #[test]
+    fn inward_shells_are_found_at_any_scale() {
+        for k in [-1064, 498] {
+            let m = broken::inward_cube();
+            let v = m
+                .vertices()
+                .iter()
+                .map(|p| p.map(|x| x * 2f64.powi(k / 2) * 2f64.powi(k - k / 2)))
+                .collect();
+            let m = m.with_vertices(v).unwrap();
+            assert_eq!(m.validate(0.0).unwrap().summary.inward_shells, 1, "2^{k}");
+            let (_, r) = fix(&m);
+            let want: Vec<_> = (0..12)
+                .map(|face| RepairAction::FaceFlipped { face })
+                .collect();
+            assert_eq!(r.actions, want, "2^{k}");
+            assert!(r.after.is_solid(), "2^{k}: {:?}", r.after);
         }
     }
 

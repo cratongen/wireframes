@@ -173,8 +173,6 @@ tonnage without warning. `wireframes` enforces three rules:
   at vertices; booleans accept and return them. Known gaps:
   - A result shell that touches itself along an edge or at a vertex raises
     `InvalidInput`, because no valid solid represents it.
-  - A split whose section is narrower than about 1e-154 loses its cap, because
-    the implicit-point orientation test underflows. Its Rust test stays ignored.
   - The Manifold oracle comparison and a CI pipeline do not exist yet.
   - The semi-static filter in front of the exact predicates is not written.
 

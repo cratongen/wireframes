@@ -3,6 +3,8 @@
 
 use robust::{Coord, Coord3D};
 
+use crate::exact;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Sign {
     Negative,
@@ -54,26 +56,52 @@ fn c3(p: [f64; 3]) -> Coord3D<f64> {
     }
 }
 
+const LO: f64 = f64::from_bits((1023 - 120) << 52);
+const HI: f64 = f64::from_bits((1023 + 120) << 52);
+
+/// Coordinates in `[2^-120, 2^120]` (or zero) keep every exact intermediate of
+/// `robust`, up to degree 5, a normal multiple of `2^-1074` below `f64::MAX`,
+/// so `robust` is exact there; other inputs go to [`crate::exact`].
+fn robust_exact(xs: &[f64]) -> bool {
+    xs.iter().all(|&x| x == 0.0 || (LO..=HI).contains(&x.abs()))
+}
+
 /// Positive when `c` is left of `a -> b` (counter-clockwise).
 pub fn orient2d(a: [f64; 2], b: [f64; 2], c: [f64; 2]) -> f64 {
-    robust::orient2d(c2(a), c2(b), c2(c))
+    if robust_exact([a, b, c].as_flattened()) {
+        robust::orient2d(c2(a), c2(b), c2(c))
+    } else {
+        exact::orient2d_any(a, b, c)
+    }
 }
 
 /// `robust` convention: positive when `d` lies below the plane through `a, b, c`
 /// that winds counter-clockwise seen from above, i.e. on the side opposite to the
 /// normal `(b - a) x (c - a)`. Prefer [`side_of_plane`].
 pub fn orient3d(a: [f64; 3], b: [f64; 3], c: [f64; 3], d: [f64; 3]) -> f64 {
-    robust::orient3d(c3(a), c3(b), c3(c), c3(d))
+    if robust_exact([a, b, c, d].as_flattened()) {
+        robust::orient3d(c3(a), c3(b), c3(c), c3(d))
+    } else {
+        exact::orient3d_any(a, b, c, d)
+    }
 }
 
 /// Positive when `d` is inside the circle through counter-clockwise `a, b, c`.
 pub fn incircle(a: [f64; 2], b: [f64; 2], c: [f64; 2], d: [f64; 2]) -> f64 {
-    robust::incircle(c2(a), c2(b), c2(c), c2(d))
+    if robust_exact([a, b, c, d].as_flattened()) {
+        robust::incircle(c2(a), c2(b), c2(c), c2(d))
+    } else {
+        exact::incircle_any(a, b, c, d)
+    }
 }
 
 /// Positive when `e` is inside the sphere through `a, b, c, d` (`orient3d(a, b, c, d) > 0`).
 pub fn insphere(a: [f64; 3], b: [f64; 3], c: [f64; 3], d: [f64; 3], e: [f64; 3]) -> f64 {
-    robust::insphere(c3(a), c3(b), c3(c), c3(d), c3(e))
+    if robust_exact([a, b, c, d, e].as_flattened()) {
+        robust::insphere(c3(a), c3(b), c3(c), c3(d), c3(e))
+    } else {
+        exact::insphere_any([a, b, c, d], e)
+    }
 }
 
 /// The two axes kept when dropping `drop`, in cyclic order, so that the 2D

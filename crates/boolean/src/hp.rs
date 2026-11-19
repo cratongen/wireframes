@@ -6,7 +6,7 @@
 use std::cmp::Ordering;
 use std::sync::Arc;
 
-use wireframes_core::exact::{Expansion, round_quotient};
+use wireframes_core::exact::{Expansion, quotient_estimate, round_quotient, split_f64};
 use wireframes_core::predicates::{Sign, kept_axes, orient2d_axis, side_of_plane};
 
 fn ord(s: Sign) -> Ordering {
@@ -72,8 +72,7 @@ impl Hp {
             }
             Sign::Positive => {}
         }
-        let we = w.estimate();
-        let approx = [0, 1, 2].map(|k| x[k].estimate() / we);
+        let approx = [0, 1, 2].map(|k| quotient_estimate(&x[k], &w));
         Pt::H(Arc::new(Hp { x, w, approx }))
     }
 }
@@ -272,79 +271,11 @@ pub(crate) fn height_diff_sign(p: &Pt, top: &Plane, bottom: &Plane) -> Sign {
     s.times(top.n[2].sign()).times(bottom.n[2].sign())
 }
 
-/// `x = m 2^e` with an integer `m`.
-fn split_f64(x: f64) -> (bool, u64, i32) {
-    let b = x.to_bits();
-    let (exp, frac) = (((b >> 52) & 0x7ff) as i32, b & ((1 << 52) - 1));
-    let (m, e) = if exp == 0 {
-        (frac, -1074)
-    } else {
-        (frac | (1 << 52), exp - 1075)
-    };
-    (x < 0.0, m, e)
-}
-
-fn add_at(acc: &mut [u64], mut i: usize, v: u128) {
-    let mut carry = v;
-    while carry != 0 {
-        let s = acc[i] as u128 + (carry & u64::MAX as u128);
-        acc[i] = s as u64;
-        carry = (carry >> 64) + (s >> 64);
-        i += 1;
-    }
-}
-
-/// Exact sign of `sum x_k y_k` over finite `f64` pairs, in integer
-/// arithmetic, so no product underflows or overflows.
-fn dot_sign_wide(terms: &[(f64, f64)]) -> Sign {
-    let parts: Vec<(bool, u128, i32)> = terms
-        .iter()
-        .filter(|(x, y)| *x != 0.0 && *y != 0.0)
-        .map(|&(x, y)| {
-            let ((sx, mx, ex), (sy, my, ey)) = (split_f64(x), split_f64(y));
-            (sx != sy, mx as u128 * my as u128, ex + ey)
-        })
-        .collect();
-    let Some(emin) = parts.iter().map(|t| t.2).min() else {
-        return Sign::Zero;
-    };
-    let emax = parts.iter().map(|t| t.2).max().expect("nonempty");
-    let limbs = (emax - emin) as usize / 64 + 4;
-    let mut acc = [vec![0u64; limbs], vec![0u64; limbs]];
-    for &(neg, m, e) in &parts {
-        let shift = (e - emin) as usize;
-        let (i, bit) = (shift / 64, shift % 64);
-        let a = &mut acc[usize::from(neg)];
-        add_at(a, i, (m & u64::MAX as u128) << bit);
-        add_at(a, i + 1, (m >> 64) << bit);
-    }
-    match acc[0].iter().rev().cmp(acc[1].iter().rev()) {
-        Ordering::Greater => Sign::Positive,
-        Ordering::Equal => Sign::Zero,
-        Ordering::Less => Sign::Negative,
-    }
-}
-
-/// Exact sign of `(p - origin) . normal` for any finite input.
-pub(crate) fn plane_side(p: [f64; 3], origin: [f64; 3], normal: [f64; 3]) -> Sign {
-    let safe = |x: f64| x == 0.0 || (x.abs() >= 2f64.powi(-450) && x.abs() <= 2f64.powi(450));
-    let terms = [0, 1, 2].map(|k| [(p[k], normal[k]), (-origin[k], normal[k])]);
-    let terms = terms.as_flattened();
-    if terms.iter().all(|&(x, y)| safe(x) && safe(y)) {
-        terms
-            .iter()
-            .fold(Expansion::zero(), |acc, &(x, y)| {
-                acc.sum(&Expansion::from_f64(x).scale(y))
-            })
-            .sign()
-    } else {
-        dot_sign_wide(terms)
-    }
-}
+pub(crate) use wireframes_core::exact::plane_side;
 
 /// `normal` scaled by a power of two so that its largest component lies
 /// near 1, when that scaling is exact; else `normal` unchanged. Side tests
-/// and plane crossings do not change, and their expansions avoid underflow.
+/// and plane crossings do not change, and their expansions keep the `f64` form.
 pub(crate) fn unit_scale(normal: [f64; 3]) -> [f64; 3] {
     let big = normal.iter().fold(0.0f64, |m, x| m.max(x.abs()));
     if big == 0.0 {
@@ -381,7 +312,13 @@ mod tests {
     }
 
     fn val(e: &Expansion) -> Q {
-        e.components().iter().fold(qz(), |a, &c| a + q(c))
+        let (neg, mag, exp) = e.to_dyadic();
+        let n = mag
+            .iter()
+            .rev()
+            .fold(BigInt::from(0), |acc, &l| (acc << 64) + BigInt::from(l));
+        let v = Q::from_integer(if neg { -n } else { n });
+        v * Q::from_integer(BigInt::from(2)).pow(i32::try_from(exp).expect("fits"))
     }
 
     fn sgn(x: &Q) -> Sign {
@@ -476,6 +413,7 @@ mod tests {
         assert!(
             a.product(&b)
                 .components()
+                .expect("fast components")
                 .windows(2)
                 .all(|w| w[0].abs() < w[1].abs())
         );
@@ -587,6 +525,44 @@ mod tests {
             prop_assert_eq!(plane_side(p, o, u), sgn(&s));
             for k in 0..3 {
                 prop_assert_eq!(sgn(&q(u[k])), sgn(&q(n[k])));
+            }
+        }
+
+        #[test]
+        fn predicates_match_rationals_at_any_scale(
+            v in proptest::array::uniform5(proptest::array::uniform3(-8i32..9)),
+            w in proptest::array::uniform3(proptest::array::uniform3(-8i32..9)),
+            k in -1070i32..1000,
+            drop in 0usize..3,
+        ) {
+            let s = |p: [i32; 3]| p.map(|c| f64::from(c) * 2f64.powi(k / 2) * 2f64.powi(k - k / 2));
+            let pl = Plane::new([s(v[2]), s(v[3]), s(v[4])]);
+            let Some(a) = Pt::lpi_checked(s(v[0]), s(v[1]), &pl) else { return Ok(()); };
+            let ox = [1.0, 0.0, 0.0];
+            if plane_side(s(w[0]), s(w[2]), ox).times(plane_side(s(w[1]), s(w[2]), ox)) != Sign::Negative {
+                return Ok(());
+            }
+            let b = Pt::plane_cross(s(w[0]), s(w[1]), s(w[2]), ox);
+            let c = Pt::E(s(w[2]));
+            let (x, y, z) = (exact(&a), exact(&b), exact(&c));
+            let (i, j) = kept_axes(drop);
+            let det = (&y[i] - &x[i]) * (&z[j] - &x[j]) - (&y[j] - &x[j]) * (&z[i] - &x[i]);
+            prop_assert_eq!(orient2d(&a, &b, &c, drop), sgn(&det));
+            prop_assert_eq!(cmp_axis(&a, &b, drop), x[drop].cmp(&y[drop]));
+            prop_assert_eq!(side(&b, &pl), {
+                let qv = [v[2], v[3], v[4]].map(|p| s(p).map(q));
+                let e1: Vec<Q> = (0..3).map(|k| &qv[1][k] - &qv[0][k]).collect();
+                let e2: Vec<Q> = (0..3).map(|k| &qv[2][k] - &qv[0][k]).collect();
+                let n = [
+                    &e1[1] * &e2[2] - &e1[2] * &e2[1],
+                    &e1[2] * &e2[0] - &e1[0] * &e2[2],
+                    &e1[0] * &e2[1] - &e1[1] * &e2[0],
+                ];
+                sgn(&(0..3).fold(qz(), |acc, k| acc + &n[k] * (&y[k] - &qv[0][k])))
+            });
+            for k in 0..3 {
+                let r = a.to_f64()[k];
+                prop_assert!(q(r.next_down()) < x[k] && x[k] < q(r.next_up()));
             }
         }
 

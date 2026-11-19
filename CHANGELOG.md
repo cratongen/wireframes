@@ -52,6 +52,16 @@ All notable changes to wireframes are listed here. The format follows
 
 ### Fixed
 
+- Exact arithmetic no longer underflows or overflows: an expansion operation
+  that would leave the `f64` range continues on an integer times a power of
+  two, and `orient2d`, `orient3d`, `incircle` and `insphere` fall back to it
+  outside `[2^-120, 2^120]`. A split whose section is narrower than about
+  1e-154 keeps its cap, and booleans, `clip_by_surface`, `split_by_plane` and
+  `slice_by_plane` work on coordinates near 1e150 and in the subnormal range.
+- `validate` and `repair` decide shell orientation by the exact sign of the
+  enclosed volume. The `f64` volume underflowed to zero for tiny solids and
+  overflowed for coordinates near 1e150, which flagged an outward shell as
+  inward.
 - `validate` and `repair` no longer take a cavity that touches its outer shell
   at every vertex it has for an inward shell; nesting falls back to an exact
   point inside one of its edges.
@@ -67,7 +77,6 @@ All notable changes to wireframes are listed here. The format follows
   by 1e-6 at UTM coordinates.
 - A cavity that touches its outer shell along an edge is refused as a
   self-intersection, while one that touches it at a vertex is a valid contact.
-- A split whose section is narrower than about 1e-154 loses its cap.
 - `loft` does not branch, `extrude` has no path sweep, and `offset` is not a
   Minkowski offset.
 - No real Datamine Studio export is tested yet.

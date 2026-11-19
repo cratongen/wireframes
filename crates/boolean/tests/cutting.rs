@@ -376,8 +376,6 @@ fn split_side_test_survives_underflow() {
 }
 
 #[test]
-#[ignore = "known defect: the cap of a section narrower than about 1e-154 is lost, because \
-            the implicit-point orientation test multiplies expansions that underflow"]
 fn split_of_a_sub_underflow_sliver_is_closed() {
     let tet = Mesh::new(
         vec![

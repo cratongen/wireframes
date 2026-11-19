@@ -2,8 +2,9 @@ use std::collections::HashMap;
 
 use rayon::prelude::*;
 
+use crate::exact::shell_volume_sign;
 use crate::intersect::{SegTri, TriTri, seg_tri, tri_tri};
-use crate::predicates::collinear3;
+use crate::predicates::{Sign, collinear3};
 use crate::topology::{Radial, Shells, radial_pairs_at, shell_location};
 use crate::{Aabb, Bvh, EdgeMap, Mesh, Result, tolerance};
 
@@ -236,22 +237,6 @@ fn problem(kind: MeshProblemKind) -> MeshProblem {
         edge: None,
         other: None,
     }
-}
-
-/// Signed volume of `faces` (times 6), relative to `o`.
-fn volume6(v: &[[f64; 3]], faces: &[[u32; 3]], o: [f64; 3]) -> f64 {
-    faces
-        .iter()
-        .map(|t| {
-            let [a, b, c] = t.map(|i| {
-                let p = v[i as usize];
-                [p[0] - o[0], p[1] - o[1], p[2] - o[2]]
-            });
-            a[0] * (b[1] * c[2] - b[2] * c[1])
-                + a[1] * (b[2] * c[0] - b[0] * c[2])
-                + a[2] * (b[0] * c[1] - b[1] * c[0])
-        })
-        .sum()
 }
 
 /// Degenerate, duplicate, edge, vertex, orientation and intersection problems,
@@ -502,18 +487,17 @@ pub fn validate(mesh: &Mesh, tolerance: f64) -> Result<MeshReport> {
         }
     }
 
-    let origin = mesh.bounds().map_or([0.0; 3], |b| b.min);
     let mut members: Vec<Vec<u32>> = vec![vec![]; shells.count];
     for f in valid() {
         members[shells.of[f] as usize].push(f as u32);
     }
     let closed_ids: Vec<usize> = (0..shells.count).filter(|&s| closed_shell[s]).collect();
-    let closed: Vec<(Vec<[u32; 3]>, Aabb, f64)> = closed_ids
+    let closed: Vec<(Vec<[u32; 3]>, Aabb, Sign)> = closed_ids
         .iter()
         .map(|&s| {
             let faces: Vec<[u32; 3]> = members[s].iter().map(|&f| tris[f as usize]).collect();
             let pts: Vec<[f64; 3]> = faces.iter().flatten().map(|&i| v[i as usize]).collect();
-            let vol = volume6(v, &faces, origin);
+            let vol = shell_volume_sign(v, &faces);
             (faces, Aabb::from_points(&pts), vol)
         })
         .collect();
@@ -530,7 +514,7 @@ pub fn validate(mesh: &Mesh, tolerance: f64) -> Result<MeshReport> {
                     fits && shell_location(v, faces, tf) == Some(-1)
                 })
                 .count();
-            (depth % 2 == 0) != (*vol > 0.0)
+            (depth % 2 == 0) != (*vol == Sign::Positive)
         })
         .collect();
     for (s, w) in wrong.into_iter().enumerate() {
