@@ -350,7 +350,7 @@ pub(crate) fn build(a: &Mesh, b: &Mesh) -> Result<Arrangement> {
             .filter(|&i| canon[i as usize] == i)
             .chain(n_input as u32..pts.len() as u32)
             .collect();
-        order.sort_by(|&x, &y| cmp_pts(&pts[x as usize], &pts[y as usize]).then(x.cmp(&y)));
+        order.par_sort_by(|&x, &y| cmp_pts(&pts[x as usize], &pts[y as usize]).then(x.cmp(&y)));
         let mut s = 0;
         while s < order.len() {
             let mut e = s + 1;
