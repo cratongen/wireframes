@@ -683,7 +683,7 @@ pub struct WriteOptions {
     pub skip_unsupported_columns: bool, // else a column the format cannot store errors
 }
 
-pub fn detect(path: &Path) -> Result<Format>; // by extension, case-insensitive; *_tr.csv / *_pt.csv
+pub fn detect(path: &Path) -> Result<Format>; // by extension, case-insensitive; *_tr.csv / *_pt.csv; an unknown extension's error lists the supported ones
 pub fn read(path: impl AsRef<Path>) -> Result<Data>;
 pub fn read_with(path: impl AsRef<Path>, opts: &ReadOptions) -> Result<Data>;
 pub fn write(path: impl AsRef<Path>, data: &Data) -> Result<()>;

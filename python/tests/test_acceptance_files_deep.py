@@ -1168,7 +1168,6 @@ def test_mesh_accepts_any_integer_dtype_and_layout():
         assert m.coords.dtype == np.float64 and m.area == pytest.approx(np.sqrt(3) / 2, rel=1e-15)
 
 
-@pytest.mark.skip(reason="acceptance: an unknown extension error does not list the formats wireframes reads")
 def test_unknown_extension_error_lists_the_supported_formats(tmp_path):
     (tmp_path / "pit.xyz").write_text("1 2 3\n")
     with pytest.raises(wf.InvalidInput) as e:

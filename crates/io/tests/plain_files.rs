@@ -123,3 +123,15 @@ fn unsupported_parts_are_refused_before_writing() {
     assert!(!p.exists());
     std::fs::remove_dir_all(dir).unwrap();
 }
+
+#[test]
+fn an_unknown_extension_lists_the_supported_formats() {
+    for name in ["pit.xyz", "pit"] {
+        let e = detect(Path::new(name)).unwrap_err().to_string();
+        for ext in [
+            ".obj", ".ply", ".off", ".stl", ".dxf", ".vtk", ".vtu", "_tr.csv", "_pt.csv",
+        ] {
+            assert!(e.contains(ext), "{e}");
+        }
+    }
+}

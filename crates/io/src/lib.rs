@@ -94,7 +94,9 @@ pub fn detect(path: &Path) -> Result<Format> {
         }
         _ => {
             return Err(Error::Unsupported(format!(
-                "{}: unknown file extension {ext:?}",
+                "{}: unknown file extension {ext:?}; wireframes reads and writes .obj, .ply, \
+                 .off, .stl, .dxf, .vtk, .vtu, .vtp and datamine pairs named <name>_tr.csv \
+                 and <name>_pt.csv",
                 path.display()
             )));
         }
