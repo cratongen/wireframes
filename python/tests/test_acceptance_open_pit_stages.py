@@ -428,7 +428,6 @@ def test_dump_beyond_the_topography_is_not_called_below_it():
     assert below.n_faces == 0 and close(above.volume, dump.volume)
 
 
-@pytest.mark.skip(reason="acceptance: an empty boolean result is refused as a solid input")
 def test_an_empty_pushback_chains_into_further_operations():
     box = wf.datasets.box
     pit = box(O + [0, 0, 200], O + [10, 10, 210])

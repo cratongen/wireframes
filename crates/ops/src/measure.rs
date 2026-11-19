@@ -151,8 +151,12 @@ pub fn dip(mesh: &Mesh) -> Vec<(f64, f64)> {
 }
 
 /// `InvalidMesh` unless every edge of the non-degenerate faces has exactly two
-/// faces that traverse it in opposite directions.
+/// faces that traverse it in opposite directions. A mesh with no faces is the
+/// empty solid, as a boolean returns it.
 pub(crate) fn check_closed_oriented(mesh: &Mesh, what: &str) -> Result<Vec<bool>> {
+    if mesh.n_faces() == 0 {
+        return Ok(vec![]);
+    }
     let degenerate = degenerate_mask(mesh);
     let edges = EdgeMap::new(mesh, Some(&degenerate));
     let tris = mesh.triangles();
@@ -253,6 +257,13 @@ mod tests {
 
     fn close(a: f64, b: f64) -> bool {
         (a - b).abs() <= 1e-9 * 1f64.max(a.abs()).max(b.abs())
+    }
+
+    #[test]
+    fn the_empty_solid_has_no_volume_and_no_centroid() {
+        assert_eq!(volume(&Mesh::empty()).unwrap(), 0.0);
+        assert!(centroid(&Mesh::empty()).is_err());
+        assert!(volume(&fixtures::open_cube()).is_err());
     }
 
     #[test]

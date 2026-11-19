@@ -49,10 +49,11 @@ pub struct SolidIndex {
 }
 
 impl SolidIndex {
-    /// `InvalidMesh { context: "solid" }` unless `validate(0.0)` says it is a solid.
+    /// `InvalidMesh { context: "solid" }` unless `validate(0.0)` says it is a solid
+    /// or it has no faces (the empty solid, which contains nothing).
     pub fn new(solid: &Mesh) -> Result<SolidIndex> {
         let report = solid.validate(0.0)?;
-        if !report.summary.is_solid() {
+        if solid.n_faces() > 0 && !report.summary.is_solid() {
             return Err(Error::InvalidMesh {
                 context: "solid".into(),
                 report: Box::new(report),
@@ -199,6 +200,20 @@ mod tests {
         let s = SolidIndex::new(&fixtures::cube()).unwrap();
         let d = s.signed_distance(&[[0.5, 0.5, 0.25], [0.5, 0.5, 1.0], [0.5, 0.5, 3.0]]);
         assert_eq!(d, [-0.25, 0.0, 2.0]);
+    }
+
+    #[test]
+    fn the_empty_solid_contains_nothing() {
+        let s = SolidIndex::new(&Mesh::empty()).unwrap();
+        assert_eq!(s.locate_all(&[[0.0; 3]]), [Location::Outside]);
+        let f = s
+            .block_fraction(&Blocks {
+                centroids: vec![[0.0; 3]],
+                size: [1.0; 3],
+                rotation: None,
+            })
+            .unwrap();
+        assert_eq!(f, [0.0]);
     }
 
     #[test]

@@ -31,7 +31,8 @@ pub struct BooleanResult {
     pub repairs: [Option<RepairReport>; 2],
 }
 
-/// Repairs `mesh` when asked, then refuses it unless it is a valid solid.
+/// Repairs `mesh` when asked, then refuses it unless it is a valid solid or
+/// has no faces (the empty solid a boolean returns).
 pub(crate) fn prepare(
     mesh: &Mesh,
     context: &str,
@@ -44,7 +45,7 @@ pub(crate) fn prepare(
         (mesh.clone(), None)
     };
     let report = m.validate(0.0)?;
-    if !report.summary.is_solid() {
+    if m.n_faces() > 0 && !report.summary.is_solid() {
         return Err(Error::InvalidMesh {
             context: context.to_string(),
             report: Box::new(report),

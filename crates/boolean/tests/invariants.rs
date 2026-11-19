@@ -523,3 +523,37 @@ fn symmetric_difference_of_overlapping_cubes_is_a_valid_solid() {
     let r = boolean(&m, &c, Op::Union, &BooleanOptions::default());
     assert!(r.is_ok(), "reusing the result failed: {}", r.err().unwrap());
 }
+
+#[test]
+fn an_empty_result_chains_into_further_booleans_and_clips() {
+    let a = fixtures::cube();
+    let empty = run(
+        &a,
+        &fixtures::translated(&a, [5.0, 0.0, 0.0]),
+        Op::Intersection,
+    );
+    assert!(empty.is_empty());
+    for (x, y, op, v) in [
+        (&a, &empty, Op::Union, 1.0),
+        (&empty, &a, Op::Union, 1.0),
+        (&a, &empty, Op::Difference, 1.0),
+        (&a, &empty, Op::SymmetricDifference, 1.0),
+        (&a, &empty, Op::Intersection, 0.0),
+        (&empty, &a, Op::Difference, 0.0),
+        (&empty, &empty, Op::Union, 0.0),
+    ] {
+        let m = run(x, y, op);
+        assert!(validates(&m) && close(volume(&m), v, 1e-12), "{op:?}");
+    }
+    let ground = fixtures::pit_surface(5, 1);
+    let r =
+        wireframes_boolean::clip_by_surface(&empty, &ground, &BooleanOptions::default()).unwrap();
+    assert!(r.below.is_empty() && r.above.is_empty());
+    let e = boolean(
+        &fixtures::open_cube(),
+        &a,
+        Op::Union,
+        &BooleanOptions::default(),
+    );
+    assert!(matches!(e, Err(Error::InvalidMesh { .. })));
+}

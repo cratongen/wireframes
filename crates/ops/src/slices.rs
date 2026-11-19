@@ -88,6 +88,9 @@ pub fn volume_by_elevation(mesh: &Mesh, edges: &[f64]) -> Result<Vec<f64>> {
         )));
     }
     check_closed_oriented(mesh, "volume_by_elevation")?;
+    if mesh.n_faces() == 0 {
+        return Ok(vec![0.0; edges.len() - 1]);
+    }
     let bounds = mesh.bounds().expect("a closed mesh has vertices");
     let faces: Vec<u32> = (0..mesh.n_faces() as u32).collect();
     Ok(edges
@@ -115,6 +118,12 @@ mod tests {
 
     fn all(m: &Mesh) -> Vec<u32> {
         (0..m.n_faces() as u32).collect()
+    }
+
+    #[test]
+    fn the_empty_solid_has_no_volume_per_elevation() {
+        let v = volume_by_elevation(&Mesh::empty(), &[0.0, 1.0, 2.0]).unwrap();
+        assert_eq!(v, [0.0, 0.0]);
     }
 
     #[test]

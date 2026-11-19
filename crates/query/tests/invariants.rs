@@ -513,8 +513,10 @@ fn tiny_positive_block_size_gives_a_fraction_in_range() {
 }
 
 #[test]
-fn empty_mesh_is_not_a_solid() {
-    assert!(SolidIndex::new(&Mesh::empty()).is_err());
+fn empty_mesh_is_the_empty_solid() {
+    let s = SolidIndex::new(&Mesh::empty()).unwrap();
+    assert_eq!(s.locate_all(&[[0.5; 3]]), [Location::Outside]);
+    assert!(SolidIndex::new(&fixtures::open_cube()).is_err());
 }
 
 #[test]

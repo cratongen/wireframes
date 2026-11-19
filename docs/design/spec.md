@@ -915,6 +915,11 @@ pub fn cut_fill(base: &Mesh, design: &Mesh, boundary: Option<&Polylines>) -> Res
 Input checks (booleans and `clip_by_surface`): CRS and unit via `check_same`.
 Without `repair`, each solid input must pass `validate(0.0)` with
 `summary.is_solid()`, else `InvalidMesh { context: "a" | "b" | "solid", report }`.
+A mesh with no faces (the empty result of a boolean) is the empty solid and is
+accepted wherever a solid is: by booleans, `clip_by_surface` (both parts empty),
+`volume` (0), `volume_by_elevation` (zeros) and the solid queries (every point
+outside, every block fraction 0). `validate` still reports it as not closed, so
+`is_solid` stays false for it.
 With `repair`, the input is repaired first, then validated; failing still errors.
 The `surface` of `clip_by_surface` must have no degenerate, duplicate, non-manifold,
 inconsistent, self-intersecting or coplanar-overlap problems (boundary edges allowed).
