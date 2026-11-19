@@ -985,6 +985,182 @@ impl Global {
         joined
     }
 
+    /// Removes each edge-connected run of flat faces and splits the edges of
+    /// the faces around it at the run's vertices, ordered along the axis the
+    /// run spreads most on, so the faces on either side meet edge for edge. A
+    /// face is flat when its rounded corners are collinear, or when the hot
+    /// box of its middle corner meets the segment of the other two; a run is
+    /// removed when one of its faces is collinear or in `seeds` and every
+    /// vertex's wide hot box meets the segment between its two extreme
+    /// vertices.
+    /// A run is put back when the edges then do not pair. Returns how many faces it
+    /// removed.
+    fn zip_flat_runs(&mut self, seeds: &HashSet<usize>) -> usize {
+        let flat = |g: &Global, f: usize| {
+            let c = g.tris[f].map(|i| g.v[i as usize]);
+            if collinear3(c[0], c[1], c[2]) {
+                return true;
+            }
+            let axis = (0..3)
+                .max_by(|&a, &b| {
+                    let spread = |k: usize| {
+                        c.iter().map(|p| p[k]).fold(f64::NEG_INFINITY, f64::max)
+                            - c.iter().map(|p| p[k]).fold(f64::INFINITY, f64::min)
+                    };
+                    spread(a).total_cmp(&spread(b))
+                })
+                .expect("three axes");
+            let mut by = [0usize, 1, 2];
+            by.sort_by(|&a, &b| c[a][axis].total_cmp(&c[b][axis]));
+            let (lo, hi) = hot_box(c[by[1]], &[], false);
+            box_meets(&[c[by[0]], c[by[2]]], lo, hi)
+        };
+        let flats: Vec<usize> = self.live().filter(|&f| flat(self, f)).collect();
+        if flats.is_empty() {
+            return 0;
+        }
+        let mut parent: HashMap<usize, usize> = flats.iter().map(|&f| (f, f)).collect();
+        fn root(parent: &mut HashMap<usize, usize>, mut f: usize) -> usize {
+            while parent[&f] != f {
+                let up = parent[&parent[&f]];
+                parent.insert(f, up);
+                f = up;
+            }
+            f
+        }
+        let mut by_edge: HashMap<(u32, u32), usize> = HashMap::new();
+        for &f in &flats {
+            let t = self.tris[f];
+            for k in 0..3 {
+                let e = ekey(t[k], t[(k + 1) % 3]);
+                if let Some(&g) = by_edge.get(&e) {
+                    let (a, b) = (root(&mut parent, f), root(&mut parent, g));
+                    parent.insert(a.max(b), a.min(b));
+                } else {
+                    by_edge.insert(e, f);
+                }
+            }
+        }
+        let mut runs: HashMap<usize, Vec<usize>> = HashMap::new();
+        for &f in &flats {
+            runs.entry(root(&mut parent, f)).or_default().push(f);
+        }
+        let mut keys: Vec<usize> = runs.keys().copied().collect();
+        keys.sort_unstable();
+        let mut removed = 0;
+        for key in keys {
+            let run = &runs[&key];
+            if run.iter().any(|&f| !self.alive[f]) {
+                continue;
+            }
+            let exact = |g: &Global, f: usize| {
+                let c = g.tris[f].map(|i| g.v[i as usize]);
+                collinear3(c[0], c[1], c[2])
+            };
+            if !run.iter().any(|&f| seeds.contains(&f) || exact(self, f)) {
+                continue;
+            }
+            let mut on: Vec<u32> = run.iter().flat_map(|&f| self.tris[f]).collect();
+            on.sort_unstable();
+            on.dedup();
+            let axis = (0..3)
+                .max_by(|&a, &b| {
+                    let spread = |k: usize| {
+                        let c = on.iter().map(|&i| self.v[i as usize][k]);
+                        c.clone().fold(f64::NEG_INFINITY, f64::max)
+                            - c.fold(f64::INFINITY, f64::min)
+                    };
+                    spread(a).total_cmp(&spread(b))
+                })
+                .expect("three axes");
+            let at = |g: &Global, i: u32| g.v[i as usize][axis];
+            let ends = [
+                *on.iter()
+                    .min_by(|&&p, &&q| at(self, p).total_cmp(&at(self, q)))
+                    .expect("corners"),
+                *on.iter()
+                    .max_by(|&&p, &&q| at(self, p).total_cmp(&at(self, q)))
+                    .expect("corners"),
+            ]
+            .map(|i| self.v[i as usize]);
+            let straight = on.iter().all(|&i| {
+                let (lo, hi) = hot_box(self.v[i as usize], &ends, true);
+                box_meets(&ends, lo, hi)
+            });
+            if !straight {
+                continue;
+            }
+            for &f in run {
+                self.alive[f] = false;
+            }
+            let inside: HashSet<(u32, u32)> = run
+                .iter()
+                .flat_map(|&f| {
+                    let t = self.tris[f];
+                    (0..3).map(move |k| (t[k], t[(k + 1) % 3]))
+                })
+                .collect();
+            let around: Vec<usize> = self
+                .live()
+                .filter(|&h| {
+                    let t = self.tris[h];
+                    (0..3).any(|k| inside.contains(&(t[(k + 1) % 3], t[k])))
+                })
+                .collect();
+            let (mut made, mut killed) = (vec![], vec![]);
+            for h in around {
+                let t = self.tris[h];
+                let Some(k) = (0..3).find(|&k| inside.contains(&(t[(k + 1) % 3], t[k]))) else {
+                    continue;
+                };
+                let (x, y, c) = (t[k], t[(k + 1) % 3], t[(k + 2) % 3]);
+                let (lo, hi) = (at(self, x).min(at(self, y)), at(self, x).max(at(self, y)));
+                let mut mid: Vec<u32> = on
+                    .iter()
+                    .copied()
+                    .filter(|&w| w != x && w != y && lo < at(self, w) && at(self, w) < hi)
+                    .collect();
+                if mid.is_empty() {
+                    continue;
+                }
+                mid.sort_by(|&p, &q| at(self, p).total_cmp(&at(self, q)));
+                if at(self, x) > at(self, y) {
+                    mid.reverse();
+                }
+                self.alive[h] = false;
+                killed.push(h);
+                let mut prev = x;
+                for w in mid.into_iter().chain(std::iter::once(y)) {
+                    self.push([prev, w, c], h);
+                    made.push(self.tris.len() - 1);
+                    prev = w;
+                }
+            }
+            let line: HashSet<u32> = on.iter().copied().collect();
+            let mut count: HashMap<(u32, u32), i32> = HashMap::new();
+            for f in self.live() {
+                let t = self.tris[f];
+                for k in 0..3 {
+                    let (a, b) = (t[k], t[(k + 1) % 3]);
+                    if line.contains(&a) && line.contains(&b) {
+                        *count.entry(ekey(a, b)).or_default() += if a < b { 1 } else { -1 };
+                    }
+                }
+            }
+            if count.values().any(|&n| n != 0) {
+                for f in made {
+                    self.alive[f] = false;
+                }
+                for f in run.iter().copied().chain(killed) {
+                    self.alive[f] = true;
+                }
+                continue;
+            }
+            removed += run.len();
+        }
+        removed
+    }
+
     /// C5 for a face `f` whose corners are collinear: its middle corner, on
     /// the segment of the other two, is inserted on that edge of the face
     /// across it, which leaves `f` with a repeated corner, so it goes.
@@ -1093,8 +1269,17 @@ impl Global {
         if t.iter().any(|&x| copy(x)) {
             return false;
         }
+        let twin = |g2: &Global, n: [u32; 3]| {
+            g2.live().any(|x| {
+                let u = g2.tris[x];
+                (0..3).any(|k| u == [n[k], n[(k + 1) % 3], n[(k + 2) % 3]])
+            })
+        };
         match e {
             None => {
+                if (0..3).any(|k| twin(self, [t[k], t[(k + 1) % 3], h])) {
+                    return false;
+                }
                 self.alive[g] = false;
                 for k in 0..3 {
                     self.push([t[k], t[(k + 1) % 3], h], g);
@@ -1116,7 +1301,11 @@ impl Global {
                 let u = self.tris[g2];
                 let k = (0..3).find(|&k| u[k] == b).expect("runs the edge");
                 let d = u[(k + 2) % 3];
-                if copy(d) {
+                if copy(d)
+                    || [[a, h, c], [h, b, c], [b, h, d], [h, a, d]]
+                        .into_iter()
+                        .any(|n| n[0] != n[2] && n[1] != n[2] && twin(self, n))
+                {
                     return false;
                 }
                 self.alive[g] = false;
@@ -1159,16 +1348,23 @@ pub(crate) struct Rounded {
     pub ends: Vec<Option<u32>>,
 }
 
+/// The removals of flat runs over all shells for `v` vertices and `f` faces
+/// that the loop allows: it counts them and takes none past this.
+fn zip_bound(v: usize, f: usize) -> usize {
+    f.saturating_add(v.saturating_mul(f).saturating_mul(4))
+}
+
 /// The bound on the operations over all shells for `v` vertices and `f`
 /// faces: at most `i = v f` insertions (one per exact point and original
 /// face), each adding at most two faces; merges, collapses, cancellations and
 /// removals each remove a vertex or a face of the at most `v + f + 2 i` there
-/// ever are; and one round per insertion or collapse plus the last.
+/// ever are; at most [`zip_bound`] removals of flat runs, a count the loop
+/// enforces; and one round per insertion, collapse or removal plus the last.
 fn global_step_bound(v: usize, f: usize) -> usize {
     let i = v.saturating_mul(f);
-    i.saturating_mul(5)
+    i.saturating_mul(9)
         .saturating_add(v.saturating_mul(3))
-        .saturating_add(f)
+        .saturating_add(f.saturating_mul(2))
         .saturating_add(1)
 }
 
@@ -1309,6 +1505,7 @@ fn run(d: &Draft, cap: bool) -> Result<(Rounded, bool)> {
     if cap && d.closed && !is_solid(&g)? {
         let before = (g.clone(), report.clone());
         let mut done: HashSet<(u32, u32)> = HashSet::new();
+        let (mut zips, zip_limit) = (0usize, zip_bound(g.v.len(), g.tris.len()));
         loop {
             let merged = g.merge_equal();
             report.merged_vertices += merged;
@@ -1324,6 +1521,22 @@ fn run(d: &Draft, cap: bool) -> Result<(Rounded, bool)> {
             let found = m.validate(0.0)?;
             if found.summary.is_solid() {
                 break;
+            }
+            if zips < zip_limit {
+                let seeds: HashSet<usize> = found
+                    .problems
+                    .iter()
+                    .flat_map(|p| [p.face, p.other])
+                    .flatten()
+                    .map(|f| ids[f as usize])
+                    .collect();
+                let zipped = g.zip_flat_runs(&seeds);
+                if zipped > 0 {
+                    zips += 1;
+                    report.cancelled_faces += zipped;
+                    report.steps += 1;
+                    continue;
+                }
             }
             let (mut inserted, mut collapsed) = g.insert_hot_points(&found, &ids, &mut done, false);
             if inserted + collapsed == 0 {

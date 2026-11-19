@@ -419,7 +419,26 @@ Measured on the reduced cases and on the 648 inclined splits of `sphere(2)`
   face across it), which is the cleanup's flip. No insertion or collapse may put two
   copies of one exact point on one face. Two opposite faces on the same three
   coordinates whose corners differ only by such copies have the copies joined, so
-  they cancel (C4). The loop validates a mesh of the vertices its live faces use.
+  they cancel (C4). No insertion may repeat a live face with the same
+  orientation. The loop validates a mesh of the vertices its live faces use.
+- **Flat runs.** The property test of chains of twelve unions at UTM coordinates
+  found lines of rounded points: a crosscut wall crossing a drive wall that
+  earlier unions left planar only to rounding meets it along a vertical line in
+  exact arithmetic only to within sub-ulp kinks, so its crossings round to points
+  whose x differ by up to two ulps either side. Faces of the crosscut wall across
+  three such points are flat or nearly so, and inserting the middle corner of one
+  flat face into another flat face makes no progress. A run of such faces has no
+  area to rounding, so it is removed whole and the faces around it are split at
+  its vertices along the line (ordered by the axis the run spreads most on), so
+  the two sides meet edge for edge. A run is taken only when a face of it is
+  collinear or a problem face, and only when every vertex lies within the wide
+  reach of the segment between the run's extreme vertices; a run along a curve,
+  such as thin faces around an icosphere's cap, would otherwise be split in the
+  wrong order. It is put back when the edges along the line do not pair. The
+  faces a removal makes can themselves be flat by the hot-box test (a needle
+  between two points an ulp apart), so no potential argument bounds removals;
+  the loop counts them and takes none past `f + 4 v f` (`zip_bound`), which is
+  part of `step_bound`.
 
 ## 8. Conforming inputs that agree to rounding
 

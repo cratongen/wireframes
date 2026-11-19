@@ -197,10 +197,17 @@ No other dependency without a line in this table.
    axis; a round where it finds nothing retries with twice the sum of the rounding
    radii (half-ulp vector lengths) of `h` and of the face's corners on every axis,
    the reach the separation lemma allows. Flat faces `validate` reports lose their
-   middle corner to the longest edge the same way (C5 on the face across it), no
-   operation puts two copies of one exact point on one face, and opposite faces on
-   the same coordinates whose corners differ only by such copies have them joined
-   and cancel. Each
+   middle corner to the longest edge the same way (C5 on the face across it). A
+   run of flat faces (rounded corners collinear, or the middle corner's hot box
+   meeting the segment of the other two) joined by edges, seeded by a collinear
+   face or a problem face, whose vertices all lie within the wide reach of the
+   segment between its two extreme vertices, is removed whole, and the edges of
+   the faces around it are split at its vertices in order along that segment, so
+   the two sides meet edge for edge; it is put back when the edges along the
+   segment then do not pair. No operation puts two copies of one exact point on
+   one face or repeats a live face with the same orientation, and opposite faces
+   on the same coordinates whose corners differ only by such copies have them
+   joined and cancel. `cancelled_faces` counts the faces of removed runs too. Each
    (exact point, original face) pair is inserted at most once, and no vertex ends
    more than four ulps of its largest coordinate, on any axis, from the exact
    position of any exact vertex that ends at it (`move_bound`), in the per-shell cleanup as well. For a result these
