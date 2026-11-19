@@ -85,7 +85,10 @@ fn none_in(path: &std::path::Path, what: &str) -> PyErr {
 /// Raises
 /// ------
 /// InvalidInput
-///     When the file holds no mesh.
+///     When the file holds no mesh, or `length_unit` disagrees with the unit
+///     the file declares.
+/// FileError
+///     When the file cannot be read or its content is malformed.
 ///
 /// Examples
 /// --------
@@ -114,6 +117,14 @@ fn read_mesh(
 ///     File to read; see ``wireframes.read`` for the formats.
 /// crs, length_unit : str, optional
 ///     Labels of the result; None takes the unit the file declares.
+///
+/// Raises
+/// ------
+/// InvalidInput
+///     When the file holds no polylines, or `length_unit` disagrees with the unit
+///     the file declares.
+/// FileError
+///     When the file cannot be read or its content is malformed.
 ///
 /// Examples
 /// --------
@@ -144,6 +155,14 @@ fn read_polylines(
 ///     File to read; see ``wireframes.read`` for the formats.
 /// crs, length_unit : str, optional
 ///     Labels of the result; None takes the unit the file declares.
+///
+/// Raises
+/// ------
+/// InvalidInput
+///     When the file holds no points, or `length_unit` disagrees with the unit
+///     the file declares.
+/// FileError
+///     When the file cannot be read or its content is malformed.
 ///
 /// Examples
 /// --------

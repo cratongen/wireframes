@@ -188,6 +188,9 @@ impl PyMesh {
 
     /// Signed enclosed volume, positive for an outward solid.
     ///
+    /// Self-intersections are not checked: shells that overlap count the
+    /// overlap twice, so check ``is_solid`` before reporting a volume.
+    ///
     /// Raises
     /// ------
     /// InvalidMesh
@@ -320,13 +323,16 @@ impl PyMesh {
     /// A repaired copy and the report of every change made.
     ///
     /// Steps run in order: weld, remove degenerate faces, remove duplicate
-    /// faces, remove unused vertices, orient, fill holes.
-    /// Self-intersections are never repaired.
+    /// faces, remove unused vertices, orient, fill holes. The input is not
+    /// modified. Self-intersections and coplanar overlaps are never repaired,
+    /// and no vertex moves except by welding. Repairing the output again
+    /// changes nothing.
     ///
     /// Parameters
     /// ----------
     /// weld : float or None
-    ///     Merge vertices within this distance (transitively); 0 merges equal
+    ///     Merge vertices within this distance (transitively), keeping the
+    ///     earliest vertex of each group and its attributes; 0 merges equal
     ///     coordinates, None skips welding. Closed shells that touch along an
     ///     edge or at a vertex keep their own vertices there: a vertex they
     ///     share is split (``vertex_split`` actions).
@@ -338,11 +344,21 @@ impl PyMesh {
     /// orient : bool
     ///     Make winding consistent and outward by nesting parity.
     /// fill_holes : {"fan", "min_area"} or None
-    ///     Close boundary loops.
+    ///     Close boundary loops: ``"fan"`` from the first vertex of each loop,
+    ///     ``"min_area"`` by the triangulation of least area. Added faces go
+    ///     last, with null face columns. None leaves holes open and counts
+    ///     them in ``holes_left``.
     ///
     /// Returns
     /// -------
     /// tuple of (Mesh, RepairReport)
+    ///     The repaired copy, and every change with ``vertex_map`` and
+    ///     ``face_map`` from input to output.
+    ///
+    /// Raises
+    /// ------
+    /// InvalidInput
+    ///     When `weld` is negative or not finite, or `fill_holes` is unknown.
     ///
     /// Examples
     /// --------

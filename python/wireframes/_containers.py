@@ -67,6 +67,17 @@ def read(path: str | PathLike[str], *, crs: str | None = None, length_unit: str 
     InvalidInput
         When `length_unit` disagrees with the unit the file declares.
 
+    Notes
+    -----
+    Readers never repair or rescale what they read. A DXF is read from model space only: paper space entities
+    and ``INSERT`` block references are skipped and counted in `warnings`. A ``3DFACE`` whose fourth corner
+    repeats the third is a triangle, a quad is split into two with a face column ``polygon``, and corners stored
+    per face are merged only where their coordinates are equal, so touching solids share their contact vertices.
+    The entity ``layer`` and ``color`` become columns. A Datamine pair may use ``,`` or ``;`` between fields
+    (with ``,`` as the decimal mark under ``;``), a row of field types under the header, gaps in ``PID`` and
+    ``-1.0E30`` for an absent value, which reads as null. Columns after ``PID1 PID2 PID3`` become face columns,
+    text when any value is quoted or not numeric.
+
     Examples
     --------
     >>> import pathlib, tempfile

@@ -121,16 +121,32 @@ impl PyMeshReport {
 impl PyMesh {
     /// Every topological and geometric problem of the mesh, decided exactly.
     ///
+    /// The mesh is a solid when it is closed, manifold, consistently and
+    /// outward wound (a shell inside another winds inward), and free of
+    /// degenerate and duplicate faces, duplicate vertices, self-intersections
+    /// and coplanar overlaps. Closed shells may touch each other, and a shell
+    /// may touch itself, along exactly coincident edges or at exactly
+    /// coincident vertices; the summary counts those contacts as information.
+    /// Shells that share part of a face, or meet on part of an edge, overlap
+    /// and are reported.
+    ///
     /// Parameters
     /// ----------
     /// tolerance : float
     ///     Distance within which two vertices count as duplicates; 0 means
-    ///     equal coordinates.
+    ///     equal coordinates. Exact copies of a vertex where closed shells
+    ///     touch are not duplicates. Every other check is exact and ignores
+    ///     `tolerance`.
     ///
     /// Returns
     /// -------
     /// MeshReport
     ///     Counts and every problem.
+    ///
+    /// Raises
+    /// ------
+    /// InvalidInput
+    ///     When `tolerance` is negative or not finite.
     ///
     /// Examples
     /// --------

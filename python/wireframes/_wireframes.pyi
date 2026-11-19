@@ -157,7 +157,7 @@ class Mesh:
         """Total triangle area."""
     @property
     def volume(self) -> float:
-        """Signed enclosed volume; raises InvalidMesh unless closed and consistently wound."""
+        """Signed enclosed volume; raises InvalidMesh unless closed and consistently wound; overlaps count twice."""
     @property
     def centroid(self) -> Floats:
         """Volume centroid, under the same rule as ``volume``."""
@@ -210,7 +210,7 @@ class Mesh:
     def to_length_unit(self, unit: str) -> Mesh:
         """A copy rescaled to `unit`."""
     def validate(self, *, tolerance: float = 0.0) -> MeshReport:
-        """Every topological and geometric problem, decided exactly."""
+        """Every topological and geometric problem, decided exactly; touching closed shells are not problems."""
     def repair(
         self,
         *,
@@ -222,7 +222,10 @@ class Mesh:
         fill_holes: Literal["fan", "min_area"] | None = None,
         weld_touching_shells: bool = False,
     ) -> tuple[Mesh, RepairReport]:
-        """A repaired copy and the report of every change; touching closed shells keep their own vertices."""
+        """A repaired copy and the report of every change; touching closed shells keep their own vertices.
+
+        Self-intersections are never repaired and added faces have null face columns.
+        """
     def components(self) -> list[Mesh]:
         """One mesh per edge-connected component; touching shells are separate components."""
     def component_labels(self) -> Ints:
