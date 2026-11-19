@@ -15,11 +15,28 @@ pub struct DtmOptions<'a> {
     pub max_edge: Option<f64>,
 }
 
-/// Merges plan positions closer than `spacing` (exact equality at 0) into the earliest.
+/// An input vertex: `what`, then the part for strings, then the index.
+#[derive(Clone, Copy)]
+struct Src(&'static str, Option<usize>, usize);
+
+impl std::fmt::Display for Src {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self.1 {
+            None => write!(f, "{}[{}]", self.0, self.2),
+            Some(part) => write!(f, "{} part {part} vertex {}", self.0, self.2),
+        }
+    }
+}
+
+/// Merges plan positions closer than `spacing` into the earliest. At
+/// `spacing = 0` only exact 3D duplicates merge: two heights at one plan
+/// position are an error, never a silent choice.
 struct Merger {
     spacing: f64,
     origin: [f64; 2],
     kept: Vec<[f64; 3]>,
+    /// Where each kept point came from, for error messages.
+    source: Vec<Src>,
     grid: HashMap<(u64, u64), Vec<u32>>,
 }
 
@@ -40,7 +57,7 @@ impl Merger {
         }
     }
 
-    fn add(&mut self, p: [f64; 3]) -> u32 {
+    fn add(&mut self, p: [f64; 3], source: Src) -> Result<u32> {
         let [cx, cy] = self.cell(p);
         let steps: &[f64] = if self.spacing > 0.0 {
             &[-1.0, 0.0, 1.0]
@@ -67,12 +84,23 @@ impl Merger {
                 found = Some(i);
             }
         }
-        found.unwrap_or_else(|| {
-            let i = self.kept.len() as u32;
-            self.kept.push(p);
-            self.grid.entry(cell_key(cx, cy)).or_default().push(i);
-            i
-        })
+        if let Some(i) = found {
+            let q = self.kept[i as usize];
+            if self.spacing == 0.0 && p[2] != q[2] {
+                return Err(Error::invalid(format!(
+                    "{} and {} share the plan position ({}, {}) with different z ({} and {}): \
+                     a dtm holds one height per position; remove one, or pass min_spacing > 0 \
+                     to keep the earlier",
+                    self.source[i as usize], source, p[0], p[1], q[2], p[2]
+                )));
+            }
+            return Ok(i);
+        }
+        let i = self.kept.len() as u32;
+        self.kept.push(p);
+        self.source.push(source);
+        self.grid.entry(cell_key(cx, cy)).or_default().push(i);
+        Ok(i)
     }
 }
 
@@ -91,16 +119,19 @@ pub fn dtm(points: &[[f64; 3]], opts: &DtmOptions) -> Result<Mesh> {
         spacing,
         origin: points.first().map_or([0.0; 2], |p| [p[0], p[1]]),
         kept: vec![],
+        source: vec![],
         grid: HashMap::new(),
     };
-    for &p in points {
-        merger.add(p);
+    for (i, &p) in points.iter().enumerate() {
+        merger.add(p, Src("points", None, i))?;
     }
     let n_points = merger.kept.len();
     let mut strings: Vec<(Vec<u32>, bool)> = vec![];
     if let Some(b) = opts.breaklines {
         for part in 0..b.n_parts() {
-            let ids = b.part(part).iter().map(|&p| merger.add(p)).collect();
+            let ids = (b.part(part).iter().enumerate())
+                .map(|(k, &p)| merger.add(p, Src("breaklines", Some(part), k)))
+                .collect::<Result<_>>()?;
             strings.push((ids, b.closed()[part]));
         }
     }
@@ -114,7 +145,9 @@ pub fn dtm(points: &[[f64; 3]], opts: &DtmOptions) -> Result<Mesh> {
             }
             let ring = b.part(part);
             rings2.push(ring.iter().map(|p| [p[0], p[1]]).collect());
-            let ids = ring.iter().map(|&p| merger.add(p)).collect();
+            let ids = (ring.iter().enumerate())
+                .map(|(k, &p)| merger.add(p, Src("boundary", Some(part), k)))
+                .collect::<Result<_>>()?;
             strings.push((ids, true));
         }
     }
@@ -338,9 +371,15 @@ mod tests {
         #[test]
         fn duplicates_merge_into_the_earlier_point(seed in 0u64..10_000, n in 3usize..60) {
             let mut pts = random_points(seed, n, [0.0; 3], [1.0; 3]);
-            let dup: Vec<[f64; 3]> = pts.iter().map(|p| [p[0], p[1], p[2] + 1.0]).collect();
-            pts.extend(dup);
+            pts.extend(pts.clone());
             let m = dtm(&pts, &DtmOptions::default()).unwrap();
+            prop_assert_eq!(m.vertices(), &pts[..n]);
+            let k = (seed as usize) % n;
+            pts[n + k][2] += 1.0;
+            let e = dtm(&pts, &DtmOptions::default()).unwrap_err().to_string();
+            let want = format!("points[{k}] and points[{}] share the plan position", n + k);
+            prop_assert!(e.contains(&want), "{}", e);
+            let m = dtm(&pts, &DtmOptions { min_spacing: 1e-9, ..Default::default() }).unwrap();
             prop_assert_eq!(m.vertices(), &pts[..n]);
         }
     }
@@ -404,6 +443,29 @@ mod tests {
             })
             .sum();
         assert!((area - 60.0).abs() < 1e-9, "area {area}");
+    }
+
+    #[test]
+    fn a_breakline_vertex_on_a_spot_height_of_another_z_is_refused() {
+        let mut pts = vec![[0.0, 0.0, 300.0], [10.0, 0.0, 300.0], [0.0, 10.0, 300.0]];
+        let crest = Polylines::from_parts(
+            vec![vec![[2.0, 2.0, 305.0], [8.0, 1.0, 305.0]]],
+            vec![false],
+            None,
+        )
+        .unwrap();
+        let opts = DtmOptions {
+            breaklines: Some(&crest),
+            ..Default::default()
+        };
+        pts.push([2.0, 2.0, 305.0]);
+        assert_eq!(dtm(&pts, &opts).unwrap().n_vertices(), 5);
+        pts[3][2] = 300.0;
+        let e = dtm(&pts, &opts).unwrap_err().to_string();
+        assert!(
+            e.contains("points[3] and breaklines part 0 vertex 0 share the plan position (2, 2)"),
+            "{e}"
+        );
     }
 
     #[test]

@@ -17,8 +17,10 @@ use crate::query::finite_points;
 /// boundary : Polylines, optional
 ///     Closed rings (even-odd); triangles outside are dropped.
 /// min_spacing : float
-///     Points closer than this in plan to an earlier point are dropped; 0
-///     drops only exact duplicates.
+///     Points closer than this in plan to an earlier point are dropped. At 0
+///     only exact 3D duplicates are dropped, and two points (spot heights,
+///     breakline or boundary vertices) at one plan position with different z
+///     raise ``InvalidInput``.
 /// max_edge : float, optional
 ///     Drop boundary triangles with a plan edge longer than this, repeatedly.
 ///

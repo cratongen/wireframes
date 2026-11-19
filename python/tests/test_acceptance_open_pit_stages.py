@@ -440,7 +440,6 @@ def test_an_empty_pushback_chains_into_further_operations():
     assert (pit & empty).n_faces == 0 and (empty - pit).n_faces == 0
 
 
-@pytest.mark.skip(reason="acceptance: dtm silently drops a conflicting height at the same plan position")
 def test_dtm_never_silently_drops_a_conflicting_height():
     corners = np.array([[0.0, 0.0, 300.0], [10.0, 0.0, 300.0], [0.0, 10.0, 300.0], [10.0, 10.0, 300.0]])
     crest = wf.Polylines([O + [[2.0, 2.0, 305.0], [8.0, 8.0, 305.0]]], closed=[False])

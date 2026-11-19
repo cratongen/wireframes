@@ -1144,6 +1144,9 @@ Semantics:
   constraints split at the plan intersection with z interpolated along the
   breakline that is inserted first (feature order); points closer than
   `min_spacing` in plan to an earlier point are dropped, keeping the earlier one;
+  at `min_spacing = 0` only exact 3D duplicates merge, and two input vertices
+  (points, then breakline vertices, then boundary vertices) at one plan position
+  with different z give `InvalidInput` naming both, never a silent choice;
   faces wind counter-clockwise in plan (normals up). Errors: fewer than 3 points
   not all collinear in plan, non-finite input.
 - `triangulate_polygons`: per feature, best-fit plane (Newell normal), CDT of its
