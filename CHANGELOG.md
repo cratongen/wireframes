@@ -61,6 +61,12 @@ All notable changes to wireframes are listed here. The format follows
 ### Known issues
 
 - A boolean result shell that touches itself raises `InvalidInput`.
+- A boolean result can fail validation after its exact vertices are rounded to
+  f64: two distinct exact points that round to the same float give a
+  degenerate face. Seen in chains of grid-box booleans and in boxes overlapping
+  by 1e-6 at UTM coordinates.
+- A cavity that touches its outer shell along an edge is refused as a
+  self-intersection, while one that touches it at a vertex is a valid contact.
 - A split whose section is narrower than about 1e-154 loses its cap.
 - `loft` does not branch, `extrude` has no path sweep, and `offset` is not a
   Minkowski offset.
