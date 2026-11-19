@@ -233,24 +233,26 @@ tonnage without warning. `wireframes` enforces three rules:
 
 ## Performance
 
-No performance numbers are stated before the code exists. Every number in this
-table will come from reproducible benchmarks we run on the same machine and in
-the same session using `criterion` (Rust) and interleaved multi-round timings
-reporting medians (Python), with system load recorded, comparing `wireframes` against
-`trimesh`, `PyVista`/VTK, and `Manifold`. Criterion benches exist for I/O
-(`crates/io/benches/io.rs`, a 500k-triangle pit surface), booleans, slicing and
-validation (`crates/boolean/benches/booleans.rs`, on 5k- and 20k-triangle spheres,
-smaller than the datasets below) and queries (`crates/query/benches`). No timing has
-been recorded here yet:
+`mise run bench` runs the criterion benches and `mise run bench:compare` times the
+same kernels from Python against trimesh, manifold3d and scipy, interleaving rounds
+and reporting medians with the load average. The table below gives Python medians of
+5 rounds in milliseconds, measured on 2026-11-19 on a 13th Gen Intel Core i9-13980HX
+(32 logical CPUs, wireframes on 32 threads) at commit `5d5ab30`. The
+[performance page](docs/performance.md) lists the commands, versions, ranges, load,
+the criterion results for every kernel and reader, and what each column times.
 
 | Operation | Dataset | wireframes | trimesh | PyVista / VTK | Manifold |
 |---|---|---|---|---|---|
-| STL / PLY binary read & write | 500k-triangle pit shell | not measured | not measured | not measured | not measured |
-| Mesh validation (`validate`) | 250k-triangle geological solid | not measured | not measured | not measured | not measured |
-| Exact boolean (`union`, `difference`) | Two 50k-triangle intersecting solids | not measured | not measured | not measured | not measured |
-| Plane slicing (`slice_by_plane`) | 100k-triangle solid across 50 sections | not measured | not measured | not measured | not measured |
-| Point-in-solid (`contains`) | 1M block centroids in 50k-triangle solid | not measured | not measured | not measured | not measured |
-| Exact block fraction (`block_fraction`) | 250k blocks intersecting a wireframe | not measured | not measured | not measured | not measured |
+| STL binary write, read | 100k-triangle torus | 5.21, 8.23 | 2.64, 3.07 | not measured | n/a |
+| PLY binary write, read | 100k-triangle torus | 1.35, 3.13 | 1.03, 0.684 | not measured | n/a |
+| Mesh validation (`validate`) | 100k-triangle torus | 117 | 43.3 (`is_volume`, no self-intersection test) | not measured | 19.3 (construction, no self-intersection test) |
+| Exact boolean (`union`) | Two 100k-triangle tori | 941 | 45.6 (Manifold engine) | not measured | 17.2 |
+| Exact boolean (`difference`) | Two 100k-triangle tori | 1049 | 46.2 (Manifold engine) | not measured | 15.2 |
+| Plane slicing (`slice_by_plane`) | 100k-triangle torus across 50 sections | 84.5 | 123 | not measured | 20.0 |
+| Point-in-solid (`contains`), index built in the call | 1e5 points in a 100k-triangle torus | 200 | 52373 | not measured | n/a |
+| Signed distance, index built in the call | 1e5 points, 100k-triangle torus | 221 | 47672 | not measured | n/a |
+| Exact block fraction (`block_fraction`) | 100 x 100 x 50 blocks, 100k-triangle torus | 288 | n/a | not measured | n/a |
+| DTM (`dtm`) | 1e5 points | 61.4 | n/a (scipy `Delaunay`: 254) | not measured | n/a |
 
 ## License
 

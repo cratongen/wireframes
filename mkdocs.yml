@@ -32,6 +32,7 @@ nav:
       - Queries: guide/queries.md
       - Construction: guide/construction.md
       - Plotting: guide/plotting.md
+  - Performance: performance.md
   - Examples:
       - Meshes, strings, points and tables: examples/00-basics/README.md
       - Reading and writing files: examples/01-files/README.md
