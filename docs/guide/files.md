@@ -35,16 +35,48 @@ Options of `write`:
 - `zlib=True` compresses VTU arrays.
 - `skip_unsupported_columns=True` leaves out columns the format cannot store; without it they raise.
 
-A DXF reads model space only: paper space entities (title blocks, viewports) are skipped and counted in
-`warnings`, and so is the smoothing of a MESH, whose level-0 cage is what you get. A Datamine column reads
-as text when any value is quoted, so the writer quotes every text value and codes such as `"007"` come back
-as text.
+## Files from other packages
 
-A `length_unit` argument that disagrees with the unit a DXF declares raises `InvalidInput`. Closed formats
+Readers never repair or rescale what they read. Check `warnings`, then run `validate` on the mesh before you
+measure it; [Measure, validate and repair](measure-repair.md) describes the report.
+
+A DXF reads model space only. Paper space entities (title blocks, viewports) and `INSERT` block references are
+skipped and counted in `warnings`, and so is the smoothing of a MESH, whose level-0 cage is what you get. A
+`3DFACE` whose fourth corner repeats the third is a triangle; a true quad becomes two triangles with a face
+column `polygon`. Formats that store corners per face (`3DFACE`, STL) are joined into a mesh by merging corners
+with equal coordinates, so touching solids share their contact vertices, and corners a few millimetres apart
+stay apart and show in `validate` as boundary edges. A DXF without a `HEADER` declares no unit: pass
+`length_unit`.
+
+A Datamine pair may use `,` or `;` between fields, with `,` as the decimal mark under `;`. The reader accepts
+Windows line ends, a trailing delimiter, a row of field types under the header, gaps in `PID` and `-1.0E30` for
+an absent value, which reads as null. Columns after `PID1 PID2 PID3` become face columns; a column reads as
+text when any value is quoted or not numeric, so the writer quotes every text value and codes such as `"007"`
+come back as text. The writer always uses `,` and `.`, and numbers `PID` from 1 in vertex order.
+
+A truncated DXF (no `0`/`EOF` group), a triangle that names a `PID` missing from the point file, and a
+non-finite coordinate raise `FileError` with the file and line. A `length_unit` argument that disagrees with
+the unit a DXF declares raises `InvalidInput`; convert with `to_length_unit` after reading. Closed formats
 (DWG, binary Datamine `.dm`) are out of scope: export DXF or a CSV pair from the source package.
 
-## Example
+## Keeping attributes across formats
+
+| Target | Text columns | Numeric columns | Nulls |
+|---|---|---|---|
+| Datamine pair | kept | kept, read back as float | kept (`-1.0E30`) |
+| DXF | `layer` only | `color` only | none |
+| VTK, VTU, PLY | no | kept | kept (NaN or a `_valid` array) |
+| OBJ | `object`, `group` | no | none |
+| STL | no | no | none |
+
+`write` raises `InvalidInput` naming a column the format cannot store. Copy what you need into a column it
+does store, for example `mesh.with_face_column("layer", mesh["ZONE"])` before writing DXF, and pass
+`skip_unsupported_columns=True` to drop the rest on purpose.
+
+## Examples
 
 ![Orebody read back from a Datamine pair](../examples/01-files/files.png)
 
-The full example, with the output of each step: [example 01](../examples/01-files/README.md).
+The full examples, with the output of each step: [example 01](../examples/01-files/README.md) writes and reads
+every format, and [example 08](../examples/08-files-repair/README.md) reads a Datamine pair and a DXF as other
+packages write them, repairs both and converts them while keeping their attributes.
