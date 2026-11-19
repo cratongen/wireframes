@@ -417,7 +417,6 @@ def test_union_and_difference_of_previous_pit_and_pushback_pieces():
         assert m.is_solid and close(m.volume, v, rel=1e-9)
 
 
-@pytest.mark.skip(reason="acceptance: a shell beyond the plan extent of the surface is put below it")
 def test_dump_beyond_the_topography_is_not_called_below_it():
     c = np.array([[-20.0, -20.0], [20.0, -20.0], [20.0, 20.0], [-20.0, 20.0]])
     ground = wf.dtm(np.column_stack([c, np.zeros(4)]))

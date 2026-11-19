@@ -268,6 +268,13 @@ impl PyMesh {
     ///     face attributes. A surface that misses the solid gives the whole
     ///     solid on one side and an empty mesh on the other.
     ///
+    /// Raises
+    /// ------
+    /// InvalidInput
+    ///     When the surface ends inside the solid, or when a part of the solid
+    ///     lies beyond the surface's extent (no line along x, y or z through
+    ///     it meets the surface), so it is neither above nor below.
+    ///
     /// Examples
     /// --------
     /// >>> m = wf.datasets.box([0, 0, 0], [2, 2, 2])

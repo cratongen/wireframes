@@ -98,6 +98,35 @@ fn clip_surface_that_misses() {
 }
 
 #[test]
+fn clip_refuses_a_solid_beyond_the_surface_extent() {
+    let s = sheet(3, -1.0, 2.0, |_, _| 0.0);
+    for z in [50.0, -50.0] {
+        let v: Vec<[f64; 3]> = fixtures::cube()
+            .vertices()
+            .iter()
+            .map(|p| [p[0] + 100.0, p[1], p[2] + z])
+            .collect();
+        let far = fixtures::cube().with_vertices(v).unwrap();
+        let e = clip_by_surface(&far, &s, &BooleanOptions::default())
+            .err()
+            .unwrap();
+        assert!(e.to_string().contains("does not reach"), "{e}");
+    }
+    let v: Vec<[f64; 3]> = fixtures::cube()
+        .vertices()
+        .iter()
+        .map(|p| [p[0] + 0.25, p[1], p[2] + 3.0])
+        .collect();
+    let r = clip_by_surface(
+        &fixtures::cube().with_vertices(v).unwrap(),
+        &s,
+        &BooleanOptions::default(),
+    )
+    .unwrap();
+    assert!(close(volume(&r.above), 1.0, 1e-12) && r.below.is_empty());
+}
+
+#[test]
 fn clip_refuses_a_surface_ending_inside() {
     let cube = fixtures::cube();
     let s = sheet(3, 0.25, 0.75, |_, _| 0.5);

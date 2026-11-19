@@ -1,10 +1,11 @@
-use wireframes_core::predicates::Sign;
+use wireframes_core::predicates::{Sign, kept_axes};
 use wireframes_core::{Error, Mesh, Result, units};
 use wireframes_ops::{RepairOptions, RepairReport, repair};
 
 use crate::BooleanOptions;
 use crate::arrangement;
 use crate::classify::{self, Sample, Target};
+use crate::hp::Pt;
 use crate::ops::{Piece, assemble, build_mesh, is_closed_result, prepare, shells};
 
 pub struct ClipResult {
@@ -37,6 +38,34 @@ fn prepare_surface(surface: &Mesh, fix: bool) -> Result<(Mesh, Option<RepairRepo
         });
     }
     Ok((m, r))
+}
+
+/// Side of the surface holding a sample, from the nearest crossing on the
+/// sample's axis line, then on the other axis lines through an explicit sample.
+/// A sample whose lines all miss the surface lies beyond its extent and has no
+/// side.
+fn ray_side(surface: &Target, sm: Sample) -> Result<Option<bool>> {
+    let mut lines = vec![sm];
+    if let Some(q) = lines[0].p.explicit() {
+        lines.extend([0, 1].map(|axis| {
+            let (i, j) = kept_axes(axis);
+            Sample {
+                p: Pt::E(q),
+                axis,
+                uv: [q[i], q[j]],
+            }
+        }));
+    }
+    for sm in &lines {
+        let (up, down) = surface.crossings(sm)?;
+        if let Some(h) = surface.nearest(sm, &up, true) {
+            return Ok(Some(up[h].facing != Sign::Positive));
+        }
+        if let Some(h) = surface.nearest(sm, &down, false) {
+            return Ok(Some(down[h].facing == Sign::Positive));
+        }
+    }
+    Ok(None)
 }
 
 fn ekey(a: u32, b: u32) -> (u32, u32) {
@@ -72,7 +101,7 @@ pub fn clip_by_surface(solid: &Mesh, surface: &Mesh, opts: &BooleanOptions) -> R
             .collect(),
     );
 
-    let mut above_patch = vec![false; p.members.len()];
+    let mut above_patch = vec![None; p.members.len()];
     let mut cap_patch = vec![false; p.members.len()];
     for (k, members) in p.members.iter().enumerate() {
         let m = classify::mesh_of(&arr, &arr.subs[members[0] as usize]);
@@ -81,21 +110,12 @@ pub fn clip_by_surface(solid: &Mesh, surface: &Mesh, opts: &BooleanOptions) -> R
             continue;
         }
         above_patch[k] = match classify::curve_side(&arr, &p, members) {
-            Some(above) => above,
-            None => {
-                let sm: Sample = classify::sample(&arr, members)?;
-                let (up, down) = surface_target.crossings(&sm)?;
-                if let Some(h) = surface_target.nearest(&sm, &up, true) {
-                    up[h].facing != Sign::Positive
-                } else if let Some(h) = surface_target.nearest(&sm, &down, false) {
-                    down[h].facing == Sign::Positive
-                } else {
-                    false
-                }
-            }
+            Some(above) => Some(above),
+            None => ray_side(&surface_target, classify::sample(&arr, members)?)?,
         };
     }
 
+    let mut beyond = false;
     let (mut below, mut above): (Piece, Piece) = (vec![], vec![]);
     for (i, s) in arr.subs.iter().enumerate() {
         let i = i as u32;
@@ -103,13 +123,11 @@ pub fn clip_by_surface(solid: &Mesh, surface: &Mesh, opts: &BooleanOptions) -> R
         match (m, p.on[i as usize]) {
             (0, Some(true)) => below.push((i, false)),
             (0, Some(false)) => above.push((i, false)),
-            (0, None) => {
-                if above_patch[p.of[i as usize] as usize] {
-                    above.push((i, false));
-                } else {
-                    below.push((i, false));
-                }
-            }
+            (0, None) => match above_patch[p.of[i as usize] as usize] {
+                Some(true) => above.push((i, false)),
+                Some(false) => below.push((i, false)),
+                None => beyond = true,
+            },
             (_, None) if cap_patch[p.of[i as usize] as usize] => {
                 for e in 0..3 {
                     let k = ekey(s.v[e], s.v[(e + 1) % 3]);
@@ -122,6 +140,12 @@ pub fn clip_by_surface(solid: &Mesh, surface: &Mesh, opts: &BooleanOptions) -> R
             }
             _ => {}
         }
+    }
+    if beyond {
+        return Err(Error::invalid(
+            "surface does not reach part of the solid: no line along x, y or z through it meets \
+             the surface, so it is neither above nor below; extend the surface past the solid",
+        ));
     }
     let mut out = vec![];
     for piece in [below, above] {

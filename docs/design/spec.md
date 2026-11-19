@@ -982,7 +982,12 @@ the surface inside the solid (cap faces carry the surface's face attributes; the
 boundary edge of the surface has a point strictly inside the solid,
 `InvalidInput("surface does not cut through the solid")`. A surface that misses
 the solid returns the whole solid on the side given by the exact classification of
-one solid vertex, and an empty mesh on the other.
+one solid vertex, and an empty mesh on the other. A part of the solid that the
+surface does not cut is classified by the nearest surface crossing on the line
+through one of its points along z, then x, then y (x and y only when the point is
+an input vertex). When none of those lines meets the surface, the part lies
+beyond the surface's extent and has no side: `InvalidInput("surface does not reach
+part of the solid ...")`, never a guess.
 
 `split_by_plane`: returns `(negative, positive)` where positive means
 `(p - origin) . normal > 0`; points on the plane go to positive (boitata rule).
