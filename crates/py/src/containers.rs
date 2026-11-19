@@ -999,6 +999,19 @@ impl PyPolylines {
         self.inner.len()
     }
 
+    /// The feature or vertex column `name`, as on Mesh and PointSet.
+    fn __getitem__<'py>(&self, py: Python<'py>, name: &str) -> PyResult<Bound<'py, PyAny>> {
+        let f = self.inner.attributes().column(name);
+        let v = self.inner.vertex_attributes().column(name);
+        match (f, v) {
+            (Some(_), Some(_)) => Err(invalid(format!(
+                "{name:?} is both a feature and a vertex column; use attributes or vertex_attributes"
+            ))),
+            (Some(c), None) | (None, Some(c)) => frozen(column_py(py, c)?),
+            (None, None) => Err(missing(name, &self.column_names())),
+        }
+    }
+
     fn __repr__(&self) -> String {
         format!(
             "Polylines({} features, {} parts, {} vertices, columns {:?})",

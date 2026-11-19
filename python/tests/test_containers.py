@@ -211,3 +211,15 @@ def test_mesh_triangles_must_be_whole_numbers():
     m = wf.Mesh(np.eye(3), [[0.0, 1.0, 2.0]])
     assert m.triangles.tolist() == [[0, 1, 2]]
     assert wf.Mesh(np.eye(3), []).n_faces == 0
+
+
+def test_polylines_get_feature_then_vertex_columns_by_name():
+    pl = wf.Polylines(
+        [[[0, 0, 0], [1, 0, 0]], [[0, 1, 0], [1, 1, 0]]],
+        attributes={"hole": ["A", "B"]},
+        vertex_attributes={"au": [1.0, 2.0, 3.0, 4.0]},
+    )
+    assert pl["hole"].tolist() == ["A", "B"] and pl["au"].tolist() == [1.0, 2.0, 3.0, 4.0]
+    with pytest.raises(wf.MissingColumn, match=r'\["hole", "au"\]'):
+        pl["ag"]
+    assert wf.Polylines([[[0, 0, 0], [1, 0, 0]]]).closed.tolist() == [False]

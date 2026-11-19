@@ -366,6 +366,8 @@ class Polylines:
     def length_unit(self) -> str | None:
         """Length unit label."""
     def __len__(self) -> int: ...
+    def __getitem__(self, name: str) -> np.ndarray:
+        """The feature or vertex column `name`."""
     def filter(self, mask: ArrayLike) -> Polylines:
         """A copy with the features where `mask` is True."""
     def with_column(self, name: str, values: Values, *, unit: str | None = None) -> Polylines:

@@ -1175,7 +1175,6 @@ def test_container_constructors_have_a_runnable_example():
         assert ">>>" in (cls.__doc__ or ""), cls.__name__
 
 
-@pytest.mark.skip(reason="acceptance: polylines columns are not reachable with [] as on mesh and pointset")
 def test_polylines_columns_are_reachable_like_mesh_columns():
     holes = wf.datasets.drillholes(n=3)
     assert holes["hole"].tolist() == holes.attributes["hole"].tolist()
