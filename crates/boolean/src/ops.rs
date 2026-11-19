@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use wireframes_core::predicates::Sign;
+use wireframes_core::predicates::{Sign, collinear3};
 use wireframes_core::topology::{Radial, radial_pairs};
 use wireframes_core::{Error, Mesh, Result, Table, units};
 use wireframes_ops::{RepairOptions, RepairReport, repair};
@@ -75,21 +75,169 @@ pub(crate) fn assemble(arr: &Arrangement, pieces: &[Piece]) -> Assembled {
         face_source: vec![],
     };
     for piece in pieces {
+        let mut shell = Assembled {
+            vertices: vec![],
+            triangles: vec![],
+            vertex_rows: vec![],
+            face_source: vec![],
+        };
         let mut map: HashMap<u32, u32> = HashMap::new();
         for &(s, flip) in piece {
             let sub = &arr.subs[s as usize];
             let v = sub.v.map(|p| {
                 *map.entry(p).or_insert_with(|| {
-                    out.vertices.push(arr.pts[p as usize].to_f64());
-                    out.vertex_rows.push(arr.source_row(p));
-                    out.vertices.len() as u32 - 1
+                    shell.vertices.push(arr.pts[p as usize].to_f64());
+                    shell.vertex_rows.push(arr.source_row(p));
+                    shell.vertices.len() as u32 - 1
                 })
             });
-            out.triangles
+            shell
+                .triangles
                 .push(if flip { [v[0], v[2], v[1]] } else { v });
             let f = &arr.faces[sub.face as usize];
-            out.face_source.push((f.mesh, f.index));
+            shell.face_source.push((f.mesh, f.index));
         }
+        let shell = collapse_rounded(shell);
+        let base = out.vertices.len() as u32;
+        out.vertices.extend(shell.vertices);
+        out.vertex_rows.extend(shell.vertex_rows);
+        out.triangles
+            .extend(shell.triangles.iter().map(|t| t.map(|i| i + base)));
+        out.face_source.extend(shell.face_source);
+    }
+    out
+}
+
+/// One shell after rounding its exact vertices to `f64`. Distinct exact points
+/// can round to the same coordinates, which makes faces with a repeated or
+/// collinear corner. Vertices of the shell with equal coordinates become one
+/// (an edge between them has zero length), faces that repeat a vertex are
+/// dropped, opposite faces on the same three vertices cancel, and a face whose
+/// corners are collinear is removed by splitting its neighbour across its
+/// longest edge at its middle corner. Each step keeps every edge paired, and
+/// none moves a point, so the surface is the same set of points.
+fn collapse_rounded(shell: Assembled) -> Assembled {
+    let n = shell.vertices.len();
+    let key = |i: usize| shell.vertices[i].map(|x| (x + 0.0).to_bits());
+    let mut order: Vec<usize> = (0..n).collect();
+    order.sort_by_key(|&i| (key(i), shell.vertex_rows[i].is_none(), i));
+    let mut rep: Vec<u32> = (0..n as u32).collect();
+    for w in 1..n {
+        if key(order[w]) == key(order[w - 1]) {
+            rep[order[w]] = rep[order[w - 1]];
+        }
+    }
+    let mut tris: Vec<[u32; 3]> = vec![];
+    let mut src: Vec<(u8, u32)> = vec![];
+    for (t, &s) in shell.triangles.iter().zip(&shell.face_source) {
+        let t = t.map(|i| rep[i as usize]);
+        if t[0] != t[1] && t[1] != t[2] && t[0] != t[2] {
+            tris.push(t);
+            src.push(s);
+        }
+    }
+    let mut alive = vec![true; tris.len()];
+    let mut by_set: HashMap<[u32; 3], Vec<usize>> = HashMap::new();
+    for (f, t) in tris.iter().enumerate() {
+        let mut s = *t;
+        s.sort_unstable();
+        by_set.entry(s).or_default().push(f);
+    }
+    let mut sets: Vec<_> = by_set.into_values().filter(|fs| fs.len() > 1).collect();
+    sets.sort_unstable();
+    let parity = |t: [u32; 3]| {
+        let k = (0..3).min_by_key(|&k| t[k]).expect("three corners");
+        t[(k + 1) % 3] < t[(k + 2) % 3]
+    };
+    for fs in sets {
+        let (mut up, mut down): (Vec<usize>, Vec<usize>) =
+            fs.into_iter().partition(|&f| parity(tris[f]));
+        while let (Some(a), Some(b)) = (up.pop(), down.pop()) {
+            alive[a] = false;
+            alive[b] = false;
+        }
+    }
+    let v = &shell.vertices;
+    let flat = |t: [u32; 3]| collinear3(v[t[0] as usize], v[t[1] as usize], v[t[2] as usize]);
+    let mut edge: HashMap<(u32, u32), usize> = HashMap::new();
+    for (f, t) in tris.iter().enumerate().filter(|(f, _)| alive[*f]) {
+        for k in 0..3 {
+            edge.insert((t[k], t[(k + 1) % 3]), f);
+        }
+    }
+    let mut work: Vec<usize> = (0..tris.len())
+        .filter(|&f| alive[f] && flat(tris[f]))
+        .rev()
+        .collect();
+    while let Some(f) = work.pop() {
+        if !alive[f] {
+            continue;
+        }
+        let t = tris[f];
+        let axis = (0..3)
+            .max_by(|&a, &b| {
+                let spread = |k: usize| {
+                    let c = t.map(|i| v[i as usize][k]);
+                    c.iter().copied().fold(f64::NEG_INFINITY, f64::max)
+                        - c.iter().copied().fold(f64::INFINITY, f64::min)
+                };
+                spread(a).total_cmp(&spread(b))
+            })
+            .expect("three axes");
+        let mut by: [usize; 3] = [0, 1, 2];
+        by.sort_by(|&a, &b| v[t[a] as usize][axis].total_cmp(&v[t[b] as usize][axis]));
+        let i = by[1];
+        let (m, p, q) = (t[i], t[(i + 1) % 3], t[(i + 2) % 3]);
+        let Some(&g) = edge.get(&(q, p)) else {
+            continue;
+        };
+        if g == f || !alive[g] {
+            continue;
+        }
+        let u = tris[g];
+        let d = u[(0..3)
+            .find(|&k| u[k] != p && u[k] != q)
+            .expect("third corner")];
+        for (h, w) in [(f, t), (g, u)] {
+            alive[h] = false;
+            for k in 0..3 {
+                if edge.get(&(w[k], w[(k + 1) % 3])) == Some(&h) {
+                    edge.remove(&(w[k], w[(k + 1) % 3]));
+                }
+            }
+        }
+        for nt in [[q, m, d], [m, p, d]] {
+            if d == m {
+                continue;
+            }
+            let h = tris.len();
+            tris.push(nt);
+            src.push(src[g]);
+            alive.push(true);
+            for k in 0..3 {
+                edge.insert((nt[k], nt[(k + 1) % 3]), h);
+            }
+            if flat(nt) {
+                work.push(h);
+            }
+        }
+    }
+    let mut out = Assembled {
+        vertices: vec![],
+        triangles: vec![],
+        vertex_rows: vec![],
+        face_source: vec![],
+    };
+    let mut new_id: Vec<Option<u32>> = vec![None; n];
+    for (f, t) in tris.iter().enumerate().filter(|(f, _)| alive[*f]) {
+        out.triangles.push(t.map(|i| {
+            *new_id[i as usize].get_or_insert_with(|| {
+                out.vertices.push(shell.vertices[i as usize]);
+                out.vertex_rows.push(shell.vertex_rows[i as usize]);
+                out.vertices.len() as u32 - 1
+            })
+        }));
+        out.face_source.push(src[f]);
     }
     out
 }
@@ -322,4 +470,76 @@ pub fn difference(a: &Mesh, b: &Mesh, opts: &BooleanOptions) -> Result<BooleanRe
 /// the intersection curve they are separate shells in contact.
 pub fn symmetric_difference(a: &Mesh, b: &Mesh, opts: &BooleanOptions) -> Result<BooleanResult> {
     boolean(a, b, Op::SymmetricDifference, opts)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const A: [f64; 3] = [0.0, 0.0, 0.0];
+    const B: [f64; 3] = [2.0, 0.0, 0.0];
+    const C: [f64; 3] = [0.0, 2.0, 0.0];
+    const D: [f64; 3] = [0.0, 0.0, 2.0];
+
+    fn shell(vertices: Vec<[f64; 3]>, triangles: Vec<[u32; 3]>) -> Assembled {
+        let n = vertices.len();
+        Assembled {
+            face_source: (0..triangles.len() as u32).map(|f| (0, f)).collect(),
+            vertices,
+            triangles,
+            vertex_rows: (0..n as u32).map(|i| (i < 4).then_some(i)).collect(),
+        }
+    }
+
+    fn check(out: &Assembled) {
+        let m = Mesh::new(out.vertices.clone(), out.triangles.clone()).unwrap();
+        assert!(is_closed_manifold(&out.triangles));
+        assert!(m.validate(0.0).unwrap().summary.is_solid());
+        assert_eq!(out.face_source.len(), out.triangles.len());
+        assert_eq!(out.vertex_rows.len(), out.vertices.len());
+    }
+
+    #[test]
+    fn vertices_that_round_together_become_one() {
+        let s = shell(
+            vec![A, B, C, D, D],
+            vec![
+                [0, 2, 1],
+                [0, 1, 3],
+                [0, 3, 2],
+                [1, 2, 4],
+                [1, 4, 3],
+                [2, 3, 4],
+            ],
+        );
+        let out = collapse_rounded(s);
+        check(&out);
+        assert_eq!(out.triangles.len(), 4);
+        assert_eq!(out.vertex_rows, [Some(0), Some(2), Some(1), Some(3)]);
+    }
+
+    #[test]
+    fn faces_with_collinear_corners_are_split_away() {
+        let m = [1.0, 0.0, 0.0];
+        let s = shell(
+            vec![A, B, C, D, m],
+            vec![
+                [0, 2, 1],
+                [0, 1, 4],
+                [0, 4, 3],
+                [4, 1, 3],
+                [0, 3, 2],
+                [1, 2, 3],
+            ],
+        );
+        let out = collapse_rounded(s);
+        check(&out);
+        assert_eq!(out.triangles.len(), 6);
+        let area = |t: &[u32; 3]| {
+            let p = t.map(|i| out.vertices[i as usize]);
+            !collinear3(p[0], p[1], p[2])
+        };
+        assert!(out.triangles.iter().all(area));
+        assert!(out.face_source.contains(&(0, 0)));
+    }
 }

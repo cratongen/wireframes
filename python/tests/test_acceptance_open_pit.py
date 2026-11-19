@@ -332,7 +332,6 @@ def prism(half, bottom, top):
     return wf.Mesh(np.array(v, float), wf.datasets._BOX_FACES)
 
 
-@pytest.mark.skip(reason="acceptance: near-coplanar shared caps give invalid boolean results")
 def test_booleans_of_solids_whose_caps_differ_by_one_ulp():
     def plane(x, y):
         return 5 + 0.25 * x + 0.5 * y
@@ -346,7 +345,7 @@ def test_booleans_of_solids_whose_caps_differ_by_one_ulp():
         assert m.n_faces == 0 or m.validate().summary["boundary_edges"] == 0
 
 
-@pytest.mark.skip(reason="acceptance: booleans of solids clipped by one surface are not closed")
+@pytest.mark.skip(reason="acceptance: rounding folds slivers of near-coplanar caps into self-intersections")
 def test_pushback_as_difference_of_pits_clipped_by_the_same_topography():
     c = np.array([[-20.0, -20.0], [20.0, -20.0], [20.0, 20.0], [-20.0, 20.0]])
     topo = wf.dtm(np.column_stack([c, [4.0, 6.0, 5.5, 4.5]]))

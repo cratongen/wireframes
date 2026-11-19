@@ -35,7 +35,7 @@ fn prism(half: f64, bottom: f64) -> Mesh {
 }
 
 #[test]
-#[ignore = "acceptance: near-coplanar shared caps give invalid boolean results"]
+#[ignore = "acceptance: rounding folds a sliver of the intersection onto a wall"]
 fn booleans_of_prisms_whose_caps_differ_by_one_ulp_are_valid_solids() {
     let a = prism(10.0, -10.0);
     let exact = prism(6.0, -5.0);

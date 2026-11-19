@@ -70,6 +70,10 @@ All notable changes to wireframes are listed here. The format follows
 - `split_by_plane` triangulates the cap from the rounded section points, so
   cap triangles no longer overlap where the section has long, nearly collinear
   runs of points (a bench split of a clipped pit).
+- Boolean and `clip_by_surface` results no longer keep degenerate faces,
+  duplicate vertices or open edges where distinct exact points round to the
+  same float: each output shell merges such vertices and removes faces with
+  repeated or collinear corners.
 - `block_fraction` is exactly 0 or 1 for a block that no face meets, instead
   of picking up `f64` residue from the faces above it.
 
@@ -77,9 +81,10 @@ All notable changes to wireframes are listed here. The format follows
 
 - A boolean result shell that touches itself raises `InvalidInput`.
 - A boolean result can fail validation after its exact vertices are rounded to
-  f64: two distinct exact points that round to the same float give a
-  degenerate face. Seen in chains of grid-box booleans and in boxes overlapping
-  by 1e-6 at UTM coordinates.
+  f64: rounding can fold a sliver thinner than the float spacing onto a
+  neighbouring face. Seen in chains of grid-box booleans and in booleans of
+  pits clipped by the same topography (their caps differ by about one ulp);
+  for pushbacks, clip the difference of the unclipped pits instead.
 - `split_by_plane` at a plane the mesh touches from above (a DTM contour
   level, for example) returns a positive part that touches itself and is not
   a solid.
