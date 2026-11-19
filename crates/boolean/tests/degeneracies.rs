@@ -336,10 +336,9 @@ proptest! {
         let m0 = fixtures::box_mesh(b0.0, b0.1);
         let m1 = if diag { other_diagonals(b1.0, b1.1) } else { fixtures::box_mesh(b1.0, b1.1) };
         let m2 = fixtures::box_mesh(b2.0, b2.1);
-        let Ok(a) = boolean(&m0, &m1, Op::Union, &BooleanOptions::default()) else {
-            return Ok(());
-        };
-        let a = a.mesh;
+        let a = boolean(&m0, &m1, Op::Union, &BooleanOptions::default())
+            .map_err(|e| TestCaseError::fail(format!("union: {e}")))?
+            .mesh;
         prop_assert!(solid(&a), "union of two boxes is not a valid solid");
         let ina = |p| inside(&b0, p) || inside(&b1, p);
         for (op, f) in [
@@ -355,7 +354,7 @@ proptest! {
                     prop_assert!(close(volume(&r.mesh), want, 1e-12),
                         "{:?}: {} != {}", op, volume(&r.mesh), want);
                 }
-                Err(e) => prop_assert!(e.to_string().contains("touches itself"), "{:?}: {}", op, e),
+                Err(e) => return Err(TestCaseError::fail(format!("{op:?}: {e}"))),
             }
         }
     }
@@ -388,7 +387,7 @@ proptest! {
                     prop_assert!(ok(&r.mesh));
                     prop_assert!(volume(&r.mesh).abs() < 1e-12, "{:?}: {}", op, volume(&r.mesh));
                 }
-                Err(e) => prop_assert!(e.to_string().contains("touches itself"), "{:?}: {}", op, e),
+                Err(e) => return Err(TestCaseError::fail(format!("{op:?}: {e}"))),
             }
         }
     }
@@ -434,7 +433,7 @@ proptest! {
                     prop_assert!(close(volume(&r.mesh), want, 1e-12),
                         "{:?}: {} != {}", op, volume(&r.mesh), want);
                 }
-                Err(e) => prop_assert!(e.to_string().contains("touches itself"), "{:?}: {}", op, e),
+                Err(e) => return Err(TestCaseError::fail(format!("{op:?}: {e}"))),
             }
         }
     }
@@ -633,33 +632,19 @@ proptest! {
             let Some(b) = tet(sh(q)) else { return Ok(()) };
             b
         };
-        let res: Vec<_> = [Op::Union, Op::Intersection, Op::Difference, Op::SymmetricDifference]
-            .iter()
-            .map(|&op| boolean(&a, &b, op, &BooleanOptions::default()))
-            .collect();
         let mut vols = vec![];
-        for (k, r) in res.iter().enumerate() {
-            match r {
-                Ok(r) => {
-                    prop_assert!(ok(&r.mesh), "op {} not closed manifold", k);
-                    vols.push(Some(volume(&r.mesh)));
-                }
-                Err(e) => {
-                    prop_assert!(e.to_string().contains("touches itself"), "op {}: {}", k, e);
-                    vols.push(None);
-                }
-            }
+        for op in [Op::Union, Op::Intersection, Op::Difference, Op::SymmetricDifference] {
+            let m = boolean(&a, &b, op, &BooleanOptions::default())
+                .map_err(|e| TestCaseError::fail(format!("{op:?}: {e}")))?
+                .mesh;
+            prop_assert!(ok(&m), "{:?} not closed manifold", op);
+            vols.push(volume(&m));
         }
         let (va, vb) = (volume(&a), volume(&b));
-        if let (Some(vu), Some(vi)) = (vols[0], vols[1]) {
-            prop_assert!(close(vu + vi, va + vb, 1e-9), "{} + {} vs {} + {}", vu, vi, va, vb);
-        }
-        if let (Some(vd), Some(vi)) = (vols[2], vols[1]) {
-            prop_assert!(close(vd, va - vi, 1e-9), "{} vs {} - {}", vd, va, vi);
-        }
-        if let (Some(vx), Some(vu), Some(vi)) = (vols[3], vols[0], vols[1]) {
-            prop_assert!(close(vx, vu - vi, 1e-9), "{} vs {} - {}", vx, vu, vi);
-        }
+        let [vu, vi, vd, vx] = [vols[0], vols[1], vols[2], vols[3]];
+        prop_assert!(close(vu + vi, va + vb, 1e-9), "{} + {} vs {} + {}", vu, vi, va, vb);
+        prop_assert!(close(vd, va - vi, 1e-9), "{} vs {} - {}", vd, va, vi);
+        prop_assert!(close(vx, vu - vi, 1e-9), "{} vs {} - {}", vx, vu, vi);
     }
 }
 

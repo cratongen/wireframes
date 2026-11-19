@@ -290,14 +290,11 @@ proptest! {
             _ => fixtures::box_mesh([0.0; 3], [1.0, 0.5, 0.75]),
         };
         let b = moved(&fixtures::cube(), angles, d);
-        let res: Vec<_> = [Op::Union, Op::Intersection, Op::Difference, Op::SymmetricDifference]
+        let v = [Op::Union, Op::Intersection, Op::Difference, Op::SymmetricDifference]
             .iter()
-            .map(|&op| boolean(&a, &b, op, &BooleanOptions::default()))
-            .collect();
-        if res.iter().any(|r| matches!(r, Err(e) if e.to_string().contains("touches itself"))) {
-            return Ok(());
-        }
-        let v: Vec<Mesh> = res.into_iter().map(|r| r.unwrap().mesh).collect();
+            .map(|&op| boolean(&a, &b, op, &BooleanOptions::default()).map(|r| r.mesh))
+            .collect::<Result<Vec<Mesh>, _>>()
+            .map_err(|e| TestCaseError::fail(e.to_string()))?;
         for m in &v {
             prop_assert!(closed_manifold(m));
         }
@@ -319,20 +316,16 @@ proptest! {
         let b = fixtures::box_mesh(lo, hi);
         let ov: f64 = (0..3).map(|k| (hi[k].min(2.0) - lo[k].max(0.0)).max(0.0)).product();
         let (va, vb) = (8.0, volume(&b));
-        match boolean(&a, &b, Op::Intersection, &BooleanOptions::default()) {
-            Ok(r) => {
-                prop_assert!(closed_manifold(&r.mesh));
-                prop_assert!(close(volume(&r.mesh), ov, 1e-12));
-            }
-            Err(e) => prop_assert!(e.to_string().contains("touches itself"), "{}", e),
-        }
-        if let Ok(r) = boolean(&a, &b, Op::Union, &BooleanOptions::default()) {
-            prop_assert!(closed_manifold(&r.mesh));
-            prop_assert!(close(volume(&r.mesh), va + vb - ov, 1e-12));
-        }
-        if let Ok(r) = boolean(&a, &b, Op::Difference, &BooleanOptions::default()) {
-            prop_assert!(closed_manifold(&r.mesh));
-            prop_assert!(close(volume(&r.mesh), va - ov, 1e-12));
+        for (op, want) in [
+            (Op::Intersection, ov),
+            (Op::Union, va + vb - ov),
+            (Op::Difference, va - ov),
+        ] {
+            let m = boolean(&a, &b, op, &BooleanOptions::default())
+                .map_err(|e| TestCaseError::fail(format!("{op:?}: {e}")))?
+                .mesh;
+            prop_assert!(closed_manifold(&m), "{:?}", op);
+            prop_assert!(close(volume(&m), want, 1e-12), "{:?}: {} vs {}", op, volume(&m), want);
         }
     }
 
@@ -400,26 +393,19 @@ proptest! {
             _ => tet([p[0], q, r, p[3]]),
         };
         let (Some(a), Some(b)) = (a, b) else { return Ok(()) };
-        let res: Vec<_> = [Op::Union, Op::Intersection, Op::Difference, Op::SymmetricDifference]
-            .iter()
-            .map(|&op| boolean(&a, &b, op, &BooleanOptions::default()))
-            .collect();
-        for r in &res {
-            if let Err(e) = r {
-                prop_assert!(e.to_string().contains("touches itself"), "{}", e);
-            }
+        let mut vols = vec![];
+        for op in [Op::Union, Op::Intersection, Op::Difference, Op::SymmetricDifference] {
+            let m = boolean(&a, &b, op, &BooleanOptions::default())
+                .map_err(|e| TestCaseError::fail(format!("{op:?}: {e}")))?
+                .mesh;
+            prop_assert!(closed_manifold(&m), "{:?}", op);
+            vols.push(volume(&m));
         }
-        let vols: Vec<Option<f64>> = res.iter().map(|r| r.as_ref().ok().map(|r| {
-            assert!(closed_manifold(&r.mesh));
-            volume(&r.mesh)
-        })).collect();
         let (va, vb) = (volume(&a), volume(&b));
-        if let (Some(vu), Some(vi)) = (vols[0], vols[1]) {
-            prop_assert!(close(vu + vi, va + vb, 1e-9), "{} + {} vs {} + {}", vu, vi, va, vb);
-        }
-        if let (Some(vd), Some(vi)) = (vols[2], vols[1]) {
-            prop_assert!(close(vd, va - vi, 1e-9), "{} vs {} - {}", vd, va, vi);
-        }
+        let [vu, vi, vd, vx] = [vols[0], vols[1], vols[2], vols[3]];
+        prop_assert!(close(vu + vi, va + vb, 1e-9), "{} + {} vs {} + {}", vu, vi, va, vb);
+        prop_assert!(close(vd, va - vi, 1e-9), "{} vs {} - {}", vd, va, vi);
+        prop_assert!(close(vx, vu - vi, 1e-9), "{} vs {} - {}", vx, vu, vi);
     }
 }
 

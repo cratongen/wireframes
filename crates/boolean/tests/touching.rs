@@ -197,7 +197,7 @@ fn seeded_random_pairs_keep_the_volume_identities() {
         let hi = lo.map(|x| x + (1 + rng.below(4)) as f64 * 0.5);
         (lo, hi)
     };
-    let (mut touching, mut nested, mut self_touch) = (0, 0, 0);
+    let (mut touching, mut nested) = (0, 0);
     for case in 0..160 {
         let (alo, ahi) = grid(&mut rng);
         let a = fixtures::box_mesh(alo, ahi);
@@ -238,16 +238,15 @@ fn seeded_random_pairs_keep_the_volume_identities() {
         };
         let b = fixtures::box_mesh(blo, bhi);
         let ib = in_box(blo, bhi);
-        let res: Vec<_> = OPS
+        let m: Vec<Mesh> = OPS
             .iter()
-            .map(|&op| boolean(&a, &b, op, &BooleanOptions::default()))
+            .map(
+                |&op| match boolean(&a, &b, op, &BooleanOptions::default()) {
+                    Ok(r) => r.mesh,
+                    Err(e) => panic!("case {case} {op:?}: {e}"),
+                },
+            )
             .collect();
-        if let Some(Err(e)) = res.iter().find(|r| r.is_err()) {
-            assert!(e.to_string().contains("touches itself"), "case {case}: {e}");
-            self_touch += 1;
-            continue;
-        }
-        let m: Vec<Mesh> = res.into_iter().map(|r| r.unwrap().mesh).collect();
         for (k, r) in m.iter().enumerate() {
             let s = summary(r);
             assert!(r.is_empty() || s.is_solid(), "case {case} op {k}: {s:?}");
@@ -263,12 +262,8 @@ fn seeded_random_pairs_keep_the_volume_identities() {
         assert!(close(vu, voxel_volume(&|p| ia(p) || ib(p))), "case {case}");
         assert!(close(vx, voxel_volume(&|p| ia(p) != ib(p))), "case {case}");
     }
-    println!(
-        "{touching} results with touching shells, {nested} with separate shells, \
-         {self_touch} of 160 cases refused as a shell touching itself"
-    );
+    println!("{touching} results with touching shells, {nested} with separate shells");
     assert!(touching > 0 && nested > 0);
-    assert!(self_touch < 16, "{self_touch} self-touching cases");
 }
 
 #[test]
@@ -644,16 +639,12 @@ fn permuted_inputs_and_thread_counts_give_the_same_results() {
             .map(|r| (canonical(&r.mesh), summary(&r.mesh)))
             .map_err(|e| e.to_string())
     };
-    let mut refused = 0;
     for (n, (a, b)) in cases.iter().enumerate() {
         for op in OPS {
             let base = outcome(a, b, op);
             match &base {
                 Ok((_, s)) => assert!(s.is_solid() || s == &MeshSummary::default(), "{s:?}"),
-                Err(e) => {
-                    assert!(e.contains("touches itself"), "case {n} {op:?}: {e}");
-                    refused += 1;
-                }
+                Err(e) => panic!("case {n} {op:?}: {e}"),
             }
             for seed in 0..4 {
                 let (pa, pb) = (permuted(a, seed), permuted(b, seed + 100));
@@ -670,7 +661,6 @@ fn permuted_inputs_and_thread_counts_give_the_same_results() {
             assert_eq!(on(1), on(8), "case {n} {op:?}");
         }
     }
-    assert!(refused <= 2, "{refused} refusals");
 }
 
 #[test]
