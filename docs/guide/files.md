@@ -35,6 +35,11 @@ Options of `write`:
 - `zlib=True` compresses VTU arrays.
 - `skip_unsupported_columns=True` leaves out columns the format cannot store; without it they raise.
 
+A DXF reads model space only: paper space entities (title blocks, viewports) are skipped and counted in
+`warnings`, and so is the smoothing of a MESH, whose level-0 cage is what you get. A Datamine column reads
+as text when any value is quoted, so the writer quotes every text value and codes such as `"007"` come back
+as text.
+
 A `length_unit` argument that disagrees with the unit a DXF declares raises `InvalidInput`. Closed formats
 (DWG, binary Datamine `.dm`) are out of scope: export DXF or a CSV pair from the source package.
 

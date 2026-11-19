@@ -489,20 +489,17 @@ def test_datamine_writer_refuses_columns_named_like_its_fields(tmp_path, column,
         wf.write(tmp_path / "r_tr.csv", m)
 
 
-@pytest.mark.skip(reason="acceptance: a trailing delimiter makes datamine columns with empty names")
 def test_datamine_trailing_delimiter_adds_no_columns(tmp_path):
     m = wf.read_mesh(write_pair(tmp_path, "trail", TET_PT.replace("\n", ",\n"), TET_TR.replace("\n", ",\n")))
     assert m.volume == TET_VOLUME and m.column_names == []
 
 
-@pytest.mark.skip(reason="acceptance: datamine reads text attributes that look numeric back as numbers")
 def test_datamine_text_codes_round_trip_as_text(tmp_path):
     m = wf.datasets.box([0, 0, 0], [1, 1, 1]).with_face_column("CODE", ["007", "1010"] * 6)
     wf.write(tmp_path / "code_tr.csv", m)
     assert wf.read_mesh(tmp_path / "code_tr.csv")["CODE"].tolist() == ["007", "1010"] * 6
 
 
-@pytest.mark.skip(reason="acceptance: datamine rounds int64 attributes beyond 2^53 without a word")
 def test_datamine_large_integers_round_trip_or_are_refused(tmp_path):
     ids = np.array([2**53 + 1 + 2 * k for k in range(12)], np.int64)
     m = wf.datasets.box([0, 0, 0], [1, 1, 1]).with_face_column("BLOCKID", ids)

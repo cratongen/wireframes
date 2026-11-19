@@ -34,22 +34,29 @@ fn sniff(text: &str) -> char {
     ','
 }
 
+/// A field's text and whether it was quoted.
+type Field = (String, bool);
+
+fn field_of(raw: &str) -> Field {
+    (unquote(raw), raw.trim().starts_with('"'))
+}
+
 /// Records with their first line number; delimiters and line breaks inside
 /// quotes are field data. Blank records are skipped.
-fn records(text: &str, d: char, file: &str) -> Result<Vec<(u64, Vec<String>)>> {
+fn records(text: &str, d: char, file: &str) -> Result<Vec<(u64, Vec<Field>)>> {
     let mut out = Vec::new();
-    let mut fields = Vec::new();
+    let mut fields: Vec<Field> = Vec::new();
     let mut cur = String::new();
     let mut quoted = false;
     let mut line = 1u64;
     let mut start = 1u64;
-    let mut end_record = |fields: &mut Vec<String>, cur: &mut String, start: u64| {
+    let mut end_record = |fields: &mut Vec<Field>, cur: &mut String, start: u64| {
         if cur.ends_with('\r') {
             cur.pop();
         }
-        fields.push(unquote(&std::mem::take(cur)));
+        fields.push(field_of(&std::mem::take(cur)));
         let fields = std::mem::take(fields);
-        if !(fields.len() == 1 && fields[0].is_empty()) {
+        if !(fields.len() == 1 && fields[0].0.is_empty()) {
             out.push((start, fields));
         }
     };
@@ -68,7 +75,7 @@ fn records(text: &str, d: char, file: &str) -> Result<Vec<(u64, Vec<String>)>> {
                 line += 1;
                 cur.push(c);
             }
-            c if c == d && !quoted => fields.push(unquote(&std::mem::take(&mut cur))),
+            c if c == d && !quoted => fields.push(field_of(&std::mem::take(&mut cur))),
             c => cur.push(c),
         }
     }
@@ -87,6 +94,8 @@ struct Csv {
     delim: char,
     header: Vec<String>,
     rows: Vec<(u64, Vec<String>)>,
+    /// Per column: some value was quoted, so the column is text.
+    quoted: Vec<bool>,
 }
 
 impl Csv {
@@ -95,12 +104,17 @@ impl Csv {
         let text = text.strip_prefix('\u{feff}').unwrap_or(&text);
         let delim = sniff(text);
         let mut lines = records(text, delim, file)?.into_iter();
-        let (_, header) = lines
+        let (_, mut header) = lines
             .next()
             .ok_or_else(|| Error::format(format!("{file} is empty")))?;
+        while header.last().is_some_and(|(h, q)| h.is_empty() && !q) {
+            header.pop();
+        }
+        let header: Vec<String> = header.into_iter().map(|(h, _)| h).collect();
+        let mut quoted = vec![false; header.len()];
         let mut rows = Vec::new();
         for (n, mut f) in lines {
-            while f.len() > header.len() && f.last().is_some_and(String::is_empty) {
+            while f.len() > header.len() && f.last().is_some_and(|(s, q)| s.is_empty() && !q) {
                 f.pop();
             }
             if f.len() != header.len() {
@@ -113,13 +127,17 @@ impl Csv {
                     ),
                 ));
             }
-            rows.push((n, f));
+            for (q, (_, fq)) in quoted.iter_mut().zip(&f) {
+                *q |= fq;
+            }
+            rows.push((n, f.into_iter().map(|(s, _)| s).collect()));
         }
         Ok(Csv {
             file,
             delim,
             header,
             rows,
+            quoted,
         })
     }
 
@@ -164,7 +182,11 @@ impl Csv {
 
     fn value(&self, line: u64, row: &[String], c: usize) -> Result<f64> {
         match self.num(&row[c]) {
-            Some(v) if v != NULL => Ok(v),
+            Some(v) if v != NULL && v.is_finite() => Ok(v),
+            Some(v) if v != NULL => Err(Error::format_at(
+                line,
+                format!("{} {} {v} is not finite", self.file, self.header[c]),
+            )),
             _ => Err(Error::format_at(
                 line,
                 format!(
@@ -186,8 +208,8 @@ impl Csv {
         Ok(v as i64)
     }
 
-    /// Extra columns: Float64 when every non-empty value is numeric, else Utf8.
-    /// Empty fields and `-1.0E30` are null.
+    /// Extra columns: Float64 when no value is quoted and every non-empty value
+    /// is numeric, else Utf8. Empty fields and `-1.0E30` are null.
     fn extras(&self, skip: &[usize]) -> Result<Table> {
         let mut t = Table::new(self.rows.len());
         for (c, name) in self.header.iter().enumerate() {
@@ -195,16 +217,19 @@ impl Csv {
                 continue;
             }
             let raw: Vec<&str> = self.rows.iter().map(|(_, r)| r[c].as_str()).collect();
-            let nums: Option<Vec<Option<f64>>> = raw
-                .iter()
-                .map(|s| {
-                    if s.is_empty() {
-                        Some(None)
-                    } else {
-                        self.num(s).map(|v| (v != NULL).then_some(v))
-                    }
-                })
-                .collect();
+            let nums: Option<Vec<Option<f64>>> = if self.quoted[c] {
+                None
+            } else {
+                raw.iter()
+                    .map(|s| {
+                        if s.is_empty() {
+                            Some(None)
+                        } else {
+                            self.num(s).map(|v| (v != NULL).then_some(v))
+                        }
+                    })
+                    .collect()
+            };
             let valid: Vec<bool>;
             let col = match nums {
                 Some(v) => {
@@ -315,7 +340,7 @@ fn cell(col: &Column, i: usize) -> String {
         ColumnData::Float64(v) => fmt_f64(if valid { v[i] } else { NULL }),
         ColumnData::Int64(v) if valid => v[i].to_string(),
         ColumnData::Bool(v) if valid => (v[i] as u8).to_string(),
-        ColumnData::Utf8(v) if valid => field(&v[i]),
+        ColumnData::Utf8(v) if valid => format!("\"{}\"", v[i].replace('"', "\"\"")),
         ColumnData::Int64(_) | ColumnData::Bool(_) => fmt_f64(NULL),
         ColumnData::Utf8(_) => String::new(),
     }
@@ -334,8 +359,30 @@ fn header(fixed: &[&str], t: &Table, reserved: &[&str], what: &str) -> Result<St
     Ok(h.join(","))
 }
 
+/// `t` without the Int64 columns that a double cannot hold exactly, or an error
+/// naming the first one unless `skip_unsupported_columns` is set.
+fn storable(t: &Table, what: &str, opts: &WriteOptions) -> Result<Table> {
+    let mut out = t.clone();
+    for (name, col) in t.names().iter().zip(t.columns()) {
+        let ColumnData::Int64(v) = &col.data else {
+            continue;
+        };
+        let exact = (0..v.len()).all(|i| !col.is_valid(i) || v[i].unsigned_abs() <= 1 << 53);
+        if exact {
+            continue;
+        }
+        if !opts.skip_unsupported_columns {
+            return Err(Error::Unsupported(format!(
+                "datamine csv cannot store {what} column {name:?}: datamine numbers are doubles, and values beyond 2^53 do not fit a double exactly; set skip_unsupported_columns to drop it"
+            )));
+        }
+        out = out.without_column(name);
+    }
+    Ok(out)
+}
+
 /// Writes the `(pt, tr)` pair. PIDs are 1-based in vertex order.
-pub fn write(data: &Data, _opts: &WriteOptions) -> Result<(Vec<u8>, Vec<u8>)> {
+pub fn write(data: &Data, opts: &WriteOptions) -> Result<(Vec<u8>, Vec<u8>)> {
     if data.polylines.is_some() || data.points.is_some() || data.grid.is_some() {
         return Err(Error::Unsupported(
             "a datamine wireframe pair holds only a mesh".into(),
@@ -345,8 +392,8 @@ pub fn write(data: &Data, _opts: &WriteOptions) -> Result<(Vec<u8>, Vec<u8>)> {
         .mesh
         .as_ref()
         .ok_or_else(|| Error::Unsupported("a datamine wireframe pair needs a mesh".into()))?;
-    let vt = mesh.vertex_attributes();
-    let ft = mesh.face_attributes();
+    let vt = &storable(mesh.vertex_attributes(), "vertex", opts)?;
+    let ft = &storable(mesh.face_attributes(), "face", opts)?;
     let mut reserved = vec!["XP", "YP", "ZP", "PID"];
     let mut pt = header(&["XP", "YP", "ZP", "PID"], vt, &reserved, "vertex")?;
     pt.push('\n');
@@ -396,6 +443,81 @@ mod tests {
         let again = read(&pt2, &tr2).unwrap().mesh.unwrap();
         let col = again.face_attributes().column("TRISOL").unwrap();
         assert_eq!(col.data, ColumnData::Float64(vec![7.0]));
+    }
+
+    const TR: &str = "TRIANGLE,PID1,PID2,PID3\n1,1,2,3\n";
+
+    #[test]
+    fn a_trailing_delimiter_adds_no_columns() {
+        let pt = PT.replace('\n', ",\n");
+        let tr = TR.replace('\n', ",\n");
+        let m = read(pt.as_bytes(), tr.as_bytes()).unwrap().mesh.unwrap();
+        assert_eq!(m.vertex_attributes().num_columns(), 0);
+        assert_eq!(m.face_attributes().num_columns(), 0);
+        let filled = "TRIANGLE,PID1,PID2,PID3,\n1,1,2,3,X\n";
+        assert!(read(PT.as_bytes(), filled.as_bytes()).is_err());
+    }
+
+    #[test]
+    fn quoted_text_that_looks_numeric_stays_text() {
+        let m = Mesh::new(
+            vec![[0.0; 3], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+            vec![[0, 1, 2]],
+        )
+        .unwrap()
+        .with_face_column("CODE", Column::utf8(vec!["007".into()]))
+        .unwrap();
+        let data = Data {
+            mesh: Some(m),
+            ..Data::default()
+        };
+        let (pt, tr) = write(&data, &WriteOptions::default()).unwrap();
+        let back = read(&pt, &tr).unwrap().mesh.unwrap();
+        let col = back.face_attributes().column("CODE").unwrap();
+        assert_eq!(col.data, ColumnData::Utf8(vec!["007".into()]));
+        let plain = "TRIANGLE,PID1,PID2,PID3,CODE\n1,1,2,3,007\n";
+        let m = read(PT.as_bytes(), plain.as_bytes()).unwrap().mesh.unwrap();
+        let col = m.face_attributes().column("CODE").unwrap();
+        assert_eq!(col.data, ColumnData::Float64(vec![7.0]));
+    }
+
+    #[test]
+    fn int64_beyond_2_pow_53_is_refused_or_skipped() {
+        let tri = |v: i64| {
+            let m = Mesh::new(
+                vec![[0.0; 3], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+                vec![[0, 1, 2]],
+            )
+            .unwrap()
+            .with_face_column("ID", Column::i64(vec![v]))
+            .unwrap();
+            Data {
+                mesh: Some(m),
+                ..Data::default()
+            }
+        };
+        assert!(write(&tri(1 << 53), &WriteOptions::default()).is_ok());
+        let e = write(&tri((1 << 53) + 1), &WriteOptions::default()).unwrap_err();
+        assert!(matches!(e, Error::Unsupported(_)), "{e}");
+        let skip = WriteOptions {
+            skip_unsupported_columns: true,
+            ..WriteOptions::default()
+        };
+        let (pt, tr) = write(&tri((1 << 53) + 1), &skip).unwrap();
+        let back = read(&pt, &tr).unwrap().mesh.unwrap();
+        assert_eq!(back.face_attributes().num_columns(), 0);
+    }
+
+    #[test]
+    fn a_non_finite_coordinate_names_its_line() {
+        let pt = PT.replace("1,0,0,2", "1,nan,0,2");
+        let e = read_pair(
+            pt.as_bytes(),
+            TR.as_bytes(),
+            Some((Path::new("a_pt.csv"), Path::new("a_tr.csv"))),
+        )
+        .unwrap_err();
+        assert_eq!(e.to_string(), "a_pt.csv:3: _pt.csv YP NaN is not finite");
     }
 
     #[test]
