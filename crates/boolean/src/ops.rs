@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use wireframes_core::predicates::{Sign, collinear3};
+use wireframes_core::predicates::{Sign, collinear3, orient2d_axis, orient3d};
 use wireframes_core::topology::{Radial, radial_pairs};
 use wireframes_core::{Error, Mesh, Result, Table, units};
 use wireframes_ops::{RepairOptions, RepairReport, repair};
@@ -122,7 +122,9 @@ pub(crate) fn assemble(arr: &Arrangement, pieces: &[Shell]) -> Assembled {
 /// (an edge between them has zero length), faces that repeat a vertex are
 /// dropped, opposite faces on the same three vertices cancel, and a face whose
 /// corners are collinear is removed by splitting its neighbour across its
-/// longest edge at its middle corner. Each step keeps every edge paired, and
+/// longest edge at its middle corner. A sliver whose middle corner rounds to
+/// strictly inside that coplanar neighbour (a fold) is removed the same way;
+/// both tests are exact on the rounded points. Each step keeps every edge paired, and
 /// none moves a point, so the surface is the same set of points. `point` is
 /// the exact point of each vertex; copies of one exact point, where the shell
 /// touches itself, stay apart, and so do the other vertices that round onto
@@ -185,10 +187,17 @@ fn collapse_rounded(shell: Assembled, point: &[u32]) -> Assembled {
             edge.insert((t[k], t[(k + 1) % 3]), f);
         }
     }
-    let mut work: Vec<usize> = (0..tris.len())
-        .filter(|&f| alive[f] && flat(tris[f]))
-        .rev()
-        .collect();
+    let inside = |g: [u32; 3], m: u32| {
+        let c = g.map(|i| v[i as usize]);
+        let at = v[m as usize];
+        let Some(k) = (0..3).find(|&k| orient2d_axis(c[0], c[1], c[2], k) != 0.0) else {
+            return false;
+        };
+        let s = Sign::of(orient2d_axis(c[0], c[1], c[2], k));
+        orient3d(c[0], c[1], c[2], at) == 0.0
+            && (0..3).all(|e| Sign::of(orient2d_axis(c[e], c[(e + 1) % 3], at, k)) == s)
+    };
+    let mut work: Vec<usize> = (0..tris.len()).filter(|&f| alive[f]).rev().collect();
     while let Some(f) = work.pop() {
         if !alive[f] {
             continue;
@@ -218,6 +227,9 @@ fn collapse_rounded(shell: Assembled, point: &[u32]) -> Assembled {
         let d = u[(0..3)
             .find(|&k| u[k] != p && u[k] != q)
             .expect("third corner")];
+        if !flat(t) && !inside(u, m) {
+            continue;
+        }
         for (h, w) in [(f, t), (g, u)] {
             alive[h] = false;
             for k in 0..3 {
@@ -237,9 +249,7 @@ fn collapse_rounded(shell: Assembled, point: &[u32]) -> Assembled {
             for k in 0..3 {
                 edge.insert((nt[k], nt[(k + 1) % 3]), h);
             }
-            if flat(nt) {
-                work.push(h);
-            }
+            work.push(h);
         }
     }
     let mut out = Assembled {
@@ -565,6 +575,27 @@ mod tests {
         check(&out);
         assert_eq!(out.triangles.len(), 4);
         assert_eq!(out.vertex_rows, [Some(0), Some(2), Some(1), Some(3)]);
+    }
+
+    #[test]
+    fn a_sliver_folded_onto_its_coplanar_neighbour_is_split_away() {
+        let m = [1.0, 0.01, 0.0];
+        let s = shell(
+            vec![A, B, C, D, m],
+            vec![
+                [0, 2, 1],
+                [0, 1, 4],
+                [0, 4, 3],
+                [4, 1, 3],
+                [0, 3, 2],
+                [1, 2, 3],
+            ],
+        );
+        let before = Mesh::new(s.vertices.clone(), s.triangles.clone()).unwrap();
+        assert!(!before.validate(0.0).unwrap().summary.is_solid());
+        let out = collapse_rounded(s, &[0, 1, 2, 3, 4]);
+        check(&out);
+        assert_eq!(out.triangles.len(), 6);
     }
 
     #[test]

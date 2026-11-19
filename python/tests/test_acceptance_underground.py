@@ -400,7 +400,6 @@ def test_stope_minus_drive_with_tessellated_stope(decline):
     assert close(both.volume - d.volume, cut.volume)
 
 
-@pytest.mark.skip(reason="acceptance: rounding folds a sliver where a drive wall crosses a stope wall")
 def test_stope_and_drive_intersection_is_a_solid():
     d, _ = drive(DECLINE[:4], n_arch=3)
     stope = box([0, 0, -8], [60, 20, 22])

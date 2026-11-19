@@ -83,6 +83,10 @@ All notable changes to wireframes are listed here. The format follows
   duplicate vertices or open edges where distinct exact points round to the
   same float: each output shell merges such vertices and removes faces with
   repeated or collinear corners.
+- Booleans remove a sliver that rounding folds onto the coplanar face across
+  its longest edge, where a stope wall cuts a drive wall quad that is planar
+  only to rounding. In a seeded scan of 240 stope and drive booleans, 29
+  results were invalid before and none after.
 - `block_fraction` is exactly 0 or 1 for a block that no face meets, instead
   of picking up `f64` residue from the faces above it.
 - `loft` links each band with both rings centred and the band axis removed.
@@ -94,7 +98,7 @@ All notable changes to wireframes are listed here. The format follows
 
 - A boolean result can fail validation after its exact vertices are rounded to
   f64: rounding can fold a sliver thinner than the float spacing onto a
-  neighbouring face. Seen in chains of grid-box booleans and in booleans of
+  neighbouring face that is not coplanar with it. Seen in chains of grid-box booleans and in booleans of
   pits clipped by the same topography (their caps differ by about one ulp);
   for pushbacks, clip the difference of the unclipped pits instead.
 - `split_by_plane` at a plane the mesh touches from above (a DTM contour

@@ -170,9 +170,11 @@ No other dependency without a line in this table.
    unless a test states a different bound and the reason.
 5. Materialized intersection points round each exact coordinate to the nearest
    `f64`. Repeated and collinear corners that rounding makes are removed per
-   output shell (section 6.2 item 7). Rounding can still, in rare cases, fold a
-   sliver thinner than the `f64` spacing onto a neighbouring face, which gives a
-   self-intersection or coplanar overlap that the exact arrangement did not have.
+   output shell (section 6.2 item 7), and so is a sliver that rounding folds onto
+   the coplanar neighbour across its longest edge, such as the kink where a stope
+   wall cuts a drive wall quad that is planar only to rounding. Rounding can still,
+   in rare cases, fold a sliver onto a face that is not coplanar with it, which
+   gives a self-intersection that the exact arrangement did not have.
    Booleans of solids whose caps differ by about one ulp (pits clipped by the same
    topography, whose clip vertices are rounded off the surface) hit this; clip the
    difference instead (`(s2 - s1).clip_by_surface(topo)`). Output tests check
@@ -946,9 +948,11 @@ Arrangement (`arrangement.rs`):
    vertex are dropped, opposite faces on the same three vertices cancel, and a face
    whose rounded corners are exactly collinear (`collinear3`) is removed by
    splitting the face across its longest edge at its middle corner (the new faces
-   keep that face's source). Every step keeps each edge used once in each
-   direction. Equal coordinates in different shells stay apart (touching shells), and
-   so do the copies of one exact point within a shell.
+   keep that face's source). A face whose middle corner rounds to strictly inside the
+   coplanar face across its longest edge (exact `orient3d` and `orient2d_axis` on the
+   rounded points) is a fold and is removed the same way. Every step keeps each edge
+   used once in each direction. Equal coordinates in different shells stay apart
+   (touching shells), and so do the copies of one exact point within a shell.
    Rounding can still fold a sliver onto a neighbour (tolerance policy rule 5).
 8. Attributes: output face attributes are `Table::concat` of A's and B's face
    tables taken by `face_source`; vertex attributes keep input rows, null for new
