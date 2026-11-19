@@ -417,7 +417,7 @@ def test_intersection_of_previous_pit_and_pushback_pieces_is_a_thin_solid():
     assert solid == "True" and float(volume) < 1e-6
 
 
-@pytest.mark.skip(reason="acceptance: union and difference of previous pit and pushback pieces fail rounding")
+@pytest.mark.skip(reason="acceptance: union and difference of pit and pushback pieces self-intersect")
 def test_union_and_difference_of_previous_pit_and_pushback_pieces():
     pit, pushback = load_pair("pushback_pair_runaway.npz")
     assert pit.is_solid and pushback.is_solid

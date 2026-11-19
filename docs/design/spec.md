@@ -176,12 +176,21 @@ No other dependency without a line in this table.
    `f64`. Repeated and collinear corners that rounding makes are removed per
    output shell (section 6.2 item 7), and so is a sliver that rounding folds onto
    the coplanar neighbour across its longest edge, such as the kink where a stope
-   wall cuts a drive wall quad that is planar only to rounding. Rounding can still,
-   in rare cases, fold a sliver onto a face that is not coplanar with it, which
-   gives a self-intersection that the exact arrangement did not have.
-   Booleans of solids whose caps differ by about one ulp (pits clipped by the same
-   topography, whose clip vertices are rounded off the surface) hit this; clip the
-   difference instead (`(s2 - s1).clip_by_surface(topo)`). Output tests check
+   wall cuts a drive wall quad that is planar only to rounding. Rounding can still
+   fold a sliver onto a face that is not coplanar with it, which gives a
+   self-intersection that the exact arrangement did not have. This is not rare: it
+   happens whenever two input surfaces agree only to an ulp, so the exact result
+   holds slivers thinner than `f64` can place. Open-pit work hits it often: booleans
+   of a pit and its pushback after each was clipped by the topography (their shared
+   walls and caps were computed separately and differ by ulps), and
+   `clip_by_surface` of polygonal pits with many wall quads by a surface whose
+   faces cross the wall quads near their diagonals (the open-pit acceptance tests
+   measured 127 invalid clips in 200 seeded tilted planes for an octagonal pit at
+   UTM coordinates). Prefer operations on the exact inputs: clip the difference
+   (`(s2 - s1).clip_by_surface(topo)`) rather than taking the difference of clipped
+   pieces. The result is closed and manifold, and its volume is right to rounding,
+   but `validate` reports the self-intersections, so `is_solid` is false; a fix
+   needs snap rounding of the arrangement, which is not implemented. Output tests check
    combinatorial closure and manifoldness, and `validate` on outputs is run in the
    property tests with the failure rate reported, never hidden.
 
