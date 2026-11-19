@@ -203,7 +203,7 @@ units, tolerance`.
 pub enum Error {
     #[error("{0}")]
     InvalidInput(String),
-    #[error("invalid mesh: {context}")]
+    #[error("invalid mesh: {context}: {defects}; the error's report lists each problem ..., and mesh.repair() or repair=True fixes what repair can")]
     InvalidMesh { context: String, report: Box<MeshReport> },
     #[error("{}", format_location(path, line, message))]
     Format { path: Option<std::path::PathBuf>, line: Option<u64>, message: String },
@@ -223,7 +223,10 @@ pub type Result<T> = std::result::Result<T, Error>;
 
 `InvalidMesh` is the only way a boolean, clip, query or build function reports an
 input that fails validation; `context` names the argument (`"a"`, `"b"`,
-`"solid"`, `"surface"`).
+`"solid"`, `"surface"`). The message names the cause and the way out: `{defects}`
+is `MeshSummary::defects()`, the nonzero defect counts (`boundary_edges=18,
+self_intersections=29`, or `not closed`), followed by the pointer to the report
+and to repair, so `wf.union(topography, orebody)` says why it refuses.
 
 ### 3.2 table.rs
 

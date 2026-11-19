@@ -732,7 +732,6 @@ def test_error_messages_name_the_cause_and_the_way_out(tmp_path, small):
         wf.read(tmp_path / "h.dxf", length_unit="ft")
 
 
-@pytest.mark.skip(reason="acceptance: open-mesh errors from volume and booleans give no cause or next step")
 def test_open_mesh_errors_say_what_is_wrong_and_what_to_do(small):
     topo = wf.datasets.topography(n=20)
     with pytest.raises(wf.InvalidMesh, match=r"boundary_edges.*repair"):

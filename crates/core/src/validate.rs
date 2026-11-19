@@ -106,6 +106,33 @@ impl MeshSummary {
             && self.coplanar_overlaps == 0
     }
 
+    /// The nonzero defect counts as `name=count`, comma separated, with
+    /// `not closed` when open and nothing else is counted; `no defects` for a
+    /// solid.
+    pub fn defects(&self) -> String {
+        let info = [
+            "shells",
+            "unused_vertices",
+            "touching_shell_edges",
+            "touching_shell_vertices",
+            "is_closed",
+        ];
+        let mut out: Vec<String> = self
+            .to_pairs()
+            .into_iter()
+            .filter(|(n, v)| *v != 0 && !info.contains(n))
+            .map(|(n, v)| format!("{n}={v}"))
+            .collect();
+        if !self.is_closed && out.is_empty() {
+            out.push("not closed".into());
+        }
+        if out.is_empty() {
+            "no defects".into()
+        } else {
+            out.join(", ")
+        }
+    }
+
     /// Counts in a stable order, `is_closed` last as 0 or 1.
     pub fn to_pairs(&self) -> Vec<(&'static str, i64)> {
         vec![
@@ -616,6 +643,25 @@ mod tests {
 
     fn summary(m: &Mesh) -> MeshSummary {
         validate(m, 0.0).unwrap().summary
+    }
+
+    #[test]
+    fn defects_list_only_nonzero_defect_counts() {
+        assert_eq!(summary(&fixtures::cube()).defects(), "no defects");
+        let open = MeshSummary {
+            is_closed: false,
+            shells: 1,
+            unused_vertices: 2,
+            ..MeshSummary::default()
+        };
+        assert_eq!(open.defects(), "not closed");
+        let bad = MeshSummary {
+            boundary_edges: 18,
+            self_intersections: 29,
+            touching_shell_edges: 1,
+            ..open
+        };
+        assert_eq!(bad.defects(), "boundary_edges=18, self_intersections=29");
     }
 
     #[test]

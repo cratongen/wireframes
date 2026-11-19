@@ -6,7 +6,11 @@ use crate::MeshReport;
 pub enum Error {
     #[error("{0}")]
     InvalidInput(String),
-    #[error("invalid mesh: {context}")]
+    #[error(
+        "invalid mesh: {context}: {}; the error's report lists each problem (as mesh.validate() does), \
+         and mesh.repair() or repair=True fixes what repair can",
+        report.summary.defects()
+    )]
     InvalidMesh {
         context: String,
         report: Box<MeshReport>,
@@ -97,5 +101,24 @@ mod tests {
             Error::invalid("x").with_path("p"),
             Error::InvalidInput(_)
         ));
+    }
+
+    #[test]
+    fn invalid_mesh_messages_name_the_defects_and_the_way_out() {
+        let open = crate::Mesh::new(
+            vec![[0.0; 3], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+            vec![[0, 1, 2]],
+        )
+        .unwrap();
+        let e = Error::InvalidMesh {
+            context: "a".into(),
+            report: Box::new(open.validate(0.0).unwrap()),
+        };
+        let m = e.to_string();
+        assert!(m.starts_with("invalid mesh: a: boundary_edges=3; "), "{m}");
+        assert!(
+            m.contains("mesh.validate()") && m.contains("repair=True"),
+            "{m}"
+        );
     }
 }

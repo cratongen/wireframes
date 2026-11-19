@@ -41,7 +41,7 @@ pub fn offset(mesh: &Mesh, distance: f64) -> Result<Mesh> {
     let s = &report.summary;
     if s.self_intersections > 0 || s.coplanar_overlaps > 0 || s.inward_shells > 0 {
         return Err(Error::InvalidMesh {
-            context: "offset result self-intersects".into(),
+            context: "offset result self-intersects; use a smaller distance".into(),
             report: Box::new(report),
         });
     }
