@@ -17,7 +17,8 @@
 one, and winds faces upward. It keeps the `crs` and `length_unit` of a `PointSet` or `Mesh` you pass it.
 
 `loft` orients the rings, aligns their start vertices, and picks each band's triangles by dynamic programming to
-minimise their area. It takes one closed ring per section; branching is not supported yet. `offset` refuses a
+minimise their area with both rings centred and seen along the band axis, so long bands and sections cut obliquely
+across the axis link vertex to vertex instead of in fans. It takes one closed ring per section; branching is not supported yet. `offset` refuses a
 result that intersects itself.
 
 Every solid builder validates its output. The checks the test suite runs on them:

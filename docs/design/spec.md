@@ -1121,9 +1121,13 @@ Semantics:
   Newell normal of the outer ring.
 - `loft`: features in order are consecutive sections; each must have exactly one
   closed part. Rings are oriented consistently (Newell normals agree with the
-  direction to the next section's centroid), start vertices aligned by the closest
-  pair, and linked by dynamic programming that minimizes total triangle area over
-  the band (O(m n)). End caps by `triangulate_polygons`. Output is a solid
+  direction to the next section's centre), and each band is linked in its overlay
+  frame: both rings are centred on their own area centroid and the component along
+  the axis between the two centres is removed, so the band length does not enter
+  the cost. Start vertices are aligned by the closest overlay pair, and dynamic
+  programming minimizes the total overlay triangle area over the band (O(m n)).
+  Measured in 3D, a long band's double fan and its straight walls have nearly the
+  same area, so a 3D cost cannot separate them; the overlay cost can. End caps by `triangulate_polygons`. Output is a solid
   (validated; `InvalidInput` with the report summary if linking produced
   self-intersections). Face column `section` (Int64, band index, caps -1 and -2).
 - `extrude`: each closed ring triangulated as caps at 0 and `vector`, walls as

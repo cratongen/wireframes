@@ -251,7 +251,6 @@ def test_vein_pinching_out_to_a_line_or_point(last, expect):
     assert close(m.volume, expect)
 
 
-@pytest.mark.skip(reason="acceptance: loft twists the band to a section cut obliquely across the axis")
 @pytest.mark.parametrize("n", [4, 16])
 def test_loft_to_an_obliquely_cut_section_is_a_truncated_prism(n):
     t = np.linspace(0, 2 * np.pi, n, endpoint=False)
@@ -263,7 +262,6 @@ def test_loft_to_an_obliquely_cut_section_is_a_truncated_prism(n):
     assert close(m.volume, 0.5 * n * 2.5**2 * np.sin(2 * np.pi / n) * 40.0)
 
 
-@pytest.mark.skip(reason="acceptance: loft along a drive with grade changes links mitred rings into fans")
 def test_loft_of_mitred_drive_rings_is_the_swept_drive():
     profile, area = drive_profile()
     m = wf.loft(wf.Polylines(sweep(DEEP + DECLINE, profile), closed=True, length_unit="m"))

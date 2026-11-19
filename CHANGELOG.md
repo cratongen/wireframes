@@ -76,6 +76,10 @@ All notable changes to wireframes are listed here. The format follows
   repeated or collinear corners.
 - `block_fraction` is exactly 0 or 1 for a block that no face meets, instead
   of picking up `f64` residue from the faces above it.
+- `loft` links each band with both rings centred and the band axis removed.
+  The 3D area cost could not tell a long band's straight walls from a double
+  fan, so sections cut obliquely across the axis and mitred drive rings along
+  a bent path came back refused or with the wrong volume.
 
 ### Known issues
 
