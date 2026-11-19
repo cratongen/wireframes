@@ -47,6 +47,25 @@ itself on the same terms, such as an L-shaped body whose two arms meet along an 
 closes around a gap: the result is a solid with one shell and the contact in `touching_shell_edges`, so a
 stope-by-stope union does not depend on the order of the stopes.
 
+## Rounding
+
+Exact predicates decide every crossing, and the result is exact until its new vertices are written as f64. Where
+two inputs agree only to the last digit, the exact result can hold slivers thinner than f64 can place, and
+rounding folds them into their neighbours. The output is closed and its volume is right to rounding, but
+`validate` reports the self-intersections, so the result is not a solid and the next boolean or clip refuses it.
+`repair` does not remove self-intersections.
+
+Open-pit work meets this when it combines pieces that were each clipped by the same topography: their caps come
+from the same topography triangles cut at different places. Combine the closed, unclipped solids first and clip
+once:
+
+```python
+stage2 = (closed2 - closed1).clip_by_surface(topography)[0]  # valid
+stage2 = closed2.clip_by_surface(topography)[0] - closed1.clip_by_surface(topography)[0]  # can self-intersect
+```
+
+Check `is_solid` on any result you pass on. [Example 06](../examples/06-open-pit/README.md) shows both orders.
+
 ## Cutting
 
 ```python
@@ -55,15 +74,21 @@ negative, positive = mesh.split_by_plane(origin, normal)  # exact side test; on-
 lines = mesh.slice_by_plane(origin, normal, offsets=[0, 10, 20])
 ```
 
-`clip_by_surface` needs the surface boundary outside the solid. `slice_by_plane` returns one feature per line
-with an `offset` column and the face columns of the triangles it crosses; a line splits where those columns
-change.
+`clip_by_surface` needs the surface boundary outside the solid, and both inputs must pass validation. Cap faces
+take the surface's face columns, so a `surface` column on the topography marks which faces of a clipped pit came
+from the ground and which from the design. `slice_by_plane` returns one feature per line with an `offset` column
+and the face columns of the triangles it crosses; a line splits where those columns change.
 
 ## Cut and fill
 
 `wf.cut_fill(base, design, boundary=None)` overlays two height-field surfaces in plan and integrates
 `design - base` exactly over each overlay cell. It returns `cut`, `fill`, `net`, `cut_area`, `fill_area` and
-`area`. Swapping the surfaces swaps cut and fill.
+`area`, in the data's units. Swapping the surfaces swaps cut and fill.
+
+The domain is where both surfaces exist in plan, inside the closed rings of `boundary` when given. A surface with
+two faces over one plan point, such as an overhanging wall, raises `wf.InvalidInput`. Over one domain, nets add
+up: `net(a, c) == net(a, b) + net(b, c)` to rounding, which checks a survey against a design and the topography
+in one line.
 
 ## Example
 

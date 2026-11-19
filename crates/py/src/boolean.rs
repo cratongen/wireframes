@@ -39,10 +39,15 @@ macro_rules! boolean_fn {
         /// Returns
         /// -------
         /// Mesh or tuple of (Mesh, (RepairReport, RepairReport))
-        ///     A solid; face attributes follow the faces they came from.
+        ///     A closed mesh; face attributes follow the faces they came from.
         ///     Parts that touch along an edge or at a vertex are separate
         ///     shells with their own vertices, so the result is valid input
-        ///     to another boolean.
+        ///     to another boolean. Where the inputs agree only to rounding,
+        ///     such as two pits clipped by the same topography, rounding the
+        ///     exact result to f64 can leave self-intersections: the volume
+        ///     is right to rounding, but ``validate`` reports them and the
+        ///     next boolean refuses the mesh. Combine the unclipped solids
+        ///     and clip once to avoid it.
         ///
         /// Raises
         /// ------
@@ -95,8 +100,10 @@ boolean_fn!(
 
 /// Cut and fill volumes of `design` against `base`, by an exact plan overlay.
 ///
-/// Both surfaces must be height fields. The domain is where both surfaces
-/// exist in plan, inside `boundary` when given.
+/// Both surfaces must be height fields: no two faces overlap in plan. The
+/// domain is where both surfaces exist in plan, inside `boundary` when given.
+/// The overlay is integrated exactly per cell, so net volumes over one domain
+/// add up: ``net(a, c) == net(a, b) + net(b, c)`` to rounding.
 ///
 /// Parameters
 /// ----------
@@ -113,6 +120,12 @@ boolean_fn!(
 ///     ``cut`` (volume where design is below base), ``fill`` (above),
 ///     ``net`` (fill minus cut), ``cut_area``, ``fill_area`` and ``area``
 ///     (plan areas).
+///
+/// Raises
+/// ------
+/// InvalidInput
+///     When a surface is not a height field, naming the surface and a face,
+///     or when ``boundary`` holds no closed ring.
 ///
 /// Examples
 /// --------
@@ -264,12 +277,18 @@ impl PyMesh {
     /// Returns
     /// -------
     /// tuple of (Mesh, Mesh)
-    ///     ``(below, above)``, both solids; cap faces carry the surface's
+    ///     ``(below, above)``, both closed; cap faces carry the surface's
     ///     face attributes. A surface that misses the solid gives the whole
-    ///     solid on one side and an empty mesh on the other.
+    ///     solid on one side and an empty mesh on the other. As for the
+    ///     booleans, rounding to f64 can leave self-intersections that
+    ///     ``validate`` reports when the surface and the solid agree only to
+    ///     rounding somewhere.
     ///
     /// Raises
     /// ------
+    /// InvalidMesh
+    ///     When the solid is not a solid or the surface fails validation;
+    ///     ``report`` holds the validation.
     /// InvalidInput
     ///     When the surface ends inside the solid, or when a part of the solid
     ///     lies beyond the surface's extent (no line along x, y or z through

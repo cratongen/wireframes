@@ -14,7 +14,10 @@
 | `mesh.offset(distance)` | vertices moved along their normals, outward when positive |
 
 `dtm` keeps breaklines and boundary rings as edges, drops points closer than `min_spacing` in plan to an earlier
-one, and winds faces upward. It keeps the `crs` and `length_unit` of a `PointSet` or `Mesh` you pass it.
+one, and winds faces upward. Where two breaklines cross, the new vertex takes its elevation from the one inserted
+first, in feature order, so put contours with exact elevations before strings that interpolate. With the default
+`min_spacing=0`, two points at one plan position with different elevations raise `wf.InvalidInput` naming both.
+It keeps the `crs` and `length_unit` of a `PointSet` or `Mesh` you pass it.
 
 `loft` orients the rings, aligns their start vertices, and picks each band's triangles by dynamic programming to
 minimise their area with both rings centred and seen along the band axis, so long bands and sections cut obliquely
@@ -27,6 +30,8 @@ Every solid builder validates its output. The checks the test suite runs on them
 - the volume of an extrusion equals ring area times height;
 - a loft of two squares gives the box or frustum volume;
 - the volume of `close_to_elevation(z)` equals the fill of `cut_fill` against a flat plane at `z`;
+- a pit design closed above the ground and clipped by the topography has the volume of the design's cut against
+  the topography ([example 06](../examples/06-open-pit/README.md));
 - contours of a plane are straight lines on that plane.
 
 ## Example

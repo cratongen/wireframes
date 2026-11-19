@@ -13,7 +13,8 @@
 | `thickness(bottom, points, mode=...)` | vertical or normal thickness between two surfaces |
 
 Measures subtract the bounding-box corner before summing, so UTM coordinates keep their digits.
-`volume_by_elevation` integrates clamped columns exactly, and its slabs add back to `volume`.
+`volume_by_elevation` integrates clamped columns exactly, and its slabs add back to `volume`. A slab the solid
+does not reach can come out as a rounding residue of either sign, such as `-4.5e-13`, instead of 0.
 
 ## Validation
 

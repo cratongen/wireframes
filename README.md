@@ -91,7 +91,9 @@ tonnage without warning. `wireframes` enforces three rules:
    materializing the output `Mesh`.
 2. **Refuse dirty solids by default**: boolean operations (`union`,
    `intersection`, `difference`, `clip_by_surface`) validate their inputs first.
-   Valid closed inputs produce a valid closed output. If an input has boundary
+   Valid closed inputs produce a closed output; where the inputs agree only to
+   rounding, rounding the result to `f64` can leave self-intersections that
+   `validate` reports (spec tolerance policy, item 5). If an input has boundary
    edges, non-manifold edges or vertices, degenerate or duplicate faces,
    inconsistent winding, inward shells, or self-intersections, the function
    raises `wf.InvalidMesh` carrying the full `MeshReport` (problem counts and

@@ -155,13 +155,27 @@ impl PyMesh {
     /// The solid between this height-field surface and the plane at elevation `z`.
     ///
     /// Walls drop from the boundary loop to `z` and a flat base closes them.
-    /// The surface must have one boundary loop, entirely above or entirely
-    /// below `z`.
+    /// The surface must have one boundary loop and lie strictly above or
+    /// strictly below `z`. Closing a pit design surface above the highest
+    /// ground and clipping it by the topography gives the excavation.
     ///
     /// Parameters
     /// ----------
     /// z : float
     ///     Elevation of the flat base.
+    ///
+    /// Returns
+    /// -------
+    /// Mesh
+    ///     A solid whose volume equals the ``cut_fill`` of the surface
+    ///     against a flat plane at `z`; walls and base have null face
+    ///     attributes.
+    ///
+    /// Raises
+    /// ------
+    /// InvalidInput
+    ///     When the surface is not a height field with one boundary loop, or
+    ///     a vertex lies at or across `z`.
     ///
     /// Examples
     /// --------

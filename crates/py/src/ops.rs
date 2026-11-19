@@ -423,6 +423,14 @@ impl PyMesh {
     /// -------
     /// numpy.ndarray
     ///     ``len(edges) - 1`` volumes; value ``i`` covers ``edges[i] <= z < edges[i + 1]``.
+    ///     When the edges span the solid, the values add up to ``volume``. A
+    ///     slab the solid does not reach can come out as a rounding residue
+    ///     of either sign instead of 0.
+    ///
+    /// Raises
+    /// ------
+    /// InvalidMesh
+    ///     When the mesh is not closed and consistently wound.
     ///
     /// Examples
     /// --------
