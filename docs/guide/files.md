@@ -22,10 +22,14 @@ coordinates. Readers fan polygons from their first corner and record a face colu
 polygons (OBJ, PLY, OFF, VTK, VTU) rebuild them.
 
 ```python
-data = wf.read("pit.dxf", crs="EPSG:31983")  # unit from $INSUNITS
-mesh = wf.read_mesh("lens_tr.csv")  # either file of a Datamine pair
+import wireframes as wf
+
+mesh = wf.datasets.orebody()
 wf.write("lens.vtu", mesh, zlib=True)
 wf.write("lens.dxf", mesh, dxf_entity="polyface", skip_unsupported_columns=True)
+wf.write("lens_tr.csv", mesh)  # writes lens_tr.csv and lens_pt.csv
+data = wf.read("lens.dxf", crs="EPSG:31983")  # unit from $INSUNITS
+mesh = wf.read_mesh("lens_pt.csv")  # either file of a Datamine pair
 ```
 
 Options of `write`:

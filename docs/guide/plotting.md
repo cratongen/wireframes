@@ -18,6 +18,15 @@ section against elevation; any other plane uses an in-plane basis.
 faces in orange, which makes holes and folds easy to find.
 
 ```python
+import wireframes as wf
+
+topography = wf.datasets.topography()
+orebody = wf.datasets.orebody()
+holes = wf.datasets.drillholes()
+origin = orebody.centroid
+outline = orebody.slice_by_plane(origin, [0, 0, 1])
+holed = orebody.filter_faces(orebody.face_centroids[:, 2] < origin[2] + 40)
+
 fig, ax = wf.plot.plan([topography, outline, holes], edges=True)
 fig, ax = wf.plot.section([orebody, holes], origin, [1, 0, 0], thickness=40)
 fig, ax = wf.plot.surface3d(holed, problems=holed.validate())

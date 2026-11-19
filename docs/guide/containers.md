@@ -26,6 +26,8 @@ and the rest return new objects, and the arrays you get back are copies.
 import wireframes as wf
 import numpy as np
 
+vertices = np.array([[0, 0, 0], [1, 0, 0], [0, 1, 0], [0, 0, 1]], dtype=float)
+triangles = np.array([[0, 2, 1], [0, 1, 3], [0, 3, 2], [1, 2, 3]])
 mesh = wf.Mesh(
     vertices, triangles, face_attributes={"rock": ["ox"] * len(triangles)}, crs="EPSG:31983", length_unit="m"
 )
@@ -45,6 +47,11 @@ hole is one feature with two rings. Inside is even-odd over a feature's rings, a
 inside.
 
 ```python
+outer = [[0, 0, 100], [40, 0, 100], [40, 30, 100], [0, 30, 100]]
+hole = [[10, 10, 100], [20, 10, 100], [20, 20, 100], [10, 20, 100]]
+points = [[5, 5, 100], [15, 15, 100]]
+table = wf.Table({"ID": [1, 1, 1], "X": [0.0, 10, 10], "Y": [0.0, 0, 10], "Z": [100.0, 100, 100]})
+
 pad = wf.Polylines([outer, hole], closed=True, features=[0, 0], attributes={"name": ["pad 3"]})
 pad.area(), pad.length()
 pad.contains(points)  # exact, in plan

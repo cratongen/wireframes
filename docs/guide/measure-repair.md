@@ -58,6 +58,11 @@ merges such pieces into one shell.
 ## Repair
 
 ```python
+import wireframes as wf
+
+box = wf.datasets.box([0, 0, 0], [10, 10, 10])
+mesh = box.filter_faces([True] * 11 + [False])  # one triangle missing
+
 fixed, report = mesh.repair(weld=0.0, fill_holes="min_area")
 report.actions  # one row per change: action, vertex, face, other, reason
 report.vertex_map  # output vertex of each input vertex, -1 when removed

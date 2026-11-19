@@ -34,6 +34,16 @@ not positive raises `wf.InvalidInput`.
 Both need a solid: an open or otherwise invalid mesh raises `wf.InvalidMesh` with the report.
 
 ```python
+import numpy as np
+import wireframes as wf
+
+solid = wf.datasets.orebody()
+lo, hi = solid.bounds
+axes = [np.arange(a + s / 2, b + s, s) for a, b, s in zip(lo, hi, [10, 10, 5])]
+centroids = np.column_stack([g.ravel() for g in np.meshgrid(*axes, indexing="ij")])
+trace_xyz = np.array([solid.centroid + [0, 0, 150], solid.centroid - [0, 0, 150]])
+depths = np.array([0.0, 300.0])
+
 f = solid.block_fraction(centroids, [10, 10, 5])
 iv = solid.trace_intervals(trace_xyz, depths)
 inside = iv.filter(iv["inside"])

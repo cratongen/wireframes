@@ -13,6 +13,20 @@
 | `mesh.remesh(edge_length, iterations=5)` | isotropic remeshing |
 | `mesh.offset(distance)` | vertices moved along their normals, outward when positive |
 
+```python
+import wireframes as wf
+
+base = [[0, 0, 0], [20, 0, 0], [20, 10, 0], [0, 10, 0]]
+top = [[5, 2.5, 10], [15, 2.5, 10], [15, 7.5, 10], [5, 7.5, 10]]
+prism = wf.extrude(wf.Polylines([base], closed=True), [0, 0, 5])
+prism.volume  # 1000.0: ring area times height
+frustum = wf.loft(wf.Polylines([base, top], closed=True, features=[0, 1]))
+frustum.volume  # 1166.67: h / 3 * (A1 + A2 + sqrt(A1 * A2))
+ground = wf.datasets.topography()
+fill = ground.close_to_elevation(200)  # solid between the ground and 200 m
+lines = ground.contours([280, 300, 320])
+```
+
 `dtm` keeps breaklines and boundary rings as edges, drops points closer than `min_spacing` in plan to an earlier
 one, and winds faces upward. Where two breaklines cross, the new vertex takes its elevation from the one inserted
 first, in feature order, so put contours with exact elevations before strings that interpolate. With the default

@@ -28,6 +28,8 @@ interiors do not overlap. Two stopes that share a corner, or `a - b` and `b - a`
 intersection curve, are one valid solid. Every boolean accepts such solids and returns them:
 
 ```python
+import wireframes as wf
+
 a = wf.datasets.box([0, 0, 0], [1, 1, 1])
 b = wf.datasets.box([1, 1, 0], [2, 2, 1])  # shares the edge x = y = 1 with a
 two = a | b
@@ -58,20 +60,27 @@ kernel, not a fault in your input: `error.report` holds the `MeshReport` of the 
 result itself, so you can still read its volume. `repair` does not remove self-intersections; a fix needs snap
 rounding, which wireframes does not implement yet.
 
+Open-pit work meets this when it combines pieces that were each clipped by the same topography: their caps come
+from the same topography triangles cut at different places.
+
 ```python
+topography = wf.datasets.topography()
+sky = topography.translate([0, 0, 200])  # pit walls daylight above the ground
+closed1 = wf.datasets.pit(sky, radius=60).close_to_elevation(600)
+closed2 = wf.datasets.pit(sky, radius=90).close_to_elevation(600)
+pit1 = closed1.clip_by_surface(topography)[0]
+pit2 = closed2.clip_by_surface(topography)[0]
 try:
     pushback = pit2 - pit1
 except wf.KernelError as error:
     print(error.report.summary["self_intersections"], error.mesh.volume)
 ```
 
-Open-pit work meets this when it combines pieces that were each clipped by the same topography: their caps come
-from the same topography triangles cut at different places. Combine the closed, unclipped solids first and clip
-once:
+Combine the closed, unclipped solids first and clip once:
 
 ```python
-stage2 = (closed2 - closed1).clip_by_surface(topography)[0]  # valid
-stage2 = closed2.clip_by_surface(topography)[0] - closed1.clip_by_surface(topography)[0]  # can raise wf.KernelError
+pushback = (closed2 - closed1).clip_by_surface(topography)[0]
+pushback.is_solid  # True
 ```
 
 Underground work meets it in long chains of booleans. Each result carries rounded vertices along its intersection
@@ -81,6 +90,12 @@ over each other after a few steps. Two habits avoid it. Put pieces that do not t
 original solids rather than from an earlier result:
 
 ```python
+drive = wf.datasets.box([0, 0, 0], [100, 5, 4])
+crosscuts = [wf.datasets.box([x, 2, 0.5], [x + 4, 30, 3.5]) for x in range(10, 100, 20)]
+stopes = wf.concat([wf.datasets.box([x - 3, 20, 0], [x + 7, 40, 20]) for x in range(10, 100, 20)])
+orebody = wf.datasets.box([0, 25, 0], [100, 45, 20])
+development = drive | wf.concat(crosscuts)
+
 level = drive | wf.concat(crosscuts)  # one union; the crosscuts do not touch each other
 dilution = (stopes - orebody).volume - ((stopes & development) - orebody).volume  # from original solids
 ```
@@ -92,9 +107,13 @@ eleventh step.
 ## Cutting
 
 ```python
+solid = wf.datasets.orebody()
+fault = wf.datasets.topography().translate([0, 0, solid.centroid[2] - 300])  # spans the orebody in plan
+origin, normal = solid.centroid, [1, 0, 0]
+
 below, above = solid.clip_by_surface(fault)  # both capped; above is where the normals point
-negative, positive = mesh.split_by_plane(origin, normal)  # exact side test; on-plane points go positive
-lines = mesh.slice_by_plane(origin, normal, offsets=[0, 10, 20])
+negative, positive = solid.split_by_plane(origin, normal)  # exact side test; on-plane points go positive
+lines = solid.slice_by_plane(origin, normal, offsets=[0, 10, 20])
 ```
 
 `clip_by_surface` needs the surface boundary outside the solid: a fault or topography that ends inside the solid
