@@ -32,8 +32,8 @@ mise run compat     # install check across pip, uv, pixi, and conda
 - `crates/` - Rust workspace:
   - `core`: `Mesh`, `Polylines`, `PointSet`, attribute tables, validation report,
     and exact geometric predicates (`robust` crate).
-  - `io`: readers and writers for OBJ, PLY, OFF, STL, DXF, VTK legacy, VTU, and
-    Datamine `_tr.csv`/`_pt.csv` pairs.
+  - `io`: readers and writers for OBJ, PLY, OFF, STL, DXF, VTK legacy, VTU,
+    VTP, and Datamine `_tr.csv`/`_pt.csv` pairs.
   - `boolean`: native mesh arrangements, exact intersection predicates, implicit
     intersection points, boolean operations, plane slicing, and surface cutting.
   - `query`: point-in-solid, signed distance, ray/drillhole intersections, and

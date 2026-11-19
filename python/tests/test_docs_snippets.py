@@ -33,3 +33,18 @@ def test_page_snippets_run(page, tmp_path, monkeypatch):
 
 def test_every_guide_page_has_a_snippet():
     assert [p.name for p in sorted((ROOT / "docs/guide").glob("*.md")) if not blocks(p)] == []
+
+
+def test_readme_and_charter_list_every_format_the_reader_knows():
+    import wireframes as wf
+
+    with pytest.raises(wf.InvalidInput) as info:
+        wf.read("unknown.zzz")
+    extensions = re.findall(
+        r"\.([a-z]+)\b", str(info.value).split("reads and writes", 1)[1].split("datamine")[0]
+    )
+    assert {"obj", "vtp"} <= set(extensions)
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    charter = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
+    assert [e for e in extensions if f"`.{e}`" not in readme] == []
+    assert [e for e in extensions if e.upper() not in charter] == []
