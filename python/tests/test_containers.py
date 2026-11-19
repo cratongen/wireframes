@@ -117,7 +117,8 @@ def test_mesh_construction_and_attributes(box):
 def test_mesh_is_immutable(box):
     b = box([0, 0, 0], [1, 1, 1])
     before = b.coords.copy()
-    b.coords[0, 0] = 99.0
+    with pytest.raises(ValueError, match="read-only"):
+        b.coords[0, 0] = 99.0
     b.translate([5, 5, 5])
     assert np.array_equal(b.coords, before)
     with pytest.raises(AttributeError):
@@ -186,3 +187,18 @@ def test_point_set(rng):
     assert len(p.filter(p["grade"] > 0.5)) == int((p["grade"] > 0.5).sum())
     assert p.to_table().column_names == ["x", "y", "z", "grade"]
     assert p.with_column("k", np.arange(20))["k"].dtype == np.int64
+
+
+def test_arrays_copied_from_containers_are_read_only(box):
+    m = box([0, 0, 0], [1, 1, 1]).with_face_column("d", np.arange(12.0))
+    holes = wf.datasets.drillholes(n=2)
+    pts = holes.to_points()
+    arrays = [m.coords, m.x, m.triangles, m["d"], m.face_attributes["d"], pts.coords]
+    arrays += [holes.coords, holes.parts[0], holes.closed, holes.feature]
+    for a in arrays:
+        assert not a.flags.writeable
+        with pytest.raises(ValueError):
+            a[0] = 0
+    c = m.coords.copy()
+    c[:, 2] += 10
+    assert m.with_vertices(c).bounds[0][2] == 10

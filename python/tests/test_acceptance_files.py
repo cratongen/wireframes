@@ -761,7 +761,6 @@ def test_numpy_arrays_out_have_the_promised_dtypes_and_shapes(small):
     assert np.array_equal(again.coords, small.coords) and again.volume == small.volume
 
 
-@pytest.mark.skip(reason="acceptance: arrays from an immutable mesh are writeable and writes vanish silently")
 def test_arrays_from_an_immutable_mesh_refuse_writes(small):
     for arr in (small.coords, small.z, small.triangles, small["grade"]):
         with pytest.raises(ValueError):

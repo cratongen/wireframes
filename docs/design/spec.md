@@ -1236,7 +1236,11 @@ class MissingColumn(WireframesError, KeyError): ...
 Conventions (boitata): required geometry args positional, options keyword-only;
 properties for cheap derived values, methods for anything taking points; objects
 immutable; choices as string literals; numpy arrays out (`float64`, `int64`,
-`bool`); NumPy-style docstrings, present tense, first line "A copy with ..." or a
+`bool`); arrays that copy a container's state (`coords`, `x`/`y`/`z`,
+`triangles`, `parts`, `closed`, `feature`, columns from `[]` or `column`, grid
+`points`, `cell_types`, `offsets`, `connectivity`) are read-only, so a write
+raises `ValueError` instead of vanishing; `.copy()` gives a writeable array, and
+`with_vertices` or `with_*_column` build a changed container; NumPy-style docstrings, present tense, first line "A copy with ..." or a
 noun phrase; messages lowercase.
 
 Type aliases in the stub:

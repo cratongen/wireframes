@@ -97,6 +97,15 @@ pub(crate) fn vec3(obj: &Bound<PyAny>, what: &str) -> PyResult<[f64; 3]> {
     <[f64; 3]>::try_from(v).map_err(|_| invalid(format!("{what} must have 3 values")))
 }
 
+/// `a` with numpy's writeable flag cleared: it is a copy of immutable state, so
+/// a write would be lost.
+pub(crate) fn frozen<'py, T>(a: Bound<'py, T>) -> PyResult<Bound<'py, T>> {
+    let kw = PyDict::new(a.py());
+    kw.set_item("write", false)?;
+    a.as_any().call_method("setflags", (), Some(&kw))?;
+    Ok(a)
+}
+
 pub(crate) fn array1<'py>(py: Python<'py>, v: Vec<f64>) -> Bound<'py, PyArray1<f64>> {
     PyArray1::from_vec(py, v)
 }
@@ -295,7 +304,7 @@ impl PyTable {
     /// MissingColumn
     ///     When the table has no such column.
     fn column<'py>(&self, py: Python<'py>, name: &str) -> PyResult<Bound<'py, PyAny>> {
-        column_py(py, self.get_column(name)?)
+        frozen(column_py(py, self.get_column(name)?)?)
     }
 
     fn __getitem__<'py>(&self, py: Python<'py>, name: &str) -> PyResult<Bound<'py, PyAny>> {
@@ -532,22 +541,24 @@ impl PyMesh {
 
     /// ``(n, 3)`` vertex coordinates.
     #[getter]
-    fn coords<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray2<f64>> {
-        array_n(py, self.inner.vertices())
+    fn coords<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyArray2<f64>>> {
+        frozen(array_n(py, self.inner.vertices()))
     }
 
     /// ``(m, 3)`` vertex indices of each triangle.
     #[getter]
-    fn triangles<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray2<i64>> {
+    fn triangles<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyArray2<i64>>> {
         let flat: Vec<i64> = self
             .inner
             .triangles()
             .iter()
             .flat_map(|t| t.map(i64::from))
             .collect();
-        Array2::from_shape_vec((self.inner.n_faces(), 3), flat)
-            .expect("rectangular rows")
-            .into_pyarray(py)
+        frozen(
+            Array2::from_shape_vec((self.inner.n_faces(), 3), flat)
+                .expect("rectangular rows")
+                .into_pyarray(py),
+        )
     }
 
     /// Number of vertices.
@@ -611,7 +622,7 @@ impl PyMesh {
             (Some(_), Some(_)) => Err(invalid(format!(
                 "{name:?} is both a vertex and a face column; use vertex_attributes or face_attributes"
             ))),
-            (Some(c), None) | (None, Some(c)) => column_py(py, c),
+            (Some(c), None) | (None, Some(c)) => frozen(column_py(py, c)?),
             (None, None) => Err(missing(name, &self.column_names())),
         }
     }
@@ -804,32 +815,32 @@ impl PyPolylines {
 
     /// ``(n, 3)`` coordinates of every vertex, part after part.
     #[getter]
-    fn coords<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray2<f64>> {
-        array_n(py, self.inner.vertices())
+    fn coords<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyArray2<f64>>> {
+        frozen(array_n(py, self.inner.vertices()))
     }
 
     /// ``(k, 3)`` vertices of each part.
     #[getter]
-    fn parts<'py>(&self, py: Python<'py>) -> Vec<Bound<'py, PyArray2<f64>>> {
+    fn parts<'py>(&self, py: Python<'py>) -> PyResult<Vec<Bound<'py, PyArray2<f64>>>> {
         (0..self.inner.n_parts())
-            .map(|p| array_n(py, self.inner.part(p)))
+            .map(|p| frozen(array_n(py, self.inner.part(p))))
             .collect()
     }
 
     /// Whether each part is a ring.
     #[getter]
-    fn closed<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray1<bool>> {
-        PyArray1::from_slice(py, self.inner.closed())
+    fn closed<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyArray1<bool>>> {
+        frozen(PyArray1::from_slice(py, self.inner.closed()))
     }
 
     /// Feature index of each part.
     #[getter]
-    fn feature<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray1<i64>> {
+    fn feature<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyArray1<i64>>> {
         let mut out = Vec::with_capacity(self.inner.n_parts());
         for f in 0..self.inner.len() {
             out.extend(self.inner.feature_parts(f).map(|_| f as i64));
         }
-        PyArray1::from_vec(py, out)
+        frozen(PyArray1::from_vec(py, out))
     }
 
     /// One row per feature.
@@ -1102,8 +1113,8 @@ impl PyPointSet {
 
     /// ``(n, 3)`` coordinates.
     #[getter]
-    fn coords<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray2<f64>> {
-        array_n(py, self.inner.coords())
+    fn coords<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyArray2<f64>>> {
+        frozen(array_n(py, self.inner.coords()))
     }
 
     /// One row per point.
@@ -1142,7 +1153,7 @@ impl PyPointSet {
 
     fn __getitem__<'py>(&self, py: Python<'py>, name: &str) -> PyResult<Bound<'py, PyAny>> {
         match self.inner.attributes().column(name) {
-            Some(c) => column_py(py, c),
+            Some(c) => frozen(column_py(py, c)?),
             None => Err(missing(name, self.inner.attributes().names())),
         }
     }
@@ -1195,26 +1206,26 @@ pub(crate) struct PyUnstructuredGrid {
 impl PyUnstructuredGrid {
     /// ``(n, 3)`` point coordinates.
     #[getter]
-    fn points<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray2<f64>> {
-        array_n(py, &self.inner.points)
+    fn points<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyArray2<f64>>> {
+        frozen(array_n(py, &self.inner.points))
     }
 
     /// VTK cell type id of each cell.
     #[getter]
-    fn cell_types<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray1<u8>> {
-        PyArray1::from_slice(py, &self.inner.cell_types)
+    fn cell_types<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyArray1<u8>>> {
+        frozen(PyArray1::from_slice(py, &self.inner.cell_types))
     }
 
     /// ``n_cells + 1`` offsets into ``connectivity``.
     #[getter]
-    fn offsets<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray1<i64>> {
-        PyArray1::from_slice(py, &self.inner.offsets)
+    fn offsets<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyArray1<i64>>> {
+        frozen(PyArray1::from_slice(py, &self.inner.offsets))
     }
 
     /// Point ids of every cell, cell after cell.
     #[getter]
-    fn connectivity<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray1<i64>> {
-        PyArray1::from_slice(py, &self.inner.connectivity)
+    fn connectivity<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyArray1<i64>>> {
+        frozen(PyArray1::from_slice(py, &self.inner.connectivity))
     }
 
     /// One row per point.
