@@ -963,6 +963,16 @@ pub struct BooleanResult {
     pub mesh: Mesh,
     pub face_source: Vec<(u8, u32)>,   // per output face: (0 = a, 1 = b, input face index after repair)
     pub repairs: [Option<RepairReport>; 2],
+    pub rounding: RoundingReport,      // what rounding the exact result to f64 did (tolerance rule 5)
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct RoundingReport {
+    pub rounded_vertices: usize, pub moved_vertices: usize, pub moved_input_vertices: usize,
+    pub max_move: [f64; 3], pub move_bound: [f64; 3],
+    pub merged_vertices: usize, pub collapsed_edges: usize, pub inserted_points: usize,
+    pub flipped_edges: usize, pub removed_shells: usize, pub cancelled_faces: usize,
+    pub volume_bound: f64, pub steps: usize, pub step_bound: usize,
 }
 
 pub fn boolean(a: &Mesh, b: &Mesh, op: Op, opts: &BooleanOptions) -> Result<BooleanResult>;
@@ -971,9 +981,14 @@ pub fn intersection(a: &Mesh, b: &Mesh, opts: &BooleanOptions) -> Result<Boolean
 pub fn difference(a: &Mesh, b: &Mesh, opts: &BooleanOptions) -> Result<BooleanResult>;
 pub fn symmetric_difference(a: &Mesh, b: &Mesh, opts: &BooleanOptions) -> Result<BooleanResult>;
 
-pub struct ClipResult { pub below: Mesh, pub above: Mesh, pub repairs: [Option<RepairReport>; 2] }
+pub struct ClipResult {
+    pub below: Mesh, pub above: Mesh, pub repairs: [Option<RepairReport>; 2],
+    pub rounding: [RoundingReport; 2],  // below, above
+}
 pub fn clip_by_surface(solid: &Mesh, surface: &Mesh, opts: &BooleanOptions) -> Result<ClipResult>;
 pub fn split_by_plane(mesh: &Mesh, origin: [f64; 3], normal: [f64; 3]) -> Result<(Mesh, Mesh)>;
+pub fn split_by_plane_report(mesh: &Mesh, origin: [f64; 3], normal: [f64; 3])
+    -> Result<(Mesh, Mesh, [RoundingReport; 2])>;
 pub fn slice_by_plane(mesh: &Mesh, origin: [f64; 3], normal: [f64; 3], offsets: &[f64]) -> Result<Polylines>;
 
 pub struct CutFill { pub cut: f64, pub fill: f64, pub net: f64, pub cut_area: f64, pub fill_area: f64, pub area: f64 }
@@ -1521,18 +1536,20 @@ class Mesh:
     ) -> Floats: ...
     # booleans (boolean.rs)
     @overload
-    def union(self, other: Mesh, *, repair: Literal[False] = False) -> Mesh: ...
+    def union(self, other: Mesh, *, repair: Literal[False] = False,
+              rounding_report: Literal[False] = False) -> Mesh: ...
     @overload
     def union(
-        self, other: Mesh, *, repair: Literal[True]
+        self, other: Mesh, *, repair: Literal[True], rounding_report: Literal[False] = False
     ) -> tuple[Mesh, tuple[RepairReport, RepairReport]]: ...
-    # intersection, difference, symmetric_difference: same two overloads
+    # rounding_report=True appends the RoundingReport: (mesh, report) or
+    # (mesh, (ra, rb), report). intersection, difference, symmetric_difference: same overloads
     def clip_by_surface(
-        self, surface: Mesh, *, repair: bool = False
-    ) -> tuple[Mesh, Mesh]: ...  # (below, above)
+        self, surface: Mesh, *, repair: bool = False, rounding_report: bool = False
+    ) -> tuple[Mesh, Mesh]: ...  # (below, above), then (r_below, r_above) when rounding_report
     def split_by_plane(
-        self, origin: ArrayLike, normal: ArrayLike
-    ) -> tuple[Mesh, Mesh]: ...  # (negative, positive)
+        self, origin: ArrayLike, normal: ArrayLike, *, rounding_report: bool = False
+    ) -> tuple[Mesh, Mesh]: ...  # (negative, positive), then (r_neg, r_pos) when rounding_report
     def slice_by_plane(
         self, origin: ArrayLike, normal: ArrayLike, *, offsets: ArrayLike | None = None
     ) -> Polylines: ...
@@ -1580,6 +1597,10 @@ vertex_removed, face_removed, face_flipped, face_added`, `vertex`, `face`, `othe
 (merge target, split copy or hole), `reason`),
 `.vertex_map`, `.face_map` (int64, -1 removed), `.before`, `.after` (dicts),
 `.holes_left`, `.summary -> dict[str, int]` (count per action).
+
+`RoundingReport` (frozen): the fields of the Rust struct as properties, with
+`max_move` and `move_bound` as `(x, y, z)` tuples; `repr` shows the moved counts,
+`max_move`, `volume_bound` and `steps`.
 
 #### Polylines
 
@@ -1652,7 +1673,7 @@ def write(path: Path, data: Mesh | Polylines | PointSet | UnstructuredGrid | Dat
           ascii: bool = False, dxf_entity: Literal["3dface", "polyface"] = "3dface",
           zlib: bool = False, skip_unsupported_columns: bool = False) -> None: ...
 def concat(meshes: Sequence[Mesh]) -> Mesh: ...
-def union(a: Mesh, b: Mesh, *, repair: bool = False) -> Mesh | tuple[Mesh, tuple[RepairReport, RepairReport]]: ...  # same overloads as the method
+def union(a: Mesh, b: Mesh, *, repair: bool = False, rounding_report: bool = False) -> Mesh | tuple[...]: ...  # same overloads as the method
 def intersection(...); def difference(...); def symmetric_difference(...)   # same as union
 def cut_fill(base: Mesh, design: Mesh, *, boundary: Polylines | None = None) -> dict[str, float]: ...  # cut, fill, net, cut_area, fill_area, area
 def dtm(points: Points, *, breaklines: Polylines | None = None, boundary: Polylines | None = None,
@@ -1719,7 +1740,7 @@ def surface3d(
   `pip install "wireframes[plot]"`.
 
 `__init__.py` exports: `Table, Mesh, Polylines, PointSet, UnstructuredGrid,
-Dataset, MeshReport, RepairReport, WireframesError, InvalidInput, InvalidMesh,
+Dataset, MeshReport, RepairReport, RoundingReport, WireframesError, InvalidInput, InvalidMesh,
 KernelError, FileError, MissingColumn, read, read_mesh, read_polylines, read_points, write,
 concat, union, intersection, difference, symmetric_difference, cut_fill, dtm,
 triangulate, loft, extrude, plot` (lazy attribute), `__version__`.

@@ -529,11 +529,23 @@ else:
 # overlap they agree only to the last digit. The exact difference holds slivers thinner than a 64-bit number can
 # place, and rounding them would fold them into their neighbours. So the boolean first inserts each pit's cap
 # vertices into the other pit's cap where they lie within rounding of it, and flips edges until the two caps match
-# there. The caps then coincide exactly, the slivers vanish, and the difference is a solid. No input vertex moves;
-# the change is bounded and reported (the booleans guide, "Rounding"). Section 2 still subtracts the closed
-# shells and clips once, which keeps every wall exact.
+# there. The caps then coincide exactly, the slivers vanish, and the difference is a solid. No input vertex moves.
+# `rounding_report=True` returns what the rounding did and the proven bound on how far the volume can be from the
+# exact result's. Section 2 still subtracts the closed shells and clips once, which keeps every wall exact.
 
 # %%
-pushback = pits[1] - pits[0]
+pushback, rounding = wf.difference(pits[1], pits[0], rounding_report=True)
+assert isinstance(rounding, wf.RoundingReport) and rounding.moved_input_vertices == 0
 assert pushback.is_solid
+assert abs(pushback.volume - stages[1].volume) <= 1e-9 * stages[1].volume
 print(f"solid: {pushback.is_solid}, {pushback.volume:,.1f} m3 against stage 2 at {stages[1].volume:,.1f} m3")
+print(
+    f"{rounding.inserted_points} points inserted, {rounding.flipped_edges} edges flipped, "
+    f"{rounding.moved_vertices} vertices moved; volume within {rounding.volume_bound:.1e} m3 of the exact result"
+)
+print(
+    f"{rounding.rounded_vertices} rounded vertices, {rounding.merged_vertices} merged, "
+    f"{rounding.collapsed_edges} collapsed, {rounding.removed_shells} shells removed, "
+    f"{rounding.cancelled_faces} faces cancelled; largest move {max(rounding.max_move):.1e} m "
+    f"within {max(rounding.move_bound):.1e} m; {rounding.steps} steps of at most {rounding.step_bound}"
+)

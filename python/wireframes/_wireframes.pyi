@@ -68,6 +68,52 @@ class MeshReport:
         """Closed, manifold, outward and without self-intersections; shells may touch along edges or at vertices."""
     def __len__(self) -> int: ...
 
+class RoundingReport:
+    """What rounding the exact result of a boolean, clip or split to f64 did, and the bounds it proves."""
+
+    @property
+    def rounded_vertices(self) -> int:
+        """Output vertices that are rounded intersection points."""
+    @property
+    def moved_vertices(self) -> int:
+        """Exact vertices that ended at coordinates other than their own rounding."""
+    @property
+    def moved_input_vertices(self) -> int:
+        """The input vertices among ``moved_vertices``."""
+    @property
+    def max_move(self) -> tuple[float, float, float]:
+        """Largest distance per axis from an exact vertex to where it ended."""
+    @property
+    def move_bound(self) -> tuple[float, float, float]:
+        """Bound on that distance: four ulps of each vertex's largest coordinate."""
+    @property
+    def merged_vertices(self) -> int:
+        """Vertices merged with others of equal coordinates."""
+    @property
+    def collapsed_edges(self) -> int:
+        """Vertices joined with a neighbour within rounding."""
+    @property
+    def inserted_points(self) -> int:
+        """Points inserted into faces they lie within rounding of."""
+    @property
+    def flipped_edges(self) -> int:
+        """Input edges flipped to match the other input where the two agree to rounding."""
+    @property
+    def removed_shells(self) -> int:
+        """Shells of zero rounded volume removed."""
+    @property
+    def cancelled_faces(self) -> int:
+        """Faces removed in opposite pairs."""
+    @property
+    def volume_bound(self) -> float:
+        """Proven bound on ``abs(volume(result) - volume(exact result))``."""
+    @property
+    def steps(self) -> int:
+        """Operations applied."""
+    @property
+    def step_bound(self) -> int:
+        """Bound on ``steps`` proven before the first."""
+
 class RepairReport:
     """What ``Mesh.repair`` changed."""
 
@@ -241,37 +287,89 @@ class Mesh:
     ) -> Floats:
         """Thickness between this surface and `bottom` at each point."""
     @overload
-    def union(self, other: Mesh, *, repair: Literal[False] = False) -> Mesh: ...
+    def union(
+        self, other: Mesh, *, repair: Literal[False] = False, rounding_report: Literal[False] = False
+    ) -> Mesh: ...
     @overload
     def union(
-        self, other: Mesh, *, repair: Literal[True]
+        self, other: Mesh, *, repair: Literal[True], rounding_report: Literal[False] = False
     ) -> tuple[Mesh, tuple[RepairReport, RepairReport]]: ...
     @overload
-    def intersection(self, other: Mesh, *, repair: Literal[False] = False) -> Mesh: ...
+    def union(
+        self, other: Mesh, *, repair: Literal[False] = False, rounding_report: Literal[True]
+    ) -> tuple[Mesh, RoundingReport]: ...
+    @overload
+    def union(
+        self, other: Mesh, *, repair: Literal[True], rounding_report: Literal[True]
+    ) -> tuple[Mesh, tuple[RepairReport, RepairReport], RoundingReport]: ...
     @overload
     def intersection(
-        self, other: Mesh, *, repair: Literal[True]
+        self, other: Mesh, *, repair: Literal[False] = False, rounding_report: Literal[False] = False
+    ) -> Mesh: ...
+    @overload
+    def intersection(
+        self, other: Mesh, *, repair: Literal[True], rounding_report: Literal[False] = False
     ) -> tuple[Mesh, tuple[RepairReport, RepairReport]]: ...
     @overload
-    def difference(self, other: Mesh, *, repair: Literal[False] = False) -> Mesh: ...
+    def intersection(
+        self, other: Mesh, *, repair: Literal[False] = False, rounding_report: Literal[True]
+    ) -> tuple[Mesh, RoundingReport]: ...
+    @overload
+    def intersection(
+        self, other: Mesh, *, repair: Literal[True], rounding_report: Literal[True]
+    ) -> tuple[Mesh, tuple[RepairReport, RepairReport], RoundingReport]: ...
     @overload
     def difference(
-        self, other: Mesh, *, repair: Literal[True]
+        self, other: Mesh, *, repair: Literal[False] = False, rounding_report: Literal[False] = False
+    ) -> Mesh: ...
+    @overload
+    def difference(
+        self, other: Mesh, *, repair: Literal[True], rounding_report: Literal[False] = False
     ) -> tuple[Mesh, tuple[RepairReport, RepairReport]]: ...
     @overload
-    def symmetric_difference(self, other: Mesh, *, repair: Literal[False] = False) -> Mesh: ...
+    def difference(
+        self, other: Mesh, *, repair: Literal[False] = False, rounding_report: Literal[True]
+    ) -> tuple[Mesh, RoundingReport]: ...
+    @overload
+    def difference(
+        self, other: Mesh, *, repair: Literal[True], rounding_report: Literal[True]
+    ) -> tuple[Mesh, tuple[RepairReport, RepairReport], RoundingReport]: ...
     @overload
     def symmetric_difference(
-        self, other: Mesh, *, repair: Literal[True]
+        self, other: Mesh, *, repair: Literal[False] = False, rounding_report: Literal[False] = False
+    ) -> Mesh: ...
+    @overload
+    def symmetric_difference(
+        self, other: Mesh, *, repair: Literal[True], rounding_report: Literal[False] = False
     ) -> tuple[Mesh, tuple[RepairReport, RepairReport]]: ...
+    @overload
+    def symmetric_difference(
+        self, other: Mesh, *, repair: Literal[False] = False, rounding_report: Literal[True]
+    ) -> tuple[Mesh, RoundingReport]: ...
+    @overload
+    def symmetric_difference(
+        self, other: Mesh, *, repair: Literal[True], rounding_report: Literal[True]
+    ) -> tuple[Mesh, tuple[RepairReport, RepairReport], RoundingReport]: ...
     def __or__(self, other: Mesh) -> Mesh: ...
     def __and__(self, other: Mesh) -> Mesh: ...
     def __sub__(self, other: Mesh) -> Mesh: ...
     def __xor__(self, other: Mesh) -> Mesh: ...
-    def clip_by_surface(self, surface: Mesh, *, repair: bool = False) -> tuple[Mesh, Mesh]:
-        """``(below, above)`` parts of the solid cut by an open surface, both capped."""
-    def split_by_plane(self, origin: ArrayLike, normal: ArrayLike) -> tuple[Mesh, Mesh]:
-        """``(negative, positive)`` parts split by a plane."""
+    @overload
+    def clip_by_surface(
+        self, surface: Mesh, *, repair: bool = False, rounding_report: Literal[False] = False
+    ) -> tuple[Mesh, Mesh]: ...
+    @overload
+    def clip_by_surface(
+        self, surface: Mesh, *, repair: bool = False, rounding_report: Literal[True]
+    ) -> tuple[Mesh, Mesh, tuple[RoundingReport, RoundingReport]]: ...
+    @overload
+    def split_by_plane(
+        self, origin: ArrayLike, normal: ArrayLike, *, rounding_report: Literal[False] = False
+    ) -> tuple[Mesh, Mesh]: ...
+    @overload
+    def split_by_plane(
+        self, origin: ArrayLike, normal: ArrayLike, *, rounding_report: Literal[True]
+    ) -> tuple[Mesh, Mesh, tuple[RoundingReport, RoundingReport]]: ...
     def slice_by_plane(
         self, origin: ArrayLike, normal: ArrayLike, *, offsets: ArrayLike | None = None
     ) -> Polylines:
@@ -523,27 +621,69 @@ def concat(meshes: Sequence[Mesh]) -> Mesh:
     """Meshes appended in order, no welding."""
 
 @overload
-def union(a: Mesh, b: Mesh, *, repair: Literal[False] = False) -> Mesh: ...
+def union(
+    a: Mesh, b: Mesh, *, repair: Literal[False] = False, rounding_report: Literal[False] = False
+) -> Mesh: ...
 @overload
-def union(a: Mesh, b: Mesh, *, repair: Literal[True]) -> tuple[Mesh, tuple[RepairReport, RepairReport]]: ...
+def union(
+    a: Mesh, b: Mesh, *, repair: Literal[True], rounding_report: Literal[False] = False
+) -> tuple[Mesh, tuple[RepairReport, RepairReport]]: ...
 @overload
-def intersection(a: Mesh, b: Mesh, *, repair: Literal[False] = False) -> Mesh: ...
+def union(
+    a: Mesh, b: Mesh, *, repair: Literal[False] = False, rounding_report: Literal[True]
+) -> tuple[Mesh, RoundingReport]: ...
+@overload
+def union(
+    a: Mesh, b: Mesh, *, repair: Literal[True], rounding_report: Literal[True]
+) -> tuple[Mesh, tuple[RepairReport, RepairReport], RoundingReport]: ...
 @overload
 def intersection(
-    a: Mesh, b: Mesh, *, repair: Literal[True]
+    a: Mesh, b: Mesh, *, repair: Literal[False] = False, rounding_report: Literal[False] = False
+) -> Mesh: ...
+@overload
+def intersection(
+    a: Mesh, b: Mesh, *, repair: Literal[True], rounding_report: Literal[False] = False
 ) -> tuple[Mesh, tuple[RepairReport, RepairReport]]: ...
 @overload
-def difference(a: Mesh, b: Mesh, *, repair: Literal[False] = False) -> Mesh: ...
+def intersection(
+    a: Mesh, b: Mesh, *, repair: Literal[False] = False, rounding_report: Literal[True]
+) -> tuple[Mesh, RoundingReport]: ...
+@overload
+def intersection(
+    a: Mesh, b: Mesh, *, repair: Literal[True], rounding_report: Literal[True]
+) -> tuple[Mesh, tuple[RepairReport, RepairReport], RoundingReport]: ...
 @overload
 def difference(
-    a: Mesh, b: Mesh, *, repair: Literal[True]
+    a: Mesh, b: Mesh, *, repair: Literal[False] = False, rounding_report: Literal[False] = False
+) -> Mesh: ...
+@overload
+def difference(
+    a: Mesh, b: Mesh, *, repair: Literal[True], rounding_report: Literal[False] = False
 ) -> tuple[Mesh, tuple[RepairReport, RepairReport]]: ...
 @overload
-def symmetric_difference(a: Mesh, b: Mesh, *, repair: Literal[False] = False) -> Mesh: ...
+def difference(
+    a: Mesh, b: Mesh, *, repair: Literal[False] = False, rounding_report: Literal[True]
+) -> tuple[Mesh, RoundingReport]: ...
+@overload
+def difference(
+    a: Mesh, b: Mesh, *, repair: Literal[True], rounding_report: Literal[True]
+) -> tuple[Mesh, tuple[RepairReport, RepairReport], RoundingReport]: ...
 @overload
 def symmetric_difference(
-    a: Mesh, b: Mesh, *, repair: Literal[True]
+    a: Mesh, b: Mesh, *, repair: Literal[False] = False, rounding_report: Literal[False] = False
+) -> Mesh: ...
+@overload
+def symmetric_difference(
+    a: Mesh, b: Mesh, *, repair: Literal[True], rounding_report: Literal[False] = False
 ) -> tuple[Mesh, tuple[RepairReport, RepairReport]]: ...
+@overload
+def symmetric_difference(
+    a: Mesh, b: Mesh, *, repair: Literal[False] = False, rounding_report: Literal[True]
+) -> tuple[Mesh, RoundingReport]: ...
+@overload
+def symmetric_difference(
+    a: Mesh, b: Mesh, *, repair: Literal[True], rounding_report: Literal[True]
+) -> tuple[Mesh, tuple[RepairReport, RepairReport], RoundingReport]: ...
 def cut_fill(base: Mesh, design: Mesh, *, boundary: Polylines | None = None) -> dict[str, float]:
     """Cut, fill, net and areas of `design` against `base`."""
 

@@ -72,9 +72,14 @@ closed1 = wf.datasets.pit(sky, radius=60).close_to_elevation(600)
 closed2 = wf.datasets.pit(sky, radius=90).close_to_elevation(600)
 pit1 = closed1.clip_by_surface(topography)[0]
 pit2 = closed2.clip_by_surface(topography)[0]
-pushback = pit2 - pit1
+pushback, rounding = wf.difference(pit2, pit1, rounding_report=True)
 pushback.is_solid  # True
+rounding.moved_input_vertices, rounding.volume_bound  # 0 and about 7e-07 m3
 ```
+
+`rounding_report=True` on any boolean, `clip_by_surface` or `split_by_plane` returns a `wf.RoundingReport`
+last: how many vertices moved and how far at most (`max_move`, `move_bound`), what each operation did, and
+`volume_bound`, a proven bound on the difference from the exact result's volume.
 
 Combining the closed, unclipped solids first and clipping once keeps every wall exact, so nothing needs to move:
 

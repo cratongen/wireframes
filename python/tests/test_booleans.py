@@ -197,3 +197,39 @@ def test_cut_fill_identities():
     ring = wf.Polylines([o[:2] + [[-100, -100], [100, -100], [100, 100], [-100, 100]]], closed=True)
     inside = wf.cut_fill(t, t.translate([0, 0, 1.0]), boundary=ring)
     assert close(inside["area"], 40_000.0, rel=1e-9) and close(inside["fill"], 40_000.0, rel=1e-8)
+
+
+def test_rounding_report_comes_last_and_its_bounds_hold():
+    topography = wf.datasets.topography()
+    sky = topography.translate([0, 0, 200])
+    closed1 = wf.datasets.pit(sky, radius=60).close_to_elevation(600)
+    closed2 = wf.datasets.pit(sky, radius=90).close_to_elevation(600)
+    pit1 = closed1.clip_by_surface(topography)[0]
+    pit2 = closed2.clip_by_surface(topography)[0]
+    (u, ru), (i, ri) = (
+        wf.union(pit1, pit2, rounding_report=True),
+        pit1.intersection(pit2, rounding_report=True),
+    )
+    for m, r in ((u, ru), (i, ri)):
+        assert isinstance(r, wf.RoundingReport) and m.is_solid
+        assert r.steps <= r.step_bound
+        assert all(x <= b for x, b in zip(r.max_move, r.move_bound, strict=True))
+    gap = abs(u.volume + i.volume - pit1.volume - pit2.volume)
+    assert gap <= ru.volume_bound + ri.volume_bound + 1e-12 * pit2.volume
+    m, repairs, r = wf.difference(pit2, pit1, repair=True, rounding_report=True)
+    assert m.is_solid and len(repairs) == 2 and isinstance(r, wf.RoundingReport)
+    assert r.inserted_points > 0 and r.moved_input_vertices == 0
+    below, above, reports = pit2.clip_by_surface(topography, rounding_report=True)
+    assert below.is_solid and above.n_faces == 0 and len(reports) == 2
+    lo, hi, reports = pit2.split_by_plane(pit2.centroid, [1, 2, 3], rounding_report=True)
+    assert lo.is_solid and hi.is_solid and all(isinstance(r, wf.RoundingReport) for r in reports)
+    assert "volume_bound" in repr(r)
+
+
+def test_rounding_report_has_a_runnable_example():
+    import doctest
+
+    finder = doctest.DocTestFinder(recurse=False)
+    runner = doctest.DocTestRunner(optionflags=doctest.ELLIPSIS | doctest.NORMALIZE_WHITESPACE)
+    tests = [t for t in finder.find(wf.RoundingReport, "RoundingReport", globs={"wf": wf}) if t.examples]
+    assert tests and all(runner.run(t, out=lambda s: None).failed == 0 for t in tests)
