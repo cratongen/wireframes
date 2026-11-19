@@ -1579,6 +1579,12 @@ wireframes-boolean
 - Edge, vertex and face contact pairs, a difference that leaves bodies joined at
   edges and vertices, and a chain of ten mixed booleans each fed its previous result,
   checked against an exact voxel count.
+- Four shells on one edge and four octant boxes meeting at one vertex; a cavity
+  touching its outer shell at every vertex it has; exact edge and vertex contacts at
+  UTM scale and contacts 1e-6 apart; shells touching along a face are a coplanar
+  overlap, not a contact. Inputs with permuted vertices, faces and corners give the
+  same faces (as coordinate triples) and the same summary or the same error, and 1
+  and 8 threads give identical results (`tests/touching.rs`).
 - `split_by_plane` of a closed mesh that meets the plane only at a vertex, with and
   without touching shells, puts it whole on one side.
 - P closed manifold in gives closed manifold out (`is_closed`, no non-manifold edges

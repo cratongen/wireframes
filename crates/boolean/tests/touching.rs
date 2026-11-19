@@ -398,6 +398,80 @@ fn slicing_and_splitting_touching_shells() {
     }
 }
 
+/// Triangular prism over `z` in `[0, 1]` with one vertical edge on the `z`
+/// axis and the others above `a` and `b`, wound outward.
+fn wedge(a: [f64; 2], b: [f64; 2]) -> Mesh {
+    let v = [[0.0, 0.0], a, b]
+        .iter()
+        .flat_map(|p| [[p[0], p[1], 0.0], [p[0], p[1], 1.0]])
+        .collect();
+    let t = vec![
+        [0, 4, 2],
+        [1, 3, 5],
+        [0, 2, 3],
+        [0, 3, 1],
+        [2, 4, 5],
+        [2, 5, 3],
+        [4, 0, 1],
+        [4, 1, 5],
+    ];
+    let m = Mesh::new(v, t).unwrap();
+    if volume(&m) < 0.0 {
+        fixtures::flipped(&m)
+    } else {
+        m
+    }
+}
+
+#[test]
+fn many_shells_on_one_edge_and_one_vertex() {
+    let d = [
+        [1.0, 0.0],
+        [1.0, 1.0],
+        [0.0, 1.0],
+        [-1.0, 1.0],
+        [-1.0, 0.0],
+        [-1.0, -1.0],
+        [0.0, -1.0],
+        [1.0, -1.0],
+    ];
+    let wedges: Vec<Mesh> = (0..4).map(|k| wedge(d[2 * k], d[2 * k + 1])).collect();
+    let fan = Mesh::concat(&wedges.iter().collect::<Vec<_>>()).unwrap();
+    let s = summary(&fan);
+    assert!(s.is_solid(), "{s:?}");
+    assert_eq!(
+        (s.shells, s.touching_shell_edges, s.touching_shell_vertices),
+        (4, 1, 2)
+    );
+    let core = fixtures::box_mesh([-0.5, -0.5, 0.25], [0.5, 0.5, 0.75]);
+    let i = run(&fan, &core, Op::Intersection);
+    assert_eq!(summary(&i).touching_shell_edges, 1);
+    assert!(close(volume(&i), 0.25));
+    let d = run(&fan, &core, Op::Difference);
+    assert!(close(volume(&d), 2.0 - 0.25));
+    let e = boolean(&fan, &core, Op::Union, &BooleanOptions::default()).unwrap_err();
+    assert!(e.to_string().contains("touches itself"), "{e}");
+
+    let octants = Mesh::concat(&[
+        &fixtures::box_mesh([0.0; 3], [1.0; 3]),
+        &fixtures::box_mesh([-1.0, -1.0, 0.0], [0.0, 0.0, 1.0]),
+        &fixtures::box_mesh([-1.0, 0.0, -1.0], [0.0, 1.0, 0.0]),
+        &fixtures::box_mesh([0.0, -1.0, -1.0], [1.0, 0.0, 0.0]),
+    ])
+    .unwrap();
+    let s = summary(&octants);
+    assert!(s.is_solid(), "{s:?}");
+    assert_eq!(
+        (s.shells, s.touching_shell_edges, s.touching_shell_vertices),
+        (4, 6, 7)
+    );
+    let ball = fixtures::box_mesh([-0.5; 3], [0.5; 3]);
+    let [i, d, x] = [Op::Intersection, Op::Difference, Op::SymmetricDifference]
+        .map(|op| run(&octants, &ball, op));
+    assert!(close(volume(&i), 0.5) && close(volume(&d), 3.5) && close(volume(&x), 4.0));
+    assert_eq!(summary(&x).shells, 8);
+}
+
 #[test]
 fn a_cavity_touching_the_outer_shell_at_its_vertices() {
     let m = fixtures::vertex_touching_cavity();
@@ -464,4 +538,143 @@ fn split_through_a_lone_vertex_on_the_plane() {
             }
         }
     }
+}
+
+fn permuted(m: &Mesh, seed: u64) -> Mesh {
+    let mut rng = Rng::new(seed);
+    let mut order: Vec<u32> = (0..m.n_vertices() as u32).collect();
+    rng.shuffle(&mut order);
+    let mut slot = vec![0u32; order.len()];
+    for (k, &o) in order.iter().enumerate() {
+        slot[o as usize] = k as u32;
+    }
+    let v = order.iter().map(|&o| m.vertices()[o as usize]).collect();
+    let mut t: Vec<[u32; 3]> = m
+        .triangles()
+        .iter()
+        .map(|t| {
+            let t = t.map(|i| slot[i as usize]);
+            let r = rng.below(3);
+            [t[r], t[(r + 1) % 3], t[(r + 2) % 3]]
+        })
+        .collect();
+    rng.shuffle(&mut t);
+    Mesh::new(v, t).unwrap()
+}
+
+/// Faces as coordinate triples starting at the smallest corner, sorted.
+fn canonical(m: &Mesh) -> Vec<[[u64; 3]; 3]> {
+    let mut out: Vec<[[u64; 3]; 3]> = (0..m.n_faces() as u32)
+        .map(|f| {
+            let c = m.corners(f).map(|p| p.map(|x| (x + 0.0).to_bits()));
+            let r = (0..3).min_by_key(|&i| c[i]).unwrap();
+            [c[r], c[(r + 1) % 3], c[(r + 2) % 3]]
+        })
+        .collect();
+    out.sort_unstable();
+    out
+}
+
+#[test]
+fn permuted_inputs_and_thread_counts_give_the_same_results() {
+    let cases = [
+        (
+            fixtures::edge_touching_cubes(false),
+            fixtures::box_mesh([0.5, 0.5, 0.0], [1.5, 1.5, 1.0]),
+        ),
+        (
+            fixtures::edge_touching_cubes(true),
+            fixtures::box_mesh([0.5, 0.5, -0.5], [1.5, 1.5, 1.5]),
+        ),
+        (
+            fixtures::vertex_touching_cubes(),
+            fixtures::box_mesh([0.5; 3], [1.5; 3]),
+        ),
+        (
+            fixtures::vertex_touching_cavity(),
+            fixtures::box_mesh([1.5, -1.0, -1.0], [4.0, 4.0, 4.0]),
+        ),
+        (fixtures::cube(), fixtures::box_mesh([0.5; 3], [1.5; 3])),
+    ];
+    let opts = BooleanOptions::default();
+    let outcome = |a: &Mesh, b: &Mesh, op: Op| {
+        boolean(a, b, op, &opts)
+            .map(|r| (canonical(&r.mesh), summary(&r.mesh)))
+            .map_err(|e| e.to_string())
+    };
+    let mut refused = 0;
+    for (n, (a, b)) in cases.iter().enumerate() {
+        for op in OPS {
+            let base = outcome(a, b, op);
+            match &base {
+                Ok((_, s)) => assert!(s.is_solid() || s == &MeshSummary::default(), "{s:?}"),
+                Err(e) => {
+                    assert!(e.contains("touches itself"), "case {n} {op:?}: {e}");
+                    refused += 1;
+                }
+            }
+            for seed in 0..4 {
+                let (pa, pb) = (permuted(a, seed), permuted(b, seed + 100));
+                assert_eq!(outcome(&pa, &pb, op), base, "case {n} {op:?} seed {seed}");
+            }
+            let on = |threads: usize| {
+                rayon::ThreadPoolBuilder::new()
+                    .num_threads(threads)
+                    .build()
+                    .unwrap()
+                    .install(|| boolean(a, b, op, &opts).map(|r| (r.mesh, r.face_source)))
+                    .map_err(|e| e.to_string())
+            };
+            assert_eq!(on(1), on(8), "case {n} {op:?}");
+        }
+    }
+    assert!(refused <= 2, "{refused} refusals");
+}
+
+#[test]
+fn contacts_at_utm_scale_with_micrometre_offsets() {
+    let o = [700000.0, 7500000.0, 100.0];
+    let a = fixtures::translated(&fixtures::cube(), o);
+    let at = |d: [f64; 3]| fixtures::translated(&fixtures::cube(), [0, 1, 2].map(|k| o[k] + d[k]));
+    for (d, edges, points) in [([1.0, 1.0, 0.0], 1, 2), ([1.0, 1.0, 1.0], 0, 1)] {
+        let b = at(d);
+        let s = summary(&Mesh::concat(&[&a, &b]).unwrap());
+        assert!(s.is_solid(), "{s:?}");
+        assert_eq!(
+            (s.touching_shell_edges, s.touching_shell_vertices),
+            (edges, points)
+        );
+        let [u, ..] = check_identities(&a, &b);
+        let s = summary(&u);
+        assert_eq!((s.shells, s.touching_shell_edges), (2, edges));
+    }
+    let gap = at([1.0 + 1e-6, 1.0, 0.0]);
+    let s = summary(&Mesh::concat(&[&a, &gap]).unwrap());
+    assert!(s.is_solid() && s.touching_shell_vertices == 0, "{s:?}");
+    check_identities(&a, &gap);
+    let partial = at([1.0, 1.0, 1.0 - 1e-6]);
+    let s = summary(&Mesh::concat(&[&a, &partial]).unwrap());
+    assert!(!s.is_solid() && s.self_intersections > 0, "{s:?}");
+    let [u, ..] = check_identities(&a, &partial);
+    let s = summary(&u);
+    assert_eq!(
+        (s.shells, s.touching_shell_edges, s.touching_shell_vertices),
+        (2, 1, 2)
+    );
+}
+
+#[test]
+fn shells_touching_along_a_face_are_a_defect_and_merge_in_a_union() {
+    let a = fixtures::cube();
+    let b = fixtures::translated(&a, [1.0, 0.0, 0.0]);
+    let s = summary(&Mesh::concat(&[&a, &b]).unwrap());
+    assert!(!s.is_solid() && s.coplanar_overlaps > 0, "{s:?}");
+    let e = boolean(
+        &Mesh::concat(&[&a, &b]).unwrap(),
+        &a,
+        Op::Union,
+        &BooleanOptions::default(),
+    )
+    .unwrap_err();
+    assert!(e.to_string().contains("invalid mesh"), "{e}");
 }
