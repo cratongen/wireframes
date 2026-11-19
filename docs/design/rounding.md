@@ -1,8 +1,10 @@
 # Rounding exact results to f64
 
-Status: design, not implemented. The API contract stays in `spec.md`; this file
-records why booleans, `clip_by_surface` and `split_by_plane` refuse results today,
-which materialization method replaces the refusal, and how we prove it.
+Status: method C is implemented in `crates/boolean/src/round.rs`; section 7
+records where the implementation departs from this design and why. The API
+contract stays in `spec.md`; this file records why booleans, `clip_by_surface`
+and `split_by_plane` refused results, which materialization method replaced the
+refusal, and how we prove it.
 
 ## 1. The refusals, reproduced and reduced
 
@@ -352,3 +354,59 @@ Functions, all in `crates/boolean/src`:
   `RAYON_NUM_THREADS` 1, 3 and 4.
 - Inputs unchanged: every boolean, clip and split test compares the input meshes
   before and after the call.
+
+## 7. Implementation notes and departures
+
+Measured on the reduced cases and on the 648 inclined splits of `sphere(2)`
+(`cutting.rs`); counts, not timings.
+
+- **When the operations run.** The per-shell cleanup of `spec.md` section 6.2 item
+  7 runs first, as before. The operations over all shells run only when its
+  output is not a solid, so a result that rounded cleanly is unchanged. When they
+  end without a solid, the error carries the mesh of the per-shell cleanup run
+  without the move cap below: the cleanup as it was before this method, which
+  keeps the mesh closed, so `error.mesh.volume` still works. Its edge collapses
+  can move a vertex far: about 9e11 ulps in the pushback of `docs/guide/booleans.md`.
+  That mesh is never returned as a result, and its report raises `move_bound` to
+  its `max_move`.
+- **Volume bound.** `volume_bound` is `sum T(f_R, 2 rho_f) + |vol(F) - vol(R)|`,
+  where `R` is the draft with every exact vertex at its rounding, `rho_f` the
+  largest rounding radius of a corner of `f`, and `F` the output. The first term
+  is (V) for the motion from the exact result to `R`: every face of the exact
+  result lies within `rho_f` of its rounded face, so its sweep lies in
+  `f_R + B(2 rho_f)`. The second term is computed exactly on `f64` points over the
+  faces in which `R` and `F` differ, so it covers every later merge, flip,
+  collapse, insertion and removal without a bound per operation.
+- **C3** removes a component whose rounded volume is zero, or negative while
+  `validate` reports it as an inward shell, and only when that volume is at most
+  the component's own (V) sum.
+- **C2 and C5 are driven by the problem pairs `validate` reports.** For each
+  self-intersecting or overlapping pair, a corner `h` of one face whose hot box
+  meets the other face triggers C2 when the box also holds a corner of that face
+  (the two vertices become one), and C5 otherwise. C2 is a vertex identification,
+  not only an edge collapse; the link condition is not checked, and the final
+  `validate` decides.
+- **Hot box.** The design used the rounding box of `h`. The implementation first
+  tries one ulp of `h` per axis, rounded outward to `f64` ends so that the exact
+  separating-axis test runs on `f64` values. A round where that box finds nothing
+  retries with one ulp of `h` plus the largest ulp of the face's corners, the
+  reach the separation lemma (S) allows. With the narrow box alone, 6 of the 648
+  splits stayed uncertified: crossings that round two ulps from the vertex next to
+  them. With the wide box alone, 18 did, because it acts on the first candidate it
+  finds. Narrow then wide leaves none.
+- **Move cap.** The design capped a vertex at two ulps per axis from its exact
+  position. Collapsing those crossings onto their vertex needs two and a half, so
+  the cap is four ulps per axis (`move_bound`), checked for every collapse in both
+  the per-shell cleanup and the operations over all shells.
+- **Step bound.** `step_bound` adds the per-shell bound (each flip removes an edge
+  the cleanup did not make; at most `3 f0 / 2 + v0 f0` such edges per round and
+  `f0^2 + 1` rounds) to the bound over all shells (`v f` insertions, each adding at
+  most two faces, plus one removal per vertex or face that ever exists, plus one
+  round per action). Both are computed before the first step and asserted.
+- **Splits** follow the design: section points stay exact through the cap CDT, and
+  both parts go through `materialize`. `coincident` remains, but on exact points it
+  only joins section points at the same exact position; `clean` is gone.
+- **What remains uncertified.** Surfaces that agree only to an ulp with different
+  triangulations (M2 and M3 with crossing edges) leave face pairs where no corner
+  of either face lies within reach of the other: two edges pass within an ulp of
+  each other with no hot point near either. This is the gap section 3.C names.

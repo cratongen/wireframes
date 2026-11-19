@@ -9,7 +9,7 @@ use wireframes_core::{Column, EdgeMap, Error, Mesh, Polylines, Result, Table};
 
 use crate::hp::{self, Pt};
 use crate::ops::{is_closed_result, solid_result};
-use crate::round::{Assembled, collapse_rounded};
+use crate::round::{self, Draft, RoundingReport};
 use crate::triangulate::{Geom, cdt, even_odd};
 
 /// A section point: an input vertex on the plane, or the exact crossing of an
@@ -140,14 +140,11 @@ fn dominant(normal: [f64; 3]) -> usize {
         .expect("three axes")
 }
 
-/// For each section point, the representative of the points whose rounded
-/// coordinates project onto the same point along `drop`: one that is an
-/// input vertex (`snap`) when there is one, else the smallest index.
-///
-/// Rounded section points lie within a few ulps of the plane, and `drop` is
-/// the dominant axis of its normal, so points with one projection are a few
-/// ulps apart in 3D. They must be one cap point because the cap is
-/// triangulated in that projection.
+/// For each section point, the representative of the points at the same exact
+/// position, compared in the projection along `drop` (all lie on the plane, and
+/// `drop` is the dominant axis of its normal): one that is an input vertex
+/// (`snap`) when there is one, else the smallest index. They are one cap point
+/// because the cap is triangulated in that projection.
 fn coincident(pts: &[Pt], snap: &[Option<u32>], drop: usize) -> Vec<u32> {
     let edge = |a: u32| snap[a as usize].is_none();
     let mut order: Vec<u32> = (0..pts.len() as u32).collect();
@@ -163,56 +160,6 @@ fn coincident(pts: &[Pt], snap: &[Option<u32>], drop: usize) -> Vec<u32> {
         }
     }
     same
-}
-
-/// `list` after the cleanup booleans apply to rounded output
-/// ([`collapse_rounded`]): vertices with equal coordinates become one, faces
-/// that repeat a vertex or cancel go, and collinear corners and folds are
-/// split away. Also returns `merged` with the vertices that absorbed others,
-/// which may now be shared by touching shells.
-fn clean(
-    list: &[([u32; 3], Option<u32>)],
-    coords: &dyn Fn(u32) -> [f64; 3],
-    nv: u32,
-    merged: &HashSet<u32>,
-) -> (Vec<([u32; 3], Option<u32>)>, HashSet<u32>) {
-    let mut ids: Vec<u32> = list.iter().flat_map(|(t, _)| *t).collect();
-    ids.sort_unstable();
-    ids.dedup();
-    let at = |g: u32| ids.binary_search(&g).expect("listed") as u32;
-    let asm = Assembled {
-        vertices: ids.iter().map(|&g| coords(g)).collect(),
-        triangles: list.iter().map(|(t, _)| t.map(at)).collect(),
-        vertex_rows: ids.iter().map(|&g| (g < nv).then_some(g)).collect(),
-        face_source: list
-            .iter()
-            .map(|(_, f)| f.map_or((1, 0), |f| (0, f)))
-            .collect(),
-        normal: vec![],
-    };
-    let (mut out, mut point, _, _) = collapse_rounded(asm, &ids);
-    loop {
-        let n = out.triangles.len();
-        (out, point, _, _) = collapse_rounded(out, &point);
-        if out.triangles.len() == n {
-            break;
-        }
-    }
-    let bits = |g: u32| coords(g).map(|x| (x + 0.0).to_bits());
-    let kept: HashMap<[u64; 3], u32> = point.iter().map(|&r| (bits(r), r)).collect();
-    let mut merged = merged.clone();
-    merged.extend(
-        ids.iter()
-            .filter_map(|&g| kept.get(&bits(g)).filter(|&&r| r != g))
-            .copied(),
-    );
-    let list = out
-        .triangles
-        .iter()
-        .zip(&out.face_source)
-        .map(|(t, &(m, f))| (t.map(|i| point[i as usize]), (m == 0).then_some(f)))
-        .collect();
-    (list, merged)
 }
 
 /// Shell label of each face of `list`, the faces joined as [`Shells`] joins
@@ -240,6 +187,15 @@ fn shells_of(
 /// bound material on the negative side only, so they go to the negative
 /// side and are cut out of the cap.
 pub fn split_by_plane(mesh: &Mesh, origin: [f64; 3], normal: [f64; 3]) -> Result<(Mesh, Mesh)> {
+    split_by_plane_report(mesh, origin, normal).map(|(lo, hi, _)| (lo, hi))
+}
+
+/// [`split_by_plane`] with what rounding each part to `f64` did.
+pub fn split_by_plane_report(
+    mesh: &Mesh,
+    origin: [f64; 3],
+    normal: [f64; 3],
+) -> Result<(Mesh, Mesh, [RoundingReport; 2])> {
     check_plane(origin, normal)?;
     let normal = hp::unit_scale(normal);
     let mut sec = section(mesh, origin, normal);
@@ -318,20 +274,14 @@ pub fn split_by_plane(mesh: &Mesh, origin: [f64; 3], normal: [f64; 3]) -> Result
     let pts: Vec<Pt> = sec
         .keys
         .par_iter()
-        .map(|&k| Pt::E(key_point(mesh, k, origin, normal).to_f64()))
+        .map(|&k| key_point(mesh, k, origin, normal))
         .collect();
     let snap: Vec<Option<u32>> = sec
         .keys
         .iter()
-        .zip(&pts)
-        .map(|(&k, p)| match k {
+        .map(|&k| match k {
             Key::V(v) => Some(v),
-            Key::E(u, v) => {
-                let p = p.to_f64();
-                [u, v]
-                    .into_iter()
-                    .find(|&w| mesh.vertices()[w as usize] == p)
-            }
+            Key::E(..) => None,
         })
         .collect();
     let same = if closed {
@@ -446,63 +396,109 @@ pub fn split_by_plane(mesh: &Mesh, origin: [f64; 3], normal: [f64; 3]) -> Result
             faces[1].push((p, None));
         }
     }
+    let rounded: Vec<[f64; 3]> = pts.par_iter().map(Pt::to_f64).collect();
     let coords = |id: u32| {
         if id < nv {
             mesh.vertices()[id as usize]
         } else {
-            pts[(id - nv) as usize].to_f64()
+            rounded[(id - nv) as usize]
         }
     };
-    let build = |list: &[([u32; 3], Option<u32>)]| -> Result<Mesh> {
-        let (list, merged) = clean(list, &coords, nv, &merged);
-        let list = &list[..];
-        let shell = if merged.is_empty() {
-            vec![0; list.len()]
-        } else {
-            shells_of(list, &coords)?
+    let face_normal: Vec<[f64; 3]> = mesh
+        .triangles()
+        .par_iter()
+        .map(|t| {
+            hp::Plane::new(t.map(|i| mesh.vertices()[i as usize]))
+                .normal_exp()
+                .clone()
+                .map(|x| x.estimate())
+        })
+        .collect();
+    let build =
+        |list: &[([u32; 3], Option<u32>)], side: usize| -> Result<(Mesh, RoundingReport, bool)> {
+            let shell = if merged.is_empty() {
+                vec![0; list.len()]
+            } else {
+                shells_of(list, &coords)?
+            };
+            let cap = if side == 0 {
+                normal
+            } else {
+                normal.map(|x| -x)
+            };
+            let mut d = Draft {
+                point: vec![],
+                home: vec![],
+                err: vec![],
+                rows: vec![],
+                triangles: vec![],
+                face_source: vec![],
+                normal: vec![],
+                shells: vec![(0..list.len() as u32).collect()],
+                closed,
+            };
+            let mut map: HashMap<(u32, u32), u32> = HashMap::new();
+            for (f, &(t, src)) in list.iter().enumerate() {
+                let tri = t.map(|id| {
+                    let part = if merged.contains(&id) { shell[f] } else { 0 };
+                    *map.entry((id, part)).or_insert_with(|| {
+                        let home = coords(id);
+                        d.point.push(id);
+                        d.home.push(home);
+                        d.err.push(if id < nv {
+                            [0.0; 3]
+                        } else {
+                            home.map(round::half_ulp)
+                        });
+                        d.rows.push((id < nv).then_some(id));
+                        d.home.len() as u32 - 1
+                    })
+                });
+                d.triangles.push(tri);
+                d.face_source.push(src.map_or((1, 0), |f| (0, f)));
+                d.normal.push(src.map_or(cap, |f| face_normal[f as usize]));
+            }
+            let r = round::materialize(d)?;
+            let frows: Vec<Option<u32>> = r
+                .mesh
+                .face_source
+                .iter()
+                .map(|&(m, f)| (m == 0).then_some(f))
+                .collect();
+            let m = if r.mesh.triangles.is_empty() {
+                Mesh::empty().with_attributes(
+                    mesh.vertex_attributes().take(&[]),
+                    mesh.face_attributes().take(&[]),
+                )?
+            } else {
+                Mesh::new(r.mesh.vertices, r.mesh.triangles)?.with_attributes(
+                    mesh.vertex_attributes().take_or_null(&r.mesh.vertex_rows),
+                    mesh.face_attributes().take_or_null(&frows),
+                )?
+            };
+            Ok((
+                m.with_crs(mesh.crs.clone())
+                    .with_length_unit(mesh.length_unit.clone()),
+                r.report,
+                r.certified,
+            ))
         };
-        let mut map: HashMap<(u32, u32), u32> = HashMap::new();
-        let (mut v, mut rows, mut tris) = (vec![], vec![], vec![]);
-        for (f, (t, _)) in list.iter().enumerate() {
-            tris.push(t.map(|id| {
-                let part = if merged.contains(&id) { shell[f] } else { 0 };
-                *map.entry((id, part)).or_insert_with(|| {
-                    v.push(coords(id));
-                    rows.push((id < nv).then_some(id));
-                    v.len() as u32 - 1
-                })
-            }));
-        }
-        let frows: Vec<Option<u32>> = list.iter().map(|x| x.1).collect();
-        let m = if tris.is_empty() {
-            Mesh::empty().with_attributes(
-                mesh.vertex_attributes().take(&[]),
-                mesh.face_attributes().take(&[]),
-            )?
-        } else {
-            Mesh::new(v, tris)?.with_attributes(
-                mesh.vertex_attributes().take_or_null(&rows),
-                mesh.face_attributes().take_or_null(&frows),
-            )?
-        };
-        Ok(m.with_crs(mesh.crs.clone())
-            .with_length_unit(mesh.length_unit.clone()))
-    };
-    let parts = (build(&faces[0])?, build(&faces[1])?);
+    let ((lo, rlo, clo), (hi, rhi, chi)) = (build(&faces[0], 0)?, build(&faces[1], 1)?);
     let solid =
         |m: &Mesh| -> Result<bool> { Ok(m.is_empty() || m.validate(0.0)?.summary.is_solid()) };
-    if closed && !(solid(&parts.0)? && solid(&parts.1)?) && solid(mesh)? {
+    if closed && !(clo && chi && solid(&lo)? && solid(&hi)?) && solid(mesh)? {
         return Ok((
-            solid_result(parts.0, "the exact split")?,
-            solid_result(parts.1, "the exact split")?,
+            solid_result(lo, clo, "the exact split")?,
+            solid_result(hi, chi, "the exact split")?,
+            [rlo, rhi],
         ));
     }
-    if closed && !(is_closed_result(&parts.0)? && is_closed_result(&parts.1)?) {
+    if closed && !(is_closed_result(&lo)? && is_closed_result(&hi)?) {
         return Err(Error::kernel(
             "rounding the split to f64 left it open or non-manifold",
         ));
     }
-    Ok(parts)
+    Ok((lo, hi, [rlo, rhi]))
 }
 
 /// Section lines at each offset along `normal`; empty `offsets` means `[0.0]`.

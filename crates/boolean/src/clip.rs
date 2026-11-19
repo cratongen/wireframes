@@ -3,7 +3,7 @@ use wireframes_core::{Error, Mesh, Result, units};
 use wireframes_ops::{RepairOptions, RepairReport, repair};
 
 use crate::BooleanOptions;
-use crate::arrangement;
+use crate::arrangement::{self, Arrangement};
 use crate::classify::{self, Sample, Target};
 use crate::hp::Pt;
 use crate::ops::{Piece, assemble, build_mesh, prepare, shells, solid_result};
@@ -75,20 +75,9 @@ fn ekey(a: u32, b: u32) -> (u32, u32) {
     if a < b { (a, b) } else { (b, a) }
 }
 
-/// Splits a solid by an open surface; `above` is on the side the surface normals point to.
-/// Both pieces are closed and outward; the cap faces of `above` are the
-/// flipped surface pieces inside the solid, those of `below` keep the
-/// surface's orientation.
-pub fn clip_by_surface(solid: &Mesh, surface: &Mesh, opts: &BooleanOptions) -> Result<ClipResult> {
-    let labels = units::check_same(
-        "surface",
-        (&solid.crs, &solid.length_unit),
-        (&surface.crs, &surface.length_unit),
-    )?;
-    let (a, ra) = prepare(solid, "solid", opts.repair)?;
-    let (b, rb) = prepare_surface(surface, opts.repair)?;
-    let arr = arrangement::build(&a, &b)?;
-    let p = classify::patches(&arr);
+/// The sub-triangles of the part below and the part above the surface.
+pub(crate) fn pieces(arr: &Arrangement) -> Result<[Piece; 2]> {
+    let p = classify::patches(arr);
     let solid_target = Target::new(
         arr.faces
             .iter()
@@ -107,14 +96,14 @@ pub fn clip_by_surface(solid: &Mesh, surface: &Mesh, opts: &BooleanOptions) -> R
     let mut above_patch = vec![None; p.members.len()];
     let mut cap_patch = vec![false; p.members.len()];
     for (k, members) in p.members.iter().enumerate() {
-        let m = classify::mesh_of(&arr, &arr.subs[members[0] as usize]);
+        let m = classify::mesh_of(arr, &arr.subs[members[0] as usize]);
         if m == 1 {
-            cap_patch[k] = classify::patch_inside(&arr, &p, members, &solid_target)?;
+            cap_patch[k] = classify::patch_inside(arr, &p, members, &solid_target)?;
             continue;
         }
-        above_patch[k] = match classify::curve_side(&arr, &p, members) {
+        above_patch[k] = match classify::curve_side(arr, &p, members) {
             Some(above) => Some(above),
-            None => ray_side(&surface_target, classify::sample(&arr, members)?)?,
+            None => ray_side(&surface_target, classify::sample(arr, members)?)?,
         };
     }
 
@@ -122,7 +111,7 @@ pub fn clip_by_surface(solid: &Mesh, surface: &Mesh, opts: &BooleanOptions) -> R
     let (mut below, mut above): (Piece, Piece) = (vec![], vec![]);
     for (i, s) in arr.subs.iter().enumerate() {
         let i = i as u32;
-        let m = classify::mesh_of(&arr, s);
+        let m = classify::mesh_of(arr, s);
         match (m, p.on[i as usize]) {
             (0, Some(true)) => below.push((i, false)),
             (0, Some(false)) => above.push((i, false)),
@@ -150,10 +139,27 @@ pub fn clip_by_surface(solid: &Mesh, surface: &Mesh, opts: &BooleanOptions) -> R
              the surface, so it is neither above nor below; extend the surface past the solid",
         ));
     }
+    Ok([below, above])
+}
+
+/// Splits a solid by an open surface; `above` is on the side the surface normals point to.
+/// Both pieces are closed and outward; the cap faces of `above` are the
+/// flipped surface pieces inside the solid, those of `below` keep the
+/// surface's orientation.
+pub fn clip_by_surface(solid: &Mesh, surface: &Mesh, opts: &BooleanOptions) -> Result<ClipResult> {
+    let labels = units::check_same(
+        "surface",
+        (&solid.crs, &solid.length_unit),
+        (&surface.crs, &surface.length_unit),
+    )?;
+    let (a, ra) = prepare(solid, "solid", opts.repair)?;
+    let (b, rb) = prepare_surface(surface, opts.repair)?;
+    let arr = arrangement::build(&a, &b)?;
+    let [below, above] = pieces(&arr)?;
     let mut out = vec![];
     let mut rounding = vec![];
     for piece in [below, above] {
-        let (asm, r) = assemble(&arr, &shells(&arr, &piece)?)?;
+        let (asm, r, certified) = assemble(&arr, &shells(&arr, &piece)?)?;
         rounding.push(r);
         let mesh = build_mesh(
             asm,
@@ -161,7 +167,7 @@ pub fn clip_by_surface(solid: &Mesh, surface: &Mesh, opts: &BooleanOptions) -> R
             (a.face_attributes(), b.face_attributes()),
             labels.clone(),
         )?;
-        out.push(solid_result(mesh, "the exact clip")?);
+        out.push(solid_result(mesh, certified, "the exact clip")?);
     }
     let above = out.pop().expect("two pieces");
     let below = out.pop().expect("two pieces");

@@ -17,7 +17,7 @@ pub use ops::{
     union,
 };
 pub use round::RoundingReport;
-pub use slice::{slice_by_plane, split_by_plane};
+pub use slice::{slice_by_plane, split_by_plane, split_by_plane_report};
 
 /// Sub-triangle count of the arrangement of `a` and `b`, for benchmarks.
 /// Both must already pass `validate(0.0)` as solids; nothing here checks it.

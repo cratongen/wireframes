@@ -1,8 +1,10 @@
 //! Results that rounding to `f64` used to leave open or self-intersecting, from
 //! the underground acceptance scenarios, reduced to their inputs.
 
+use num_rational::BigRational as Q;
 use wireframes_boolean::{
     BooleanOptions, Op, boolean, clip_by_surface, difference, intersection, split_by_plane,
+    split_by_plane_report,
 };
 use wireframes_core::{Error, Mesh, Result, fixtures};
 use wireframes_ops::volume;
@@ -196,7 +198,6 @@ fn union_of_a_rounded_drive_with_a_crosscut() {
 }
 
 #[test]
-#[ignore = "rounding: wall vertices of a pit at UTM coordinates lie within ulps of tilted ground"]
 fn square_pit_at_utm_clipped_by_tilted_ground_is_two_solids() {
     let (pit, ground) = pair("square_pit_tilted_ground");
     assert!(solid(&pit));
@@ -207,13 +208,57 @@ fn square_pit_at_utm_clipped_by_tilted_ground_is_two_solids() {
 }
 
 #[test]
-#[ignore = "rounding: other icosphere vertices lie within ulps of a plane through its centre"]
 fn split_of_an_icosphere_through_its_centre_is_two_solids() {
     let m = fixtures::sphere(1);
     let (a, b) = split_by_plane(&m, m.vertices()[12], [1.0, 1.0, 1.0]).unwrap();
     assert!(solid(&a) && solid(&b));
     let (lo, hi) = (volume(&a).unwrap(), volume(&b).unwrap());
     assert!(close(lo + hi, volume(&m).unwrap()), "{lo} + {hi}");
+}
+
+/// Six times the signed volume of `m`, exactly.
+fn exact_volume6(m: &Mesh) -> Q {
+    let q = |x: f64| Q::from_float(x).unwrap();
+    m.triangles().iter().fold(q(0.0), |acc, t| {
+        let [a, b, c] = t.map(|i| m.vertices()[i as usize].map(q));
+        acc + &a[0] * (&b[1] * &c[2] - &b[2] * &c[1])
+            + &a[1] * (&b[2] * &c[0] - &b[0] * &c[2])
+            + &a[2] * (&b[0] * &c[1] - &b[1] * &c[0])
+    })
+}
+
+/// Every inclined split of `sphere(2)` through one of its vertices gives two
+/// solids whose exact volumes add up to the sphere's within the sum of their
+/// reports' volume bounds, and each part's vertices lie within the move bound.
+#[test]
+fn inclined_splits_of_an_icosphere_add_up_within_their_volume_bounds() {
+    let m = fixtures::sphere(2);
+    let whole = exact_volume6(&m);
+    for &o in m.vertices().iter().step_by(3) {
+        for n in [
+            [1.0, 1.0, 1.0],
+            [1.0, -1.0, 1.0],
+            [-1.0, 1.0, 1.0],
+            [1.0, 2.0, 3.0],
+        ] {
+            let (a, b, r) = split_by_plane_report(&m, o, n).unwrap();
+            for part in [&a, &b] {
+                assert!(part.is_empty() || solid(part), "{o:?} {n:?}");
+            }
+            let gap = exact_volume6(&a) + exact_volume6(&b) - &whole;
+            let gap = if gap < Q::from_float(0.0).unwrap() {
+                -gap
+            } else {
+                gap
+            };
+            let bound = Q::from_float(6.0 * (r[0].volume_bound + r[1].volume_bound)).unwrap();
+            assert!(gap <= bound, "{o:?} {n:?}");
+            for k in 0..3 {
+                assert!(r[0].max_move[k] <= r[0].move_bound[k]);
+                assert!(r[1].max_move[k] <= r[1].move_bound[k]);
+            }
+        }
+    }
 }
 
 /// Each reduced case either returns solids or fails as a kernel limit, never

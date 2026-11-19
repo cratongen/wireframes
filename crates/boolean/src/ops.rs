@@ -67,10 +67,14 @@ pub(crate) type Piece = Vec<(u32, bool)>;
 /// non-manifold.
 pub(crate) type Shell = Vec<(u32, bool, [u32; 3])>;
 
-/// The exact result of `pieces` rounded to `f64` by [`round::materialize`].
-pub(crate) fn assemble(arr: &Arrangement, pieces: &[Shell]) -> Result<(Assembled, RoundingReport)> {
+/// The exact result of `pieces` rounded to `f64` by [`round::materialize`],
+/// with its report and whether the rounding certified it.
+pub(crate) fn assemble(
+    arr: &Arrangement,
+    pieces: &[Shell],
+) -> Result<(Assembled, RoundingReport, bool)> {
     let r = round::materialize(draft(arr, pieces))?;
-    Ok((r.mesh, r.report))
+    Ok((r.mesh, r.report, r.certified))
 }
 
 /// The exact result of `pieces`: a vertex copy per exact point and umbrella
@@ -85,6 +89,7 @@ pub(crate) fn draft(arr: &Arrangement, pieces: &[Shell]) -> Draft {
         face_source: vec![],
         normal: vec![],
         shells: vec![],
+        closed: true,
     };
     for piece in pieces {
         let mut map: HashMap<(u32, u32), u32> = HashMap::new();
@@ -311,11 +316,11 @@ pub(crate) fn is_closed_result(mesh: &Mesh) -> Result<bool> {
         && s.inconsistent_edges == 0)
 }
 
-/// `mesh` when `validate` passes it as a solid. Exact results of solids are
-/// solids; a rounded result that the rounding operations could not certify is
-/// an error that carries the report and the mesh, never a return.
-pub(crate) fn solid_result(mesh: Mesh, what: &str) -> Result<Mesh> {
-    round::certify(mesh, what)
+/// `mesh` when the rounding certified it as a solid. Exact results of solids
+/// are solids; a rounded result that the rounding operations could not
+/// certify is an error that carries the report and the mesh, never a return.
+pub(crate) fn solid_result(mesh: Mesh, certified: bool, what: &str) -> Result<Mesh> {
+    round::certify(mesh, certified, what)
 }
 
 fn keep_rule(op: Op, mesh: usize, st: Status) -> Option<bool> {
@@ -351,7 +356,7 @@ pub fn boolean(a: &Mesh, b: &Mesh, op: Op, opts: &BooleanOptions) -> Result<Bool
     let (b, rb) = prepare(b, "b", opts.repair)?;
     let arr = arrangement::build(&a, &b)?;
     let kept = kept(&arr, op)?;
-    let (asm, rounding) = assemble(&arr, &shells(&arr, &kept)?)?;
+    let (asm, rounding, certified) = assemble(&arr, &shells(&arr, &kept)?)?;
     let face_source = asm.face_source.clone();
     let mesh = build_mesh(
         asm,
@@ -359,7 +364,7 @@ pub fn boolean(a: &Mesh, b: &Mesh, op: Op, opts: &BooleanOptions) -> Result<Bool
         (a.face_attributes(), b.face_attributes()),
         labels,
     )?;
-    let mesh = solid_result(mesh, "the exact result")?;
+    let mesh = solid_result(mesh, certified, "the exact result")?;
     Ok(BooleanResult {
         mesh,
         face_source,

@@ -187,8 +187,22 @@ No other dependency without a line in this table.
    one exact point); C4, opposite faces on the same three vertices cancel across
    shells; C3, an edge-connected component whose rounded volume is zero, or
    negative while `validate` reports it as an inward shell, is removed when that
-   volume is within the bound (V) gives for rounding its faces. Every decision is
-   an exact test on the rounded points. Each boolean, clip and split result
+   volume is within the bound (V) gives for rounding its faces. Then, while
+   `validate` reports self-intersecting or overlapping face pairs, for each pair
+   a corner `h` of one face whose hot box meets the other face, the box tested
+   exactly by separating axes on expansions: C2, when the box holds a corner of
+   that face, the two vertices become one (an input vertex is kept); C5
+   otherwise, `h` is inserted into the face, on the edge the box meets (splitting
+   both faces on that edge) or inside it. The hot box spans an ulp of `h` per
+   axis; a round where it finds nothing retries with an ulp of `h` plus the
+   largest ulp of the face's corners, the reach the separation lemma allows. Each
+   (exact point, original face) pair is inserted at most once, and no vertex ends
+   more than four ulps per axis from the exact position of any exact vertex that
+   ends at it (`move_bound`), in the per-shell cleanup as well. For a result these
+   operations do not certify, the error carries the closed mesh that the
+   per-shell cleanup gives without that cap, and its report states how far that
+   mesh moved each vertex (`move_bound` raised to `max_move`). Every decision is an exact test on the
+   rounded points. Each boolean, clip and split result
    carries a `RoundingReport`: rounded, moved and moved input vertices, the
    largest distance per axis from any exact vertex to where it ended
    (`max_move`, with `move_bound`), counts per operation, the steps taken and the
@@ -199,11 +213,11 @@ No other dependency without a line in this table.
    rounded mesh; its message starts with `uncertified` (the operations ended
    within their bound and `validate` still finds a problem) or `non-finite` (an
    exact coordinate rounds outside the `f64` range, which no `f64` mesh can
-   hold). Cases that still meet `uncertified` today are inputs that agree only to
-   an ulp: booleans of a pit and its pushback clipped by one topography, stopes
-   tessellated on different grids and rotated to strike, a drive that earlier
-   unions rounded, and inclined splits and clips where other vertices lie within an
-   ulp of the plane or surface. Prefer operations on the exact inputs: clip the
+   hold). Cases that still meet `uncertified` today are inputs whose surfaces
+   agree only to an ulp with different triangulations, where edges of the two
+   pass within an ulp of each other with no vertex near: booleans of a pit and its
+   pushback clipped by one topography and stopes tessellated on different grids
+   and rotated to strike. Prefer operations on the exact inputs: clip the
    difference (`(s2 - s1).clip_by_surface(topo)`) rather than taking the
    difference of clipped pieces. Tests that meet the limit read the mesh from the
    error and keep their checks on it, and report the failure rate, never hide it.
@@ -1063,28 +1077,25 @@ part of the solid ...")`, never a guess.
 
 `split_by_plane`: returns `(negative, positive)` where positive means
 `(p - origin) . normal > 0`; points on the plane go to positive (boitata rule).
-Crossing points on edges are computed exactly and rounded once, before the cap is
-built; a crossing that rounds exactly onto an end of its edge is that input vertex.
-Section points of a closed mesh whose rounded coordinates project onto the same
-point along the dominant axis of the normal (shells touching on the plane, or
-exact points that round within a few ulps of each other, such as the crossings
-next to a vertex that lies an ulp off an inclined plane) are one point of the cap
-triangulation, represented by an input vertex when one of them is; each output
-shell then gets its own copy of such a point, so touching shells stay apart in
-both parts. Each part then gets the cleanup of section 6.2 item 7 (equal
-coordinates merge, repeated and cancelling faces go, collinear corners and folds
-are split away), repeated until nothing changes. When a part of a closed mesh is
-not a solid, the input is validated: for a solid input the part errors with
-`Error::Kernel` carrying its report and mesh (`"rounding the exact split ..."`);
-for a closed input that is not a solid the parts return when they are closed and
-manifold, and error with `Error::Kernel("rounding the split to f64 left it open
-or non-manifold")` otherwise. Side tests use
+Crossing points on edges are exact implicit points, and they stay exact through
+the cap. Section points of a closed mesh at the same exact position (shells touching
+on the plane) are one point of the cap triangulation, represented by an input vertex
+when one of them is; each output shell then gets its own copy of such a point, so
+touching shells stay apart in both parts. Each part is then rounded as tolerance
+rule 5 describes: the cleanup of section 6.2 item 7 with the exact plane normal of
+each face (the input face's for side faces, `normal` or its opposite for cap
+faces), then, for a closed input, the operations over all shells (C1 to C5).
+`split_by_plane_report` returns the two parts with a `RoundingReport` each. When a
+part of a closed mesh is not a solid, the input is validated: for a solid input the
+part errors with `Error::Kernel` carrying its report and mesh (`"uncertified:
+rounding the exact split ..."`); for a closed input that is not a solid the parts
+return when they are closed and manifold, and error with `Error::Kernel("rounding
+the split to f64 left it open or non-manifold")` otherwise. Side tests use
 `exact::plane_side`, which evaluates the sign of `(p - origin) . normal` exactly with
 expansions, so `origin` and `normal` are taken as given f64 values. Closed meshes are
-capped: the cap is a CDT of the rounded section points in the dominant-axis
-projection, with exact predicates on those `f64` points, so the cap triangles written
-out never overlap or flip (a CDT of the exact points can hold slivers that rounding
-flips). Open meshes are trimmed. Cap faces get null attributes. `slice_by_plane` uses
+capped: the cap is a CDT of the exact section points in the dominant-axis
+projection, with implicit-point predicates; slivers of it that rounding would flip
+are removed by the rounding of tolerance rule 5. Open meshes are trimmed. Cap faces get null attributes. `slice_by_plane` uses
 the same side rule. Where a closed mesh touches the plane from the positive side (a
 vertex in the plane whose incident faces all lie on the positive side and not all in
 the plane, such as a local minimum of a closed DTM at a contour level), that vertex is

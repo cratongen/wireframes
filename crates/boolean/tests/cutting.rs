@@ -134,7 +134,7 @@ fn inclined_splits_through_every_sphere_vertex_cap_the_section() {
         }
     }
     println!("{refused} of {} splits refused", 4 * m.n_vertices());
-    assert!(refused <= 188, "{refused} splits refused");
+    assert_eq!(refused, 0, "{refused} splits refused");
 }
 
 #[test]

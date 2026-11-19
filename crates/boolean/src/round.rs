@@ -51,6 +51,7 @@ pub struct RoundingReport {
 /// exact point (zero for input vertices); per face its corners, source and
 /// the outward normal of its exact plane, rounded; and the faces of each
 /// shell.
+#[derive(Clone)]
 pub(crate) struct Draft {
     pub point: Vec<u32>,
     pub home: Vec<[f64; 3]>,
@@ -60,6 +61,8 @@ pub(crate) struct Draft {
     pub face_source: Vec<(u8, u32)>,
     pub normal: Vec<[f64; 3]>,
     pub shells: Vec<Vec<u32>>,
+    /// The exact result is closed, so the operations over all shells apply.
+    pub closed: bool,
 }
 
 pub(crate) struct Assembled {
@@ -78,7 +81,7 @@ pub(crate) struct Assembled {
 /// to `x` when `x` is its nearest `f64`.
 pub(crate) fn half_ulp(x: f64) -> f64 {
     let a = x.abs();
-    (a.next_up() - a) / 2.0
+    ((a.next_up() - a) / 2.0).max(f64::from_bits(1))
 }
 
 fn up(x: f64) -> f64 {
@@ -193,15 +196,20 @@ pub(crate) struct Counts {
 /// new faces face its plane; such rounds repeat while the problem count
 /// drops, and a round that does not lower it is undone. Each step keeps every
 /// edge paired. `point` is the exact point of each vertex; copies of one exact
-/// point, where the shell touches itself, stay apart and never merge. Also
-/// returns the exact point of each kept vertex, the output vertex each input
+/// point, where the shell touches itself, stay apart and never merge. With
+/// `cap`, a merge that would leave a vertex past [`move_cap`] from the exact
+/// position of a vertex that ends at it (`err` bounds the rounding of each) is
+/// refused. Also returns the exact point of each kept vertex, the output vertex each input
 /// vertex ended at (`None` when its faces are gone), and the counts.
 pub(crate) fn collapse_rounded(
     shell: Assembled,
     point: &[u32],
+    err: &[[f64; 3]],
+    cap: bool,
 ) -> (Assembled, Vec<u32>, Vec<Option<u32>>, Counts) {
     let mut counts = Counts::default();
     let n = shell.vertices.len();
+    let mut span: Vec<[f64; 3]> = err.to_vec();
     let key = |i: usize| shell.vertices[i].map(|x| (x + 0.0).to_bits());
     let mut order: Vec<usize> = (0..n).collect();
     order.sort_by_key(|&i| (key(i), shell.vertex_rows[i].is_none(), i));
@@ -217,6 +225,9 @@ pub(crate) fn collapse_rounded(
             for &i in &order[start + 1..w] {
                 rep[i] = order[start] as u32;
                 counts.merged += 1;
+                for k in 0..3 {
+                    span[order[start]][k] = span[order[start]][k].max(span[i][k]);
+                }
             }
         }
         start = w;
@@ -327,6 +338,14 @@ pub(crate) fn collapse_rounded(
                         tries.reverse();
                     }
                     for (gone, keep) in tries {
+                        let (g, k) = (v[gone as usize], v[keep as usize]);
+                        let grown: [f64; 3] = [0, 1, 2].map(|a| {
+                            up(span[keep as usize][a]
+                                .max(span[gone as usize][a] + (g[a] - k[a]).abs()))
+                        });
+                        if cap && (0..3).any(|a| grown[a] > move_cap(k[a])) {
+                            continue;
+                        }
                         let Some(nt) = edge_collapse(
                             &tris, &alive, &edge, &inc, &nrm, gone, keep, point, &turned,
                         ) else {
@@ -354,6 +373,7 @@ pub(crate) fn collapse_rounded(
                             }
                         }
                         to[gone as usize] = keep;
+                        span[keep as usize] = grown;
                         counts.collapsed += 1;
                         break;
                     }
@@ -593,6 +613,7 @@ fn ekey(a: u32, b: u32) -> (u32, u32) {
 
 /// The whole output after the per-shell cleanup, for the operations that see
 /// every shell at once.
+#[derive(Clone)]
 struct Global {
     v: Vec<[f64; 3]>,
     point: Vec<u32>,
@@ -603,6 +624,102 @@ struct Global {
     alive: Vec<bool>,
     /// Vertex each vertex was merged or collapsed into; itself when kept.
     to: Vec<u32>,
+    /// Per face, the face of the output after the per-shell cleanup it came from.
+    orig: Vec<u32>,
+    /// Per vertex, the largest distance per axis from its coordinates to the
+    /// exact position of any exact vertex that ended at it, rounded up.
+    span: Vec<[f64; 3]>,
+}
+
+type Ev = [Expansion; 3];
+
+fn ev(a: [f64; 3], b: [f64; 3]) -> Ev {
+    [0, 1, 2].map(|k| Expansion::diff_f64(a[k], b[k]))
+}
+
+fn cross_e(u: &Ev, v: &Ev) -> Ev {
+    [0, 1, 2].map(|k| {
+        let (i, j) = kept_axes(k);
+        u[i].product(&v[j]).diff(&u[j].product(&v[i]))
+    })
+}
+
+fn dot_f(a: &Ev, p: [f64; 3]) -> Expansion {
+    (0..3).fold(Expansion::zero(), |acc, k| acc.sum(&a[k].scale(p[k])))
+}
+
+/// Whether the projections of `pts` and of the box `[lo, hi]` on `axis`
+/// overlap, exactly; a zero axis separates nothing.
+fn overlap_on(axis: &Ev, pts: &[[f64; 3]], lo: [f64; 3], hi: [f64; 3]) -> bool {
+    if axis.iter().all(|x| x.sign() == Sign::Zero) {
+        return true;
+    }
+    let (mut bmin, mut bmax) = (Expansion::zero(), Expansion::zero());
+    for k in 0..3 {
+        let (a, b) = (axis[k].scale(lo[k]), axis[k].scale(hi[k]));
+        if axis[k].sign() == Sign::Positive {
+            (bmin, bmax) = (bmin.sum(&a), bmax.sum(&b));
+        } else {
+            (bmin, bmax) = (bmin.sum(&b), bmax.sum(&a));
+        }
+    }
+    let proj: Vec<Expansion> = pts.iter().map(|&p| dot_f(axis, p)).collect();
+    let below = proj.iter().all(|x| x.diff(&bmin).sign() == Sign::Negative);
+    let above = proj.iter().all(|x| x.diff(&bmax).sign() == Sign::Positive);
+    !below && !above
+}
+
+/// Whether the convex hull of `pts` (a segment or a triangle) meets the
+/// closed box `[lo, hi]`, by the separating axis theorem with exact signs.
+fn box_meets(pts: &[[f64; 3]], lo: [f64; 3], hi: [f64; 3]) -> bool {
+    for k in 0..3 {
+        if pts.iter().all(|p| p[k] < lo[k]) || pts.iter().all(|p| p[k] > hi[k]) {
+            return false;
+        }
+    }
+    let unit = |k: usize| {
+        let mut u = [0.0; 3];
+        u[k] = 1.0;
+        ev(u, [0.0; 3])
+    };
+    let edges: Vec<Ev> = (0..pts.len())
+        .map(|i| ev(pts[(i + 1) % pts.len()], pts[i]))
+        .collect();
+    if pts.len() == 3 {
+        let n = cross_e(&edges[0], &ev(pts[2], pts[0]));
+        if !overlap_on(&n, pts, lo, hi) {
+            return false;
+        }
+    }
+    edges
+        .iter()
+        .all(|e| (0..3).all(|k| overlap_on(&cross_e(e, &unit(k)), pts, lo, hi)))
+}
+
+/// The box about `h` within which a face with corners `c` can reach `h` once
+/// both are rounded, rounded outward: an ulp of `h` on each axis, or, when
+/// `wide`, an ulp of `h` plus the largest ulp of a corner, which holds every
+/// point whose distance to `h` on each axis is at most the sum of their
+/// rounding errors (the condition of the separation lemma).
+fn hot_box(h: [f64; 3], c: &[[f64; 3]], wide: bool) -> ([f64; 3], [f64; 3]) {
+    let w: [f64; 3] = [0, 1, 2].map(|k| {
+        let corner = c.iter().map(|p| half_ulp(p[k])).fold(0.0, f64::max);
+        if wide {
+            2.0 * (half_ulp(h[k]) + corner)
+        } else {
+            2.0 * half_ulp(h[k])
+        }
+    });
+    (
+        [0, 1, 2].map(|k| (h[k] - w[k]).next_down()),
+        [0, 1, 2].map(|k| (h[k] + w[k]).next_up()),
+    )
+}
+
+/// How far, per axis, a vertex may end from the exact position of any exact
+/// vertex that ends at it: four ulps of its coordinate.
+fn move_cap(x: f64) -> f64 {
+    8.0 * half_ulp(x)
 }
 
 impl Global {
@@ -734,6 +851,155 @@ impl Global {
         }
         Ok(removed)
     }
+
+    /// C5 for each self-intersecting or overlapping pair `validate` reports:
+    /// a corner `h` of one face whose hot box meets the other face `g`, not at
+    /// a corner, is inserted into `g`, on the edge of `g` the box meets when
+    /// there is one (splitting both faces on that edge), else inside `g`.
+    /// Each (exact point, original face) pair is inserted at most once.
+    /// Returns how many points it inserted.
+    fn insert_hot_points(
+        &mut self,
+        report: &wireframes_core::MeshReport,
+        ids: &[usize],
+        done: &mut HashSet<(u32, u32)>,
+        wide: bool,
+    ) -> (usize, usize) {
+        use wireframes_core::MeshProblemKind as K;
+        let mut inserted = 0;
+        let mut collapsed = 0;
+        for p in &report.problems {
+            if !matches!(p.kind, K::SelfIntersection | K::CoplanarOverlap) {
+                continue;
+            }
+            let (Some(f), Some(o)) = (p.face, p.other) else {
+                continue;
+            };
+            let (f, o) = (ids[f as usize], ids[o as usize]);
+            'pair: for (a, b) in [(f, o), (o, f)] {
+                if !self.alive[a] || !self.alive[b] {
+                    break;
+                }
+                let tb = self.tris[b];
+                let cb = tb.map(|i| self.v[i as usize]);
+                for h in self.tris[a] {
+                    let at = self.v[h as usize];
+                    if tb.contains(&h) || cb.contains(&at) {
+                        continue;
+                    }
+                    let key = (self.point[h as usize], self.orig[b]);
+                    if done.contains(&key) {
+                        continue;
+                    }
+                    let (lo, hi) = hot_box(at, &cb, wide);
+                    if !box_meets(&cb, lo, hi) {
+                        continue;
+                    }
+                    if let Some(k) = (0..3).find(|&k| box_meets(&[cb[k]], lo, hi)) {
+                        if self.collapse(h, tb[k]) {
+                            collapsed += 1;
+                            break 'pair;
+                        }
+                        continue;
+                    }
+                    let on_edge = (0..3).find(|&e| box_meets(&[cb[e], cb[(e + 1) % 3]], lo, hi));
+                    if self.insert(h, b, on_edge) {
+                        done.insert(key);
+                        inserted += 1;
+                        break 'pair;
+                    }
+                }
+            }
+        }
+        (inserted, collapsed)
+    }
+
+    /// C2: vertex `h` and vertex `c`, whose coordinates are within an ulp of
+    /// each other on every axis, become one: the input vertex is kept when
+    /// one of them is, else `c`. Refused for copies of one exact point and
+    /// when the kept coordinates would lie more than two ulps from the exact
+    /// position of a vertex that ends there.
+    fn collapse(&mut self, h: u32, c: u32) -> bool {
+        if self.point[h as usize] == self.point[c as usize] {
+            return false;
+        }
+        let (gone, keep) = if self.rows[h as usize].is_some() && self.rows[c as usize].is_none() {
+            (c, h)
+        } else {
+            (h, c)
+        };
+        let (g, k) = (self.v[gone as usize], self.v[keep as usize]);
+        let span: [f64; 3] = [0, 1, 2].map(|a| {
+            up(self.span[keep as usize][a].max(self.span[gone as usize][a] + (g[a] - k[a]).abs()))
+        });
+        if (0..3).any(|a| span[a] > move_cap(k[a])) {
+            return false;
+        }
+        self.span[keep as usize] = span;
+        self.to[gone as usize] = keep;
+        for f in 0..self.tris.len() {
+            if !self.alive[f] || !self.tris[f].contains(&gone) {
+                continue;
+            }
+            let t = self.tris[f].map(|i| if i == gone { keep } else { i });
+            self.tris[f] = t;
+            if t[0] == t[1] || t[1] == t[2] || t[0] == t[2] {
+                self.alive[f] = false;
+            }
+        }
+        true
+    }
+
+    fn push(&mut self, t: [u32; 3], like: usize) {
+        self.tris.push(t);
+        self.alive
+            .push(t[0] != t[1] && t[1] != t[2] && t[0] != t[2]);
+        self.src.push(self.src[like]);
+        if !self.nrm.is_empty() {
+            self.nrm.push(self.nrm[like]);
+        }
+        self.orig.push(self.orig[like]);
+    }
+
+    /// Inserts vertex `h` into face `g`: on its edge `e` (from corner `e` to
+    /// the next), splitting the one other face that runs that edge the other
+    /// way too, or inside `g` when `e` is `None`. Faces that then repeat a
+    /// vertex go. False when the edge has no single opposite face.
+    fn insert(&mut self, h: u32, g: usize, e: Option<usize>) -> bool {
+        let t = self.tris[g];
+        match e {
+            None => {
+                self.alive[g] = false;
+                for k in 0..3 {
+                    self.push([t[k], t[(k + 1) % 3], h], g);
+                }
+            }
+            Some(e) => {
+                let (a, b, c) = (t[e], t[(e + 1) % 3], t[(e + 2) % 3]);
+                let opp: Vec<usize> = self
+                    .live()
+                    .filter(|&x| {
+                        let u = self.tris[x];
+                        (0..3).any(|k| u[k] == b && u[(k + 1) % 3] == a)
+                    })
+                    .collect();
+                if opp.len() != 1 {
+                    return false;
+                }
+                let g2 = opp[0];
+                let u = self.tris[g2];
+                let k = (0..3).find(|&k| u[k] == b).expect("runs the edge");
+                let d = u[(k + 2) % 3];
+                self.alive[g] = false;
+                self.alive[g2] = false;
+                self.push([a, h, c], g);
+                self.push([h, b, c], g);
+                self.push([b, h, d], g2);
+                self.push([h, a, d], g2);
+            }
+        }
+        true
+    }
 }
 
 /// The step bound of `docs/design/rounding.md` for `v0` vertices and `f0`
@@ -756,18 +1022,58 @@ fn step_bound(v0: usize, f0: usize) -> usize {
 pub(crate) struct Rounded {
     pub mesh: Assembled,
     pub report: RoundingReport,
+    /// The mesh is a solid reached within the move cap (or the draft is not
+    /// closed); otherwise it is the closed mesh of the cleanup without the cap,
+    /// for the error to carry.
+    pub certified: bool,
     #[cfg_attr(not(test), allow(dead_code))]
     pub ends: Vec<Option<u32>>,
 }
 
-/// Rounds a draft to an `f64` mesh with the report of what it did. The result
-/// may still fail `validate`; [`certify`] decides.
+/// The bound on the operations over all shells for `v` vertices and `f`
+/// faces: at most `i = v f` insertions (one per exact point and original
+/// face), each adding at most two faces; merges, collapses, cancellations and
+/// removals each remove a vertex or a face of the at most `v + f + 2 i` there
+/// ever are; and one round per insertion or collapse plus the last.
+fn global_step_bound(v: usize, f: usize) -> usize {
+    let i = v.saturating_mul(f);
+    i.saturating_mul(5)
+        .saturating_add(v.saturating_mul(3))
+        .saturating_add(f)
+        .saturating_add(1)
+}
+
+/// Rounds a draft to an `f64` mesh with the report of what it did. When the
+/// operations cannot certify a closed draft, the result is the per-shell
+/// cleanup without the move cap, a closed mesh for the error to carry, with
+/// `certified` false and its report's `move_bound` raised to its `max_move`.
 pub(crate) fn materialize(d: Draft) -> Result<Rounded> {
     if d.home.iter().flatten().any(|x| !x.is_finite()) {
         return Err(Error::kernel(
             "non-finite: an exact coordinate of the result rounds outside the f64 range",
         ));
     }
+    let (r, solid) = run(&d, true)?;
+    if solid || !d.closed {
+        return Ok(Rounded {
+            certified: true,
+            ..r
+        });
+    }
+    let (mut r, _) = run(&d, false)?;
+    for k in 0..3 {
+        r.report.move_bound[k] = r.report.move_bound[k].max(r.report.max_move[k]);
+    }
+    Ok(Rounded {
+        certified: false,
+        ..r
+    })
+}
+
+/// One rounding of `d`: the per-shell cleanup, with the move cap when `cap`,
+/// then, with `cap` and a closed draft that is not yet a solid, the operations
+/// over all shells. Also returns whether the mesh is a solid.
+fn run(d: &Draft, cap: bool) -> Result<(Rounded, bool)> {
     let nv = d.home.len();
     let rho: Vec<f64> = d.err.iter().map(|e| up(norm(*e))).collect();
     let raw: Vec<[[f64; 3]; 3]> = d
@@ -799,6 +1105,8 @@ pub(crate) fn materialize(d: Draft) -> Result<Rounded> {
         nrm: vec![],
         alive: vec![],
         to: vec![],
+        orig: vec![],
+        span: vec![],
     };
     let mut origin: Vec<Option<u32>> = vec![None; nv];
     let mut err_g: Vec<f64> = vec![];
@@ -828,7 +1136,8 @@ pub(crate) fn materialize(d: Draft) -> Result<Rounded> {
             },
         };
         let point: Vec<u32> = verts.iter().map(|&i| d.point[i as usize]).collect();
-        let (out, kept, fwd, c) = collapse_rounded(shell, &point);
+        let err: Vec<[f64; 3]> = verts.iter().map(|&i| d.err[i as usize]).collect();
+        let (out, kept, fwd, c) = collapse_rounded(shell, &point, &err, cap);
         report.merged_vertices += c.merged;
         report.collapsed_edges += c.collapsed;
         report.cancelled_faces += c.cancelled;
@@ -854,16 +1163,53 @@ pub(crate) fn materialize(d: Draft) -> Result<Rounded> {
         g.nrm.extend(out.normal);
     }
     g.to = (0..g.v.len() as u32).collect();
-    if !is_solid(&g)? {
-        let merged = g.merge_equal();
-        report.merged_vertices += merged;
-        report.steps += merged;
-        let cancelled = cancel_pairs(&g.tris, &mut g.alive);
-        report.cancelled_faces += cancelled;
-        report.steps += cancelled / 2;
-        let removed = g.remove_flat_shells(&err_g)?;
-        report.removed_shells += removed;
-        report.steps += removed;
+    g.orig = (0..g.tris.len() as u32).collect();
+    g.span = vec![[0.0; 3]; g.v.len()];
+    for (i, o) in origin.iter().enumerate() {
+        if let Some(o) = *o {
+            let at = g.v[o as usize];
+            for k in 0..3 {
+                let s = up((at[k] - d.home[i][k]).abs() + d.err[i][k]);
+                g.span[o as usize][k] = g.span[o as usize][k].max(s);
+            }
+        }
+    }
+    report.step_bound = report
+        .step_bound
+        .saturating_add(global_step_bound(g.v.len(), g.tris.len()));
+    if cap && d.closed && !is_solid(&g)? {
+        let before = (g.clone(), report.clone());
+        let mut done: HashSet<(u32, u32)> = HashSet::new();
+        loop {
+            let merged = g.merge_equal();
+            report.merged_vertices += merged;
+            let cancelled = cancel_pairs(&g.tris, &mut g.alive);
+            report.cancelled_faces += cancelled;
+            let removed = g.remove_flat_shells(&err_g)?;
+            report.removed_shells += removed;
+            report.steps += merged + cancelled / 2 + removed + 1;
+            let (m, ids) = g.mesh()?;
+            if ids.is_empty() {
+                break;
+            }
+            let found = m.validate(0.0)?;
+            if found.summary.is_solid() {
+                break;
+            }
+            let (mut inserted, mut collapsed) = g.insert_hot_points(&found, &ids, &mut done, false);
+            if inserted + collapsed == 0 {
+                (inserted, collapsed) = g.insert_hot_points(&found, &ids, &mut done, true);
+            }
+            report.inserted_points += inserted;
+            report.collapsed_edges += collapsed;
+            report.steps += inserted + collapsed;
+            if inserted + collapsed == 0 {
+                break;
+            }
+        }
+        if !is_solid(&g)? {
+            (g, report) = before;
+        }
     }
     assert!(
         report.steps <= report.step_bound,
@@ -922,18 +1268,27 @@ pub(crate) fn materialize(d: Draft) -> Result<Rounded> {
     }
     report.moved_vertices = moved.len();
     report.moved_input_vertices = moved_input.len();
-    report.move_bound = report.max_move;
+    for p in &out.vertices {
+        for k in 0..3 {
+            report.move_bound[k] = report.move_bound[k].max(move_cap(p[k]));
+        }
+    }
     let after: Vec<[[f64; 3]; 3]> = out
         .triangles
         .iter()
         .map(|t| t.map(|i| out.vertices[i as usize]))
         .collect();
     report.volume_bound = up(rounding_bound + volume_change(&raw, &after));
-    Ok(Rounded {
-        mesh: out,
-        report,
-        ends,
-    })
+    let solid = is_solid(&g)?;
+    Ok((
+        Rounded {
+            mesh: out,
+            report,
+            certified: solid,
+            ends,
+        },
+        solid,
+    ))
 }
 
 fn is_solid(g: &Global) -> Result<bool> {
@@ -941,10 +1296,10 @@ fn is_solid(g: &Global) -> Result<bool> {
     Ok(ids.is_empty() || m.validate(0.0)?.summary.is_solid())
 }
 
-/// `mesh` when `validate` passes it as a solid, else the `uncertified` kernel
-/// error carrying the report and the mesh.
-pub(crate) fn certify(mesh: Mesh, what: &str) -> Result<Mesh> {
-    if mesh.is_empty() || mesh.validate(0.0)?.summary.is_solid() {
+/// `mesh` when the rounding certified it and `validate` passes it as a solid,
+/// else the `uncertified` kernel error carrying the report and the mesh.
+pub(crate) fn certify(mesh: Mesh, certified: bool, what: &str) -> Result<Mesh> {
+    if certified && (mesh.is_empty() || mesh.validate(0.0)?.summary.is_solid()) {
         return Ok(mesh);
     }
     Err(Error::kernel_result(
@@ -998,7 +1353,7 @@ mod tests {
                 [2, 3, 4],
             ],
         );
-        let (out, _, _, _) = collapse_rounded(s, &[0, 1, 2, 3, 4]);
+        let (out, _, _, _) = collapse_rounded(s, &[0, 1, 2, 3, 4], &[[0.0; 3]; 5], true);
         check(&out);
         assert_eq!(out.triangles.len(), 4);
         assert_eq!(out.vertex_rows, [Some(0), Some(2), Some(1), Some(3)]);
@@ -1020,7 +1375,7 @@ mod tests {
         );
         let before = Mesh::new(s.vertices.clone(), s.triangles.clone()).unwrap();
         assert!(!before.validate(0.0).unwrap().summary.is_solid());
-        let (out, _, _, _) = collapse_rounded(s, &[0, 1, 2, 3, 4]);
+        let (out, _, _, _) = collapse_rounded(s, &[0, 1, 2, 3, 4], &[[0.0; 3]; 5], true);
         check(&out);
         assert_eq!(out.triangles.len(), 6);
     }
@@ -1054,7 +1409,7 @@ mod tests {
         let m = Mesh::new(v, t).unwrap();
         assert!(is_closed_manifold(m.triangles()));
         assert!(!m.validate(0.0).unwrap().summary.is_closed);
-        let Err(Error::Kernel { report, mesh, .. }) = solid_result(m.clone(), "it") else {
+        let Err(Error::Kernel { report, mesh, .. }) = solid_result(m.clone(), true, "it") else {
             panic!("an open result must be a kernel error");
         };
         assert!(!report.unwrap().summary.is_closed);
@@ -1064,7 +1419,7 @@ mod tests {
     #[test]
     fn copies_of_one_exact_point_stay_apart() {
         let s = shell(vec![A, B, C, D, D], vec![[0, 2, 1], [0, 1, 3], [1, 2, 4]]);
-        let (out, _, _, _) = collapse_rounded(s, &[0, 1, 2, 3, 3]);
+        let (out, _, _, _) = collapse_rounded(s, &[0, 1, 2, 3, 3], &[[0.0; 3]; 5], true);
         assert_eq!((out.vertices.len(), out.triangles.len()), (5, 3));
     }
 
@@ -1082,7 +1437,7 @@ mod tests {
                 [1, 2, 3],
             ],
         );
-        let (out, _, _, _) = collapse_rounded(s, &[0, 1, 2, 3, 4]);
+        let (out, _, _, _) = collapse_rounded(s, &[0, 1, 2, 3, 4], &[[0.0; 3]; 5], true);
         check(&out);
         assert_eq!(out.triangles.len(), 6);
         let area = |t: &[u32; 3]| {
@@ -1244,7 +1599,7 @@ mod tests {
             normal: vec![],
         };
         assert!(is_closed_manifold(&s.triangles));
-        let (out, kept, _, _) = collapse_rounded(s, &point);
+        let (out, kept, _, _) = collapse_rounded(s, &point, &vec![[0.0; 3]; point.len()], true);
         assert!(is_closed_manifold(&out.triangles));
         assert_eq!(kept.len(), out.vertices.len());
     }
@@ -1436,5 +1791,128 @@ pub(crate) mod checks {
             let (a, b) = pair(name);
             booleans_round_within_their_bounds(&a, &b);
         }
+    }
+
+    #[test]
+    fn reduced_clip_rounds_within_its_bounds() {
+        let (pit, ground) = pair("square_pit_tilted_ground");
+        let arr = crate::arrangement::build(&pit, &ground).expect("arrangement");
+        for piece in crate::clip::pieces(&arr).expect("pieces") {
+            let r = rounded_exactly(&arr, &ops::shells(&arr, &piece).expect("shells"));
+            let m = Mesh::new(r.mesh.vertices, r.mesh.triangles).expect("mesh");
+            assert!(m.validate(0.0).expect("report").summary.is_solid());
+        }
+    }
+}
+
+#[cfg(test)]
+mod operations {
+    use super::*;
+    use crate::ops::is_closed_manifold;
+
+    const A: [f64; 3] = [0.0, 0.0, 0.0];
+    const B: [f64; 3] = [2.0, 0.0, 0.0];
+    const C: [f64; 3] = [0.0, 2.0, 0.0];
+    const D: [f64; 3] = [0.0, 0.0, 2.0];
+    const TETRA: [[u32; 3]; 4] = [[0, 2, 1], [0, 1, 3], [0, 3, 2], [1, 2, 3]];
+
+    fn global(v: Vec<[f64; 3]>, tris: Vec<[u32; 3]>, point: Vec<u32>) -> Global {
+        let n = v.len();
+        let f = tris.len();
+        Global {
+            span: vec![[0.0; 3]; n],
+            rows: (0..n as u32).map(|i| (i < 4).then_some(i)).collect(),
+            to: (0..n as u32).collect(),
+            point,
+            v,
+            src: vec![(0, 0); f],
+            nrm: vec![],
+            alive: vec![true; f],
+            orig: (0..f as u32).collect(),
+            tris,
+        }
+    }
+
+    fn live(g: &Global) -> Vec<[u32; 3]> {
+        g.live().map(|f| g.tris[f]).collect()
+    }
+
+    #[test]
+    fn boxes_meet_triangles_and_segments_exactly() {
+        let t = [A, B, C];
+        assert!(box_meets(&t, [0.5, 0.5, -1.0], [0.6, 0.6, 1.0]));
+        assert!(!box_meets(&t, [0.5, 0.5, 0.1], [0.6, 0.6, 1.0]));
+        assert!(box_meets(&t, [1.0, 1.0, 0.0], [2.0, 2.0, 0.0]));
+        assert!(!box_meets(
+            &t,
+            [1.0, 1.0, 0.0].map(f64::next_up),
+            [2.0, 2.0, 0.0]
+        ));
+        assert!(box_meets(&[A, D], [-1.0, -1.0, 1.0], [0.0, 0.0, 1.0]));
+        assert!(!box_meets(
+            &[A, D],
+            [0.0f64.next_up(), -1.0, 0.0],
+            [1.0, 1.0, 1.0]
+        ));
+    }
+
+    #[test]
+    fn a_point_inserted_inside_a_face_keeps_the_shell_closed() {
+        let e = [0.5, 0.5, 0.0];
+        let mut g = global(vec![A, B, C, D, e], TETRA.to_vec(), vec![0, 1, 2, 3, 4]);
+        assert!(g.insert(4, 0, None));
+        assert!(is_closed_manifold(&live(&g)));
+        assert_eq!(live(&g).len(), 6);
+        assert!(g.orig[4..].iter().all(|&o| o == 0));
+    }
+
+    #[test]
+    fn a_point_inserted_on_an_edge_splits_both_faces() {
+        let e = [1.0, 0.0, 0.0];
+        let mut g = global(vec![A, B, C, D, e], TETRA.to_vec(), vec![0, 1, 2, 3, 4]);
+        assert!(g.insert(4, 1, Some(0)));
+        assert!(is_closed_manifold(&live(&g)));
+        assert_eq!(live(&g).len(), 6);
+        assert!(live(&g).iter().all(|t| !(t.contains(&0) && t.contains(&1))));
+    }
+
+    #[test]
+    fn inserting_the_far_corner_on_an_edge_flips_it() {
+        let m = [1.0, 1.0, 0.0];
+        let tris = vec![
+            [0, 2, 1],
+            [1, 2, 4],
+            [0, 1, 3],
+            [0, 3, 2],
+            [1, 4, 3],
+            [4, 2, 3],
+        ];
+        let mut g = global(vec![A, B, C, D, m], tris, vec![0, 1, 2, 3, 4]);
+        assert!(g.insert(4, 0, Some(1)));
+        assert!(is_closed_manifold(&live(&g)));
+        assert_eq!(live(&g).len(), 6);
+    }
+
+    #[test]
+    fn collapses_keep_input_vertices_and_refuse_copies_and_long_moves() {
+        let near = [B[0].next_up(), B[1], B[2]];
+        let tris = vec![[0, 2, 4], [0, 4, 3], [0, 3, 2], [4, 2, 3]];
+        let mut g = global(vec![A, B, C, D, near], tris.clone(), vec![0, 1, 2, 3, 4]);
+        assert!(g.collapse(4, 1));
+        assert_eq!(g.to[4], 1);
+        assert!(is_closed_manifold(&live(&g)));
+        assert!(live(&g).iter().all(|t| !t.contains(&4)));
+        let mut g = global(vec![A, B, C, D, near], tris.clone(), vec![0, 1, 2, 3, 1]);
+        assert!(!g.collapse(4, 1));
+        let far = [2.001, 0.0, 0.0];
+        let mut g = global(vec![A, B, C, D, far], tris, vec![0, 1, 2, 3, 4]);
+        assert!(!g.collapse(4, 1));
+    }
+
+    #[test]
+    fn the_step_bounds_grow_polynomially_and_saturate() {
+        assert!(global_step_bound(10, 20) >= 5 * 10 * 20);
+        assert_eq!(global_step_bound(usize::MAX, 2), usize::MAX);
+        assert!(step_bound(10, 20) > 20 * 20);
     }
 }
