@@ -1051,7 +1051,10 @@ pub struct Interval { pub from: f64, pub to: f64, pub inside: bool, pub entry_fa
   segment-face tests; depths interpolate linearly along each trace segment. A run
   lying in a face counts as inside (closed set). Zero-length intervals are dropped.
 - `block_fraction`: per block, `ops::slices::box_volume` over candidate faces divided
-  by block volume, clamped to `[0, 1]`. For rotated blocks the solid is transformed
+  by block volume, clamped to `[0, 1]`. A block that no candidate face meets (no
+  part of a face lies in the closed block) is wholly inside or outside, so its
+  fraction is exactly 1 or 0 from `locate` of its centroid, with no integration
+  residue from the faces above it. For rotated blocks the solid is transformed
   once into the block frame (rotation transpose about the first centroid), then the
   same axis-aligned integration runs. Parallel per block, input order.
 - Free functions mirroring the methods for one-off calls: `locate(solid, points)`,

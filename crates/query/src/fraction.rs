@@ -1,9 +1,9 @@
 use rayon::prelude::*;
 use wireframes_core::{Aabb, Bvh, Error, Mesh, Result};
-use wireframes_ops::box_volume;
+use wireframes_ops::{box_meets, box_volume};
 
-use crate::SurfaceIndex;
 use crate::distance::check_finite;
+use crate::{Location, SolidIndex};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Blocks {
@@ -43,7 +43,8 @@ fn check(blocks: &Blocks) -> Result<()> {
 
 /// Fractions are integrated in the block frame scaled to unit blocks, so the
 /// block volume is 1 and tiny sizes do not underflow.
-pub(crate) fn fractions(surface: &SurfaceIndex, blocks: &Blocks) -> Result<Vec<f64>> {
+pub(crate) fn fractions(solid: &SolidIndex, blocks: &Blocks) -> Result<Vec<f64>> {
+    let surface = &solid.surface;
     check(blocks)?;
     let Some(&c0) = blocks.centroids.first() else {
         return Ok(vec![]);
@@ -65,13 +66,28 @@ pub(crate) fn fractions(surface: &SurfaceIndex, blocks: &Blocks) -> Result<Vec<f
     let mesh = surface.mesh.clone().with_vertices(vertices)?;
     let bvh = Bvh::new(&mesh.face_aabbs());
     let centroids: Vec<[f64; 3]> = blocks.centroids.iter().map(local).collect();
-    Ok(unit_fractions(&mesh, &bvh, &centroids))
+    Ok(unit_fractions(
+        solid,
+        &mesh,
+        &bvh,
+        &centroids,
+        &blocks.centroids,
+    ))
 }
 
-fn unit_fractions(mesh: &Mesh, bvh: &Bvh, centroids: &[[f64; 3]]) -> Vec<f64> {
+/// A block that no face meets lies wholly inside or outside the solid, so its
+/// fraction is exactly 1 or 0 from the exact location of its world centroid.
+fn unit_fractions(
+    solid: &SolidIndex,
+    mesh: &Mesh,
+    bvh: &Bvh,
+    centroids: &[[f64; 3]],
+    world: &[[f64; 3]],
+) -> Vec<f64> {
     centroids
         .par_iter()
-        .map(|c| {
+        .zip(world)
+        .map(|(c, &w)| {
             let b = Aabb {
                 min: c.map(|x| x - 0.5),
                 max: c.map(|x| x + 0.5),
@@ -82,6 +98,13 @@ fn unit_fractions(mesh: &Mesh, bvh: &Bvh, centroids: &[[f64; 3]]) -> Vec<f64> {
             };
             let mut faces = vec![];
             bvh.query(&column, |f| faces.push(f));
+            if !box_meets(mesh, &faces, &b) {
+                match solid.locate(w) {
+                    Location::Inside => return 1.0,
+                    Location::Outside => return 0.0,
+                    Location::Boundary => {}
+                }
+            }
             box_volume(mesh, &faces, &b).clamp(0.0, 1.0)
         })
         .collect()
@@ -116,6 +139,26 @@ mod tests {
             rotation: None,
         };
         assert_eq!(s.block_fraction(&tiny).unwrap(), [1.0]);
+    }
+
+    #[test]
+    fn blocks_no_face_meets_are_exactly_zero_or_one() {
+        let sphere = fixtures::sphere(3);
+        let s = SolidIndex::new(&sphere).unwrap();
+        let centroids = vec![[0.13, 0.07, -2.5], [0.13, 0.07, 2.5], [0.0, 0.0, 0.0]];
+        let blocks = Blocks {
+            centroids: centroids.clone(),
+            size: [0.7, 0.7, 0.7],
+            rotation: None,
+        };
+        let f = s.block_fraction(&blocks).unwrap();
+        assert_eq!(f, [0.0, 0.0, 1.0]);
+        let faces: Vec<u32> = (0..sphere.n_faces() as u32).collect();
+        let b = Aabb {
+            min: centroids[0].map(|x| x - 0.35),
+            max: centroids[0].map(|x| x + 0.35),
+        };
+        assert!(!box_meets(&sphere, &faces, &b));
     }
 
     #[test]

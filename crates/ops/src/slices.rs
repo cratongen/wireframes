@@ -33,16 +33,29 @@ fn fan(poly: &[[f64; 3]], z: impl Fn(&[[f64; 3]; 3]) -> f64) -> f64 {
         .sum()
 }
 
+/// Part of face `f` above `z = 0` inside the plan of a box of size `d` at the origin.
+fn column(mesh: &Mesh, f: u32, b: &Aabb, d: [f64; 3]) -> Vec<[f64; 3]> {
+    let mut poly: Vec<[f64; 3]> = mesh.corners(f).map(|p| sub(p, b.min)).to_vec();
+    poly = clip(&poly, 0, 0.0, |x| x >= 0.0);
+    poly = clip(&poly, 0, d[0], |x| x <= d[0]);
+    poly = clip(&poly, 1, 0.0, |y| y >= 0.0);
+    poly = clip(&poly, 1, d[1], |y| y <= d[1]);
+    clip(&poly, 2, 0.0, |z| z >= 0.0)
+}
+
+/// Whether any of `faces` has a point in the closed box.
+pub fn box_meets(mesh: &Mesh, faces: &[u32], b: &Aabb) -> bool {
+    let d = sub(b.max, b.min);
+    faces
+        .iter()
+        .any(|&f| !clip(&column(mesh, f, b, d), 2, d[2], |z| z <= d[2]).is_empty())
+}
+
 /// Volume of the solid inside an axis-aligned box, by clamped-column integration.
 pub fn box_volume(mesh: &Mesh, faces: &[u32], b: &Aabb) -> f64 {
     let d = sub(b.max, b.min);
     let s = sum_by(faces.len(), |k| {
-        let mut poly: Vec<[f64; 3]> = mesh.corners(faces[k]).map(|p| sub(p, b.min)).to_vec();
-        poly = clip(&poly, 0, 0.0, |x| x >= 0.0);
-        poly = clip(&poly, 0, d[0], |x| x <= d[0]);
-        poly = clip(&poly, 1, 0.0, |y| y >= 0.0);
-        poly = clip(&poly, 1, d[1], |y| y <= d[1]);
-        let poly = clip(&poly, 2, 0.0, |z| z >= 0.0);
+        let poly = column(mesh, faces[k], b, d);
         let mid = clip(&poly, 2, d[2], |z| z <= d[2]);
         // Strict, so a piece lying in the plane `z = zmax` counts once.
         let top = clip(&poly, 2, d[2], |z| z > d[2]);

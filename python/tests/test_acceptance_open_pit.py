@@ -370,7 +370,6 @@ def test_bench_split_of_a_small_clipped_pit_is_valid():
     assert lower.is_solid and upper.is_solid
 
 
-@pytest.mark.skip(reason="acceptance: block fraction not exactly 0 for a block strictly outside")
 def test_block_strictly_below_a_pocketed_solid_has_zero_fraction():
     box = wf.datasets.box
     solid = box([0, 0, 0], [10, 10, 10]) - box([3, 3, 3], [7, 7, 12])

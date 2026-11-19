@@ -151,7 +151,7 @@ impl SolidIndex {
     }
 
     pub fn block_fraction(&self, blocks: &Blocks) -> Result<Vec<f64>> {
-        crate::fraction::fractions(&self.surface, blocks)
+        crate::fraction::fractions(self, blocks)
     }
 
     pub fn trace_intervals(&self, trace: &Trace) -> Result<Vec<Interval>> {

@@ -13,6 +13,6 @@ pub use measure::{
     volume,
 };
 pub use repair::{HoleFill, RepairAction, RepairOptions, RepairReport, repair};
-pub use slices::{box_volume, volume_by_elevation};
+pub use slices::{box_meets, box_volume, volume_by_elevation};
 pub use thickness::{ThicknessMode, surface_z, thickness, vertical_distance};
 pub use transform::{flip, to_length_unit, transform, translate};
