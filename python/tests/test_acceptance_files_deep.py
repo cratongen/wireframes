@@ -1142,9 +1142,6 @@ def test_plot_missing_column_lists_every_column():
         plot.plan(m, "gold")
 
 
-@pytest.mark.skip(
-    reason="acceptance: mesh accepts fractional and boolean triangle indices and truncates them"
-)
 @pytest.mark.parametrize(
     "triangles", [[[0.0, 1.5, 2.0]], np.array([[True, False, True]])], ids=["fraction", "bool"]
 )

@@ -1359,7 +1359,7 @@ class Mesh:
     def __init__(
         self,
         vertices: ArrayLike,
-        triangles: ArrayLike,
+        triangles: ArrayLike,  # integer dtype, or floats that are all whole numbers; bool and fractions refused
         *,
         vertex_attributes: Mapping[str, Values] | Table | None = None,
         face_attributes: Mapping[str, Values] | Table | None = None,

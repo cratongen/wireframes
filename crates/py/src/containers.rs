@@ -505,10 +505,35 @@ impl PyMesh {
 
 fn triangles_arg(obj: &Bound<PyAny>) -> PyResult<Vec<[u32; 3]>> {
     let bad = || invalid("triangles must be an (m, 3) array of vertex indices");
-    let a: PyReadonlyArray2<i64> = asarray2(obj, "int64")
-        .and_then(|a| Ok(a.extract()?))
+    let dtype = numpy(obj.py())?
+        .call_method1("asarray", (obj,))
+        .and_then(|a| a.getattr("dtype"))
         .map_err(|_| bad())?;
-    let a = a.as_array();
+    let a: Array2<i64> = match dtype.getattr("kind")?.extract::<String>()?.as_str() {
+        "i" | "u" => {
+            let a: PyReadonlyArray2<i64> = asarray2(obj, "int64")
+                .and_then(|a| Ok(a.extract()?))
+                .map_err(|_| bad())?;
+            a.as_array().to_owned()
+        }
+        "f" => {
+            let a: PyReadonlyArray2<f64> = asarray2(obj, "float64")
+                .and_then(|a| Ok(a.extract()?))
+                .map_err(|_| bad())?;
+            if let Some(x) = a.as_array().iter().find(|x| x.fract() != 0.0) {
+                return Err(invalid(format!(
+                    "triangles must be whole vertex indices, but one is {x}"
+                )));
+            }
+            a.as_array().mapv(|x| x as i64)
+        }
+        _ => {
+            return Err(invalid(format!(
+                "triangles must be integer vertex indices, not dtype {}",
+                dtype.str()?
+            )));
+        }
+    };
     if a.nrows() == 0 {
         return Ok(vec![]);
     }

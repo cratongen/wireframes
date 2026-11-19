@@ -202,3 +202,12 @@ def test_arrays_copied_from_containers_are_read_only(box):
     c = m.coords.copy()
     c[:, 2] += 10
     assert m.with_vertices(c).bounds[0][2] == 10
+
+
+def test_mesh_triangles_must_be_whole_numbers():
+    for bad in ([[0.0, 1.5, 2.0]], [[0.0, np.nan, 2.0]], np.array([[True, False, True]]), [["0", "1", "2"]]):
+        with pytest.raises(wf.InvalidInput, match="triangles must"):
+            wf.Mesh(np.eye(3), bad)
+    m = wf.Mesh(np.eye(3), [[0.0, 1.0, 2.0]])
+    assert m.triangles.tolist() == [[0, 1, 2]]
+    assert wf.Mesh(np.eye(3), []).n_faces == 0
