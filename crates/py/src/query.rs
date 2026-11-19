@@ -310,6 +310,10 @@ impl PyMesh {
 
     /// Inside and outside runs of a drillhole trace through the solid.
     ///
+    /// Crossings come from exact segment-face tests; their depths are
+    /// interpolated linearly along each trace segment. A run lying in a face
+    /// counts as inside, and zero-length runs are dropped.
+    ///
     /// Parameters
     /// ----------
     /// trace : array_like
@@ -321,8 +325,17 @@ impl PyMesh {
     /// -------
     /// Table
     ///     ``from``, ``to``, ``inside`` (alternating), ``entry_face`` and
-    ///     ``exit_face`` (int64, null where the trace meets no face),
-    ///     covering ``depths[0]`` to ``depths[-1]``.
+    ///     ``exit_face`` (int64, null where a run starts or ends at an end
+    ///     of the trace instead of at a face; null reads as 0, so check
+    ///     ``Table.mask``), covering ``depths[0]`` to ``depths[-1]``.
+    ///
+    /// Raises
+    /// ------
+    /// InvalidMesh
+    ///     When the mesh is not a solid; ``report`` holds the validation.
+    /// InvalidInput
+    ///     When the depths decrease or their count differs from the number
+    ///     of trace vertices.
     ///
     /// Examples
     /// --------
@@ -383,7 +396,16 @@ impl PyMesh {
     /// Returns
     /// -------
     /// numpy.ndarray
-    ///     Values in ``[0, 1]``.
+    ///     Values in ``[0, 1]``. Over blocks that cover the solid, fraction
+    ///     times block volume sums to the solid volume.
+    ///
+    /// Raises
+    /// ------
+    /// InvalidMesh
+    ///     When the mesh is not a solid; ``report`` holds the validation.
+    /// InvalidInput
+    ///     When ``size`` is not three positive finite values or ``rotation``
+    ///     is not a rotation matrix.
     ///
     /// Examples
     /// --------

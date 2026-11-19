@@ -102,7 +102,13 @@ fn triangulate(py: Python, polygons: PyRef<PyPolylines>) -> PyResult<PyMesh> {
 /// -------
 /// Mesh
 ///     A validated solid with face column ``section`` (band index; caps are
-///     -1 and -2).
+///     -1 and -2). Every section vertex is a vertex of the solid.
+///
+/// Raises
+/// ------
+/// InvalidInput
+///     When a section holds more than one part (branching is not
+///     supported), or a middle section is open.
 ///
 /// Examples
 /// --------
