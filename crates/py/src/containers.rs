@@ -232,6 +232,12 @@ fn mapping_table(obj: &Bound<PyAny>, rows: Option<usize>, what: &str) -> PyResul
 /// data : mapping of str to array_like, optional
 ///     Column name to values. Floats become float64 (NaN is null), integers
 ///     int64, booleans bool, strings utf8; None marks a null.
+///
+/// Examples
+/// --------
+/// >>> t = wf.Table({"au": [0.5, None], "rock": ["ox", "fr"]})
+/// >>> t.column_names, len(t), t["rock"].tolist()
+/// (['au', 'rock'], 2, ['ox', 'fr'])
 #[pyclass(name = "Table", module = "wireframes", frozen)]
 pub(crate) struct PyTable {
     pub(crate) inner: Table,
@@ -463,6 +469,13 @@ impl PyTable {
 ///     geometries combine.
 /// length_unit : str, optional
 ///     Length unit label, such as ``"m"`` or ``"ft"``.
+///
+/// Examples
+/// --------
+/// >>> corners = [[0, 0, 0], [6, 0, 0], [0, 6, 0], [0, 0, 6]]
+/// >>> tet = wf.Mesh(corners, [[0, 2, 1], [0, 1, 3], [0, 3, 2], [1, 2, 3]])
+/// >>> tet.is_solid, tet.volume
+/// (True, 36.0)
 #[pyclass(name = "Mesh", module = "wireframes", frozen)]
 pub(crate) struct PyMesh {
     pub(crate) inner: Mesh,
@@ -866,7 +879,7 @@ impl PyMesh {
 /// parts : sequence of array_like
 ///     ``(k, 3)`` or ``(k, 2)`` (z = 0) vertices of each part; a ring does not
 ///     repeat its first vertex.
-/// closed : bool or sequence of bool
+/// closed : bool or sequence of bool, default False
 ///     Whether each part is a ring.
 /// features : sequence of int, optional
 ///     Feature index of each part, starting at 0 and increasing by at most 1;
@@ -878,6 +891,13 @@ impl PyMesh {
 ///     One row per vertex.
 /// crs, length_unit : str, optional
 ///     Labels.
+///
+/// Examples
+/// --------
+/// >>> crest = [[0, 0, 100], [4, 0, 100], [4, 3, 100], [0, 3, 100]]
+/// >>> rings = wf.Polylines([crest], closed=True, attributes={"name": ["crest"]})
+/// >>> rings["name"].tolist(), rings.area().tolist()
+/// (['crest'], [12.0])
 #[pyclass(name = "Polylines", module = "wireframes", frozen)]
 pub(crate) struct PyPolylines {
     pub(crate) inner: Polylines,
@@ -892,7 +912,10 @@ impl From<Polylines> for PyPolylines {
 #[pymethods]
 impl PyPolylines {
     #[new]
-    #[pyo3(signature = (parts, *, closed=None, features=None, attributes=None, vertex_attributes=None, crs=None, length_unit=None))]
+    #[pyo3(
+        signature = (parts, *, closed=None, features=None, attributes=None, vertex_attributes=None, crs=None, length_unit=None),
+        text_signature = "(parts, *, closed=False, features=None, attributes=None, vertex_attributes=None, crs=None, length_unit=None)"
+    )]
     fn new(
         parts: &Bound<PyAny>,
         closed: Option<&Bound<PyAny>>,
@@ -1289,6 +1312,12 @@ impl PyPolylines {
 ///     One row per point.
 /// crs, length_unit : str, optional
 ///     Labels.
+///
+/// Examples
+/// --------
+/// >>> collars = wf.PointSet([[10, 20, 300], [15, 20, 298]], {"hole": ["DH1", "DH2"]})
+/// >>> len(collars), collars["hole"].tolist(), collars.z.tolist()
+/// (2, ['DH1', 'DH2'], [300.0, 298.0])
 #[pyclass(name = "PointSet", module = "wireframes", frozen)]
 pub(crate) struct PyPointSet {
     pub(crate) inner: PointSet,

@@ -1169,7 +1169,6 @@ def test_unknown_extension_error_lists_the_supported_formats(tmp_path):
         assert ext in str(e.value)
 
 
-@pytest.mark.skip(reason="acceptance: container constructors have no runnable example")
 def test_container_constructors_have_a_runnable_example():
     for cls in (wf.Mesh, wf.Polylines, wf.PointSet, wf.Table):
         assert ">>>" in (cls.__doc__ or ""), cls.__name__

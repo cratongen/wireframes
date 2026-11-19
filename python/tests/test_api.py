@@ -136,3 +136,16 @@ def test_every_dataset_has_a_runnable_example():
         ]
         assert tests, f"datasets.{name} has no example"
         assert all(runner.run(t, out=lambda s: None).failed == 0 for t in tests), name
+
+
+def test_every_container_class_has_a_runnable_example():
+    import doctest
+    import inspect
+
+    finder = doctest.DocTestFinder(recurse=False)
+    runner = doctest.DocTestRunner(optionflags=doctest.ELLIPSIS | doctest.NORMALIZE_WHITESPACE)
+    for cls in (wf.Mesh, wf.Polylines, wf.PointSet, wf.Table):
+        tests = [t for t in finder.find(cls, cls.__name__, globs={"wf": wf, "np": np}) if t.examples]
+        assert tests, f"{cls.__name__} has no example"
+        assert all(runner.run(t, out=lambda s: None).failed == 0 for t in tests), cls.__name__
+    assert inspect.signature(wf.Polylines).parameters["closed"].default is False
