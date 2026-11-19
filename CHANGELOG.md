@@ -38,6 +38,8 @@ All notable changes to wireframes are listed here. The format follows
 ### Changed
 
 - Test names now match the README milestone acceptance filters.
+- `loft` takes an open line or a single point as its first or last section,
+  so a vein can pinch out to a wedge or a pyramid.
 - An open polyline part may hold a single vertex (a point). OBJ `l`, DXF
   polylines and VTK/VTP line cells with one vertex read as such parts instead
   of being skipped or refused.

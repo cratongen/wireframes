@@ -239,7 +239,6 @@ def test_vein_thinning_to_a_sliver_ring_matches_the_frustum_volumes():
     assert close(m.volume, expect)
 
 
-@pytest.mark.skip(reason="acceptance: loft refuses a vein that pinches out to a line or a point")
 @pytest.mark.parametrize(
     ("last", "expect"),
     [([[30.0, -5, 0], [30.0, 5, 0]], 10 * 4 * 30 / 2), ([[30.0, 0, 0]], 10 * 4 * 30 / 3)],

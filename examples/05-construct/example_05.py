@@ -73,6 +73,17 @@ print(f"lofted frustum {column.volume:,.4f} m3, analytic {frustum:,.4f} m3, soli
 assert abs(column.volume - frustum) <= 1e-9 * frustum
 
 # %% [markdown]
+# The first or last section may be an open line or a single point, where a vein pinches out: a 10 x 4 m
+# section lofted to a line 30 m away is a wedge, and lofted to a point it is a pyramid.
+
+# %%
+vein = np.array([[0, -5, -2], [0, 5, -2], [0, 5, 2], [0, -5, 2]], float)
+wedge = wf.loft(wf.Polylines([vein, [[30, -5, 0], [30, 5, 0]]], closed=[True, False]))
+pyramid = wf.loft(wf.Polylines([vein, [[30, 0, 0]]], closed=[True, False]))
+print(f"pinched to a line {wedge.volume:,.1f} m3, to a point {pyramid.volume:,.1f} m3")
+assert abs(wedge.volume - 600) <= 1e-9 * 600 and abs(pyramid.volume - 400) <= 1e-9 * 400
+
+# %% [markdown]
 # `triangulate` fills each feature's closed rings with triangles, treating inner rings as holes by even-odd, so a
 # pad with a sump becomes a flat mesh whose area is the polygon area.
 

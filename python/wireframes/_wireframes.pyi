@@ -554,7 +554,7 @@ def triangulate(polygons: Polylines) -> Mesh:
     """Each feature's rings triangulated, holes by even-odd."""
 
 def loft(sections: Polylines, *, cap_ends: bool = True) -> Mesh:
-    """Solid linking consecutive section rings."""
+    """Solid linking consecutive section rings; the end sections may be a line or a point."""
 
 def extrude(polygons: Polylines, vector: ArrayLike) -> Mesh:
     """Solid swept by each ring along `vector`."""

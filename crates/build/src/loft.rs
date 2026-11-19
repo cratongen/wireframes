@@ -125,8 +125,10 @@ pub fn loft(sections: &Polylines, opts: &LoftOptions) -> Result<Mesh> {
         }
         let pts = sections.part(parts.start);
         let is_closed = sections.closed()[parts.start];
-        if !is_closed {
-            return Err(Error::invalid(format!("section {f} must be a closed ring")));
+        if !is_closed && f != 0 && f != k - 1 {
+            return Err(Error::invalid(format!(
+                "section {f} must be a closed ring; only the first and last sections may be an open line or a point"
+            )));
         }
         if is_closed || pts.len() < 3 {
             rings.push(pts.to_vec());
@@ -351,6 +353,72 @@ mod tests {
                 "bend {bend}: {got} vs {want}"
             );
         }
+    }
+
+    fn rect() -> Vec<[f64; 3]> {
+        vec![
+            [0.0, -5.0, -2.0],
+            [0.0, 5.0, -2.0],
+            [0.0, 5.0, 2.0],
+            [0.0, -5.0, 2.0],
+        ]
+    }
+
+    fn pinch(end: Vec<[f64; 3]>, first: bool) -> Result<Mesh> {
+        let (parts, closed) = if first {
+            (vec![end, rect()], vec![false, true])
+        } else {
+            (vec![rect(), end], vec![true, false])
+        };
+        loft(
+            &Polylines::from_parts(parts, closed, None)?,
+            &LoftOptions::default(),
+        )
+    }
+
+    #[test]
+    fn section_pinching_out_to_a_line_or_point_is_a_wedge_or_pyramid() {
+        let cases = [
+            (vec![[30.0, -5.0, 0.0], [30.0, 5.0, 0.0]], 600.0),
+            (
+                vec![[30.0, -5.0, 0.0], [30.0, 0.0, 0.0], [30.0, 5.0, 0.0]],
+                600.0,
+            ),
+            (vec![[30.0, 0.0, 0.0]], 400.0),
+        ];
+        for (end, want) in cases {
+            for first in [false, true] {
+                let m = pinch(end.clone(), first).unwrap();
+                let got = wireframes_ops::volume(&m).unwrap();
+                assert!(
+                    (got - want).abs() <= 1e-9 * want,
+                    "{end:?}: {got} vs {want}"
+                );
+                let col = m.face_attributes().column("section").unwrap();
+                let wireframes_core::ColumnData::Int64(sec) = &col.data else {
+                    panic!("section is Int64")
+                };
+                assert_eq!(sec.iter().filter(|&&s| s < 0).count(), 2);
+            }
+        }
+    }
+
+    #[test]
+    fn only_end_sections_may_be_open() {
+        let p = Polylines::from_parts(
+            vec![
+                rect(),
+                vec![[30.0, 0.0, 0.0]],
+                rect().iter().map(|p| [p[0] + 60.0, p[1], p[2]]).collect(),
+            ],
+            vec![true, false, true],
+            None,
+        )
+        .unwrap();
+        assert!(matches!(
+            loft(&p, &LoftOptions::default()),
+            Err(Error::InvalidInput(_))
+        ));
     }
 
     #[test]

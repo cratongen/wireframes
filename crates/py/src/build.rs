@@ -78,7 +78,9 @@ fn triangulate(py: Python, polygons: PyRef<PyPolylines>) -> PyResult<PyMesh> {
 /// Parameters
 /// ----------
 /// sections : Polylines
-///     Features in order, each with exactly one closed part.
+///     Features in order, each with exactly one closed part. The first and
+///     last features may instead hold one open part, a line or a single
+///     point, where the body pinches out; it gets no cap.
 /// cap_ends : bool
 ///     Close the first and last sections.
 ///

@@ -1121,7 +1121,9 @@ Semantics:
   vertices unless rings cross); face column `feature` (Int64). Normals follow the
   Newell normal of the outer ring.
 - `loft`: features in order are consecutive sections; each must have exactly one
-  closed part. Rings are oriented consistently (Newell normals agree with the
+  part, a closed ring, except that the first and last sections may be an open part
+  (a line, or a single point) where the body pinches out. An open part links as the
+  degenerate ring that runs along it and back, and gets no cap. Rings are oriented consistently (Newell normals agree with the
   direction to the next section's centre), and each band is linked in its overlay
   frame: both rings are centred on their own area centroid and the component along
   the axis between the two centres is removed, so the band length does not enter
