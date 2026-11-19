@@ -4,7 +4,7 @@ use rayon::prelude::*;
 
 use crate::exact::shell_volume_sign;
 use crate::intersect::{SegTri, TriTri, seg_tri, tri_tri};
-use crate::predicates::{Sign, collinear3};
+use crate::predicates::{Sign, collinear3, orient3d};
 use crate::topology::{Radial, Shells, radial_pairs_at, shell_location};
 use crate::{Aabb, Bvh, EdgeMap, Mesh, Result, tolerance};
 
@@ -617,13 +617,14 @@ fn pair_problem(mesh: &Mesh, f: u32, g: u32) -> Option<MeshProblemKind> {
         .flat_map(|i| (0..3).map(move |j| (i, j)))
         .filter(|&(i, j)| same(i, j))
         .collect();
-    let k = tri_tri(a, b);
-    if k == TriTri::CoplanarOverlap {
+    let coplanar = b.iter().all(|&p| orient3d(a[0], a[1], a[2], p) == 0.0);
+    let k = coplanar.then(|| tri_tri(a, b));
+    if k == Some(TriTri::CoplanarOverlap) {
         let same_corners = ta.iter().all(|i| tb.contains(i));
         return (!same_corners).then_some(MeshProblemKind::CoplanarOverlap);
     }
     let hit = match shared[..] {
-        [] => k != TriTri::Disjoint,
+        [] => k.unwrap_or_else(|| tri_tri(a, b)) != TriTri::Disjoint,
         [(i, j)] => {
             let opposite = |t: [[f64; 3]; 3], c: usize| (t[(c + 1) % 3], t[(c + 2) % 3]);
             let (p, q) = opposite(a, i);
@@ -976,6 +977,56 @@ mod tests {
         assert_eq!(p.len(), 15);
         assert_eq!(p.last().unwrap().0, "is_closed");
         assert_eq!(MeshProblemKind::CoplanarOverlap.name(), "coplanar_overlap");
+    }
+
+    fn pair_problem_always_tri_tri(mesh: &Mesh, f: u32, g: u32) -> Option<MeshProblemKind> {
+        let (a, b) = (mesh.corners(f), mesh.corners(g));
+        let (ta, tb) = (mesh.triangles()[f as usize], mesh.triangles()[g as usize]);
+        let same = |i: usize, j: usize| ta[i] == tb[j] || key(a[i]) == key(b[j]);
+        let shared: Vec<(usize, usize)> = (0..3)
+            .flat_map(|i| (0..3).map(move |j| (i, j)))
+            .filter(|&(i, j)| same(i, j))
+            .collect();
+        let k = tri_tri(a, b);
+        if k == TriTri::CoplanarOverlap {
+            return (!ta.iter().all(|i| tb.contains(i)))
+                .then_some(MeshProblemKind::CoplanarOverlap);
+        }
+        let hit = match shared[..] {
+            [] => k != TriTri::Disjoint,
+            [(i, j)] => {
+                let opposite = |t: [[f64; 3]; 3], c: usize| (t[(c + 1) % 3], t[(c + 2) % 3]);
+                let (p, q) = opposite(a, i);
+                let (r, s) = opposite(b, j);
+                seg_tri(p, q, b).0 != SegTri::Miss || seg_tri(r, s, a).0 != SegTri::Miss
+            }
+            _ => false,
+        };
+        hit.then_some(MeshProblemKind::SelfIntersection)
+    }
+
+    #[test]
+    fn pair_problem_skips_tri_tri_only_where_it_cannot_change_the_answer() {
+        let mut rng = fixtures::Rng::new(7);
+        let mut kinds = HashMap::new();
+        for _ in 0..20_000 {
+            let v: Vec<[f64; 3]> = (0..6)
+                .map(|_| [0, 1, 2].map(|_| rng.below(3) as f64))
+                .collect();
+            let tb = [0, 1, 2].map(|_| rng.below(6) as u32);
+            let tris = vec![[0, 1, 2], tb];
+            let Ok(m) = Mesh::new(v, tris) else { continue };
+            if degenerate_mask(&m).contains(&true) {
+                continue;
+            }
+            let got = pair_problem(&m, 0, 1);
+            assert_eq!(got, pair_problem_always_tri_tri(&m, 0, 1), "{:?}", m);
+            *kinds.entry(got).or_insert(0) += 1;
+        }
+        assert!(
+            kinds.len() == 3 && kinds.values().all(|&n| n > 100),
+            "{kinds:?}"
+        );
     }
 
     #[test]
