@@ -150,7 +150,6 @@ def test_thin_lofted_vein_at_a_million_metres_adds_up_band_by_band():
     assert close(m.volume, sum(b.volume for b in bands(rings)))
 
 
-@pytest.mark.skip(reason="acceptance: loft refuses two similar non-convex sections")
 def test_loft_of_similar_l_shaped_sections_is_a_frustum():
     scale = 0.5
     corners = np.array([[0, 0], [10, 0], [10, 2], [2, 2], [2, 10], [0, 10]], float)

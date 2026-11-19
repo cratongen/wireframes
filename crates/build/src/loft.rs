@@ -221,7 +221,12 @@ pub fn loft(sections: &Polylines, opts: &LoftOptions) -> Result<Mesh> {
     for s in 0..k - 1 {
         let axis = normalize(sub(centres[s + 1], centres[s]));
         let a = overlay(&rings[s], centres[s], axis);
-        let b = overlay(&rings[s + 1], centres[s + 1], axis);
+        let mut b = overlay(&rings[s + 1], centres[s + 1], axis);
+        let (area_a, area_b) = (norm(newell(&a)), norm(newell(&b)));
+        if area_a > 0.0 && area_b > 0.0 {
+            let k = (area_a / area_b).sqrt();
+            b.iter_mut().for_each(|p| *p = scale(*p, k));
+        }
         let (mut best, mut bi, mut bj) = (f64::INFINITY, 0, 0);
         for (i, &p) in a.iter().enumerate() {
             for (j, &q) in b.iter().enumerate() {
@@ -426,6 +431,35 @@ mod tests {
                 };
                 assert_eq!(sec.iter().filter(|&&s| s < 0).count(), 2);
             }
+        }
+    }
+
+    #[test]
+    fn similar_non_convex_sections_link_vertex_to_vertex_into_a_frustum() {
+        let l = [
+            [0.0, 0.0],
+            [10.0, 0.0],
+            [10.0, 2.0],
+            [2.0, 2.0],
+            [2.0, 10.0],
+            [0.0, 10.0],
+        ];
+        for k in [0.5, 0.25, 2.0] {
+            let at = |x: f64, s: f64| -> Vec<[f64; 3]> {
+                l.iter()
+                    .map(|p| [x, s * (p[0] - 4.0), s * (p[1] - 4.0)])
+                    .collect()
+            };
+            let p = Polylines::from_parts(vec![at(0.0, 1.0), at(10.0, k)], vec![true; 2], None)
+                .unwrap();
+            let m = loft(&p, &LoftOptions::default()).unwrap();
+            let (a, b) = (36.0, 36.0 * k * k);
+            let want = 10.0 / 3.0 * (a + b + f64::sqrt(a * b));
+            let got = wireframes_ops::volume(&m).unwrap();
+            assert!(
+                (got - want).abs() <= 1e-9 * want,
+                "scale {k}: {got} vs {want}"
+            );
         }
     }
 

@@ -1182,9 +1182,11 @@ Semantics:
   lexicographically smallest rotation, so the result (vertices, triangles and
   volume, bit for bit) does not depend on where or in which direction a ring was
   digitized. Each band is linked in its overlay
-  frame: both rings are centred on their own area centroid and the component along
+  frame: both rings are centred on their own area centroid, the component along
   the axis between the two centres is removed, so the band length does not enter
-  the cost. Start vertices are aligned by the closest overlay pair, and dynamic
+  the cost, and when both rings have area the second is scaled about its centre to
+  the area of the first, so similar sections (a shrinking non-convex outline) link
+  vertex to vertex. Start vertices are aligned by the closest overlay pair, and dynamic
   programming minimizes the total overlay triangle area over the band (O(m n)).
   Measured in 3D, a long band's double fan and its straight walls have nearly the
   same area, so a 3D cost cannot separate them; the overlay cost can. End caps by `triangulate_polygons`. Output is a solid
