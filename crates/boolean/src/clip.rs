@@ -156,11 +156,11 @@ pub fn clip_by_surface(solid: &Mesh, surface: &Mesh, opts: &BooleanOptions) -> R
     let (a, ra) = prepare(solid, "solid", opts.repair)?;
     let (b, rb) = prepare_surface(surface, opts.repair)?;
     type Piece2 = (Mesh, RoundingReport, bool);
-    let run = |a: &Mesh, b: &Mesh| -> Result<[Piece2; 2]> {
+    let run = |a: &Mesh, b: &Mesh, descend: bool| -> Result<[Piece2; 2]> {
         let arr = arrangement::build(a, b)?;
         let mut out = vec![];
         for piece in pieces(&arr)? {
-            let (asm, r, certified) = assemble(&arr, &shells(&arr, &piece)?)?;
+            let (asm, r, certified) = assemble(&arr, &shells(&arr, &piece)?, descend)?;
             let mesh = build_mesh(
                 asm,
                 (a.vertex_attributes(), b.vertex_attributes()),
@@ -171,11 +171,27 @@ pub fn clip_by_surface(solid: &Mesh, surface: &Mesh, opts: &BooleanOptions) -> R
         }
         Ok(out.try_into().map_err(|_| ()).expect("two pieces"))
     };
-    let mut parts = run(&a, &b)?;
-    if !(parts[0].2 && parts[1].2)
-        && let Some(c) = conform(&a, &b)?
-    {
-        let mut again = run(&c.meshes[0], &c.meshes[1])?;
+    let mut parts = run(&a, &b, false)?;
+    let conformed = if parts[0].2 && parts[1].2 {
+        None
+    } else {
+        conform(&a, &b)?
+    };
+    for descend in [false, true] {
+        if parts[0].2 && parts[1].2 {
+            break;
+        }
+        if descend {
+            let first = run(&a, &b, true)?;
+            if first[0].2 && first[1].2 {
+                parts = first;
+                break;
+            }
+        }
+        let Some(c) = &conformed else {
+            continue;
+        };
+        let mut again = run(&c.meshes[0], &c.meshes[1], descend)?;
         if again[0].2 && again[1].2 {
             for (k, part) in again.iter_mut().enumerate() {
                 let r = &mut part.1;

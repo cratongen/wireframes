@@ -458,7 +458,7 @@ pub fn split_by_plane_report(
                 d.face_source.push(src.map_or((1, 0), |f| (0, f)));
                 d.normal.push(src.map_or(cap, |f| face_normal[f as usize]));
             }
-            let r = round::materialize(d)?;
+            let r = round::materialize(d, true)?;
             let frows: Vec<Option<u32>> = r
                 .mesh
                 .face_source

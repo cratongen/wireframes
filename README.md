@@ -194,9 +194,13 @@ tonnage without warning. `wireframes` enforces three rules:
     whose caps differ by one ulp, face-sharing stopes rotated to strike, the
     crosscut chain of example 07, the 648 inclined splits of `sphere(2)`) now
     gives solids within proven bounds, and the acceptance tests that were
-    skipped or ignored for it run. The method has no general 3D validity
-    theorem, so `wf.KernelError` (`uncertified`) stays possible for inputs the
-    tests have not met.
+    skipped or ignored for it run. So do the adversarial cases in
+    `crates/boolean/tests/attacks.rs`: pits clipped by one topography and
+    united, chains of lids and caps tilted by 1e-13 rad, repeated union then
+    difference of one body, a stope split along its own face plane, a rotated
+    stope block minus a raise, and development turned to strike. The method has
+    no general 3D validity theorem, so `wf.KernelError` (`uncertified`) stays
+    possible for inputs the tests have not met.
 
 ### M5: Spatial queries for drillholes and block models
 

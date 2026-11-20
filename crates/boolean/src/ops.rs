@@ -73,8 +73,9 @@ pub(crate) type Shell = Vec<(u32, bool, [u32; 3])>;
 pub(crate) fn assemble(
     arr: &Arrangement,
     pieces: &[Shell],
+    descend: bool,
 ) -> Result<(Assembled, RoundingReport, bool)> {
-    let r = round::materialize(draft(arr, pieces))?;
+    let r = round::materialize(draft(arr, pieces), descend)?;
     Ok((r.mesh, r.report, r.certified))
 }
 
@@ -355,10 +356,13 @@ pub fn boolean(a: &Mesh, b: &Mesh, op: Op, opts: &BooleanOptions) -> Result<Bool
     let labels = units::check_same("b", (&a.crs, &a.length_unit), (&b.crs, &b.length_unit))?;
     let (a, ra) = prepare(a, "a", opts.repair)?;
     let (b, rb) = prepare(b, "b", opts.repair)?;
-    let run = |a: &Mesh, b: &Mesh| -> Result<(Mesh, Vec<(u8, u32)>, RoundingReport, bool)> {
+    let run = |a: &Mesh,
+               b: &Mesh,
+               descend: bool|
+     -> Result<(Mesh, Vec<(u8, u32)>, RoundingReport, bool)> {
         let arr = arrangement::build(a, b)?;
         let kept = kept(&arr, op)?;
-        let (asm, rounding, certified) = assemble(&arr, &shells(&arr, &kept)?)?;
+        let (asm, rounding, certified) = assemble(&arr, &shells(&arr, &kept)?, descend)?;
         let face_source = asm.face_source.clone();
         let mesh = build_mesh(
             asm,
@@ -368,9 +372,23 @@ pub fn boolean(a: &Mesh, b: &Mesh, op: Op, opts: &BooleanOptions) -> Result<Bool
         )?;
         Ok((mesh, face_source, rounding, certified))
     };
-    let (mut mesh, mut face_source, mut rounding, mut certified) = run(&a, &b)?;
-    if !certified && let Some(c) = conform(&a, &b)? {
-        let (m, fs, mut r, ok) = run(&c.meshes[0], &c.meshes[1])?;
+    let (mut mesh, mut face_source, mut rounding, mut certified) = run(&a, &b, false)?;
+    let conformed = if certified { None } else { conform(&a, &b)? };
+    for descend in [false, true] {
+        if certified {
+            break;
+        }
+        if descend {
+            let first = run(&a, &b, true)?;
+            if first.3 {
+                (mesh, face_source, rounding, certified) = first;
+                break;
+            }
+        }
+        let Some(c) = &conformed else {
+            continue;
+        };
+        let (m, fs, mut r, ok) = run(&c.meshes[0], &c.meshes[1], descend)?;
         if ok {
             r.inserted_points += c.inserted;
             r.flipped_edges += c.flips;

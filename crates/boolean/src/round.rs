@@ -635,6 +635,15 @@ struct Global {
     span: Vec<[f64; 3]>,
 }
 
+/// A local change [`Global::descend`] tries.
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+enum Change {
+    Flip(usize, usize),
+    Join(usize, usize),
+    Collapse(u32, u32),
+    Insert(u32, usize, Option<usize>),
+}
+
 type Ev = [Expansion; 3];
 
 fn ev(a: [f64; 3], b: [f64; 3]) -> Ev {
@@ -792,10 +801,11 @@ impl Global {
     }
 
     /// C3: removes each edge-connected component whose rounded volume is zero,
-    /// or negative while `validate` reports it as an inward shell, when that
-    /// volume is within the bound (V) gives for rounding it, so its exact
-    /// volume is too.
-    fn remove_flat_shells(&mut self, err: &[f64]) -> Result<usize> {
+    /// or negative while `validate` reports it as an inward shell, or, with
+    /// `crossing`, that holds a face of a self-intersecting, overlapping or
+    /// flat problem, when that volume is within the bound (V) gives for
+    /// rounding it, so its exact volume is too.
+    fn remove_flat_shells(&mut self, err: &[f64], crossing: bool) -> Result<usize> {
         let (m, ids) = self.mesh()?;
         let report = m.validate(0.0)?;
         let mut parent: Vec<u32> = (0..ids.len() as u32).collect();
@@ -832,6 +842,20 @@ impl Global {
             .filter(|p| p.kind == wireframes_core::MeshProblemKind::InwardShell)
             .filter_map(|p| p.face.map(|f| f as usize))
             .collect();
+        use wireframes_core::MeshProblemKind as K;
+        let troubled: HashSet<usize> = report
+            .problems
+            .iter()
+            .filter(|p| {
+                matches!(
+                    p.kind,
+                    K::SelfIntersection | K::CoplanarOverlap | K::DegenerateFace
+                )
+            })
+            .flat_map(|p| [p.face, p.other])
+            .flatten()
+            .map(|f| f as usize)
+            .collect();
         let mut removed = 0;
         let mut keys: Vec<u32> = groups.keys().copied().collect();
         keys.sort_unstable();
@@ -840,7 +864,8 @@ impl Global {
             let faces: Vec<[u32; 3]> = ks.iter().map(|&k| self.tris[ids[k]]).collect();
             let sign = shell_volume_sign(&self.v, &faces);
             let flagged = ks.iter().any(|k| inward.contains(k));
-            if !(sign == Sign::Zero || (sign == Sign::Negative && flagged)) {
+            let crossed = crossing && ks.iter().any(|k| troubled.contains(k));
+            if !(sign == Sign::Zero || (sign == Sign::Negative && flagged) || crossed) {
                 continue;
             }
             let corners: Vec<[[f64; 3]; 3]> = faces
@@ -1147,7 +1172,11 @@ impl Global {
                     }
                 }
             }
-            if count.values().any(|&n| n != 0) {
+            let still_flat = made
+                .iter()
+                .filter(|&&f| self.alive[f] && flat(self, f))
+                .count();
+            if count.values().any(|&n| n != 0) || still_flat >= run.len() {
                 for f in made {
                     self.alive[f] = false;
                 }
@@ -1245,6 +1274,192 @@ impl Global {
             }
         }
         true
+    }
+
+    /// The problems `validate` finds among the live faces whose bounding
+    /// boxes meet `[lo, hi]`, of the kinds a change of faces inside the box
+    /// can make or remove.
+    fn local_problems(&self, lo: [f64; 3], hi: [f64; 3]) -> usize {
+        use wireframes_core::MeshProblemKind as K;
+        let mut id: HashMap<u32, u32> = HashMap::new();
+        let mut v = vec![];
+        let mut tris = vec![];
+        for f in self.live() {
+            let c = self.tris[f].map(|i| self.v[i as usize]);
+            if !(0..3).all(|k| c.iter().any(|p| p[k] >= lo[k]) && c.iter().any(|p| p[k] <= hi[k])) {
+                continue;
+            }
+            tris.push(self.tris[f].map(|i| {
+                *id.entry(i).or_insert_with(|| {
+                    v.push(self.v[i as usize]);
+                    v.len() as u32 - 1
+                })
+            }));
+        }
+        let Ok(r) = Mesh::new(v, tris).and_then(|m| m.validate(0.0)) else {
+            return usize::MAX;
+        };
+        r.problems
+            .iter()
+            .filter(|p| {
+                matches!(
+                    p.kind,
+                    K::DegenerateFace
+                        | K::DuplicateFace
+                        | K::BoundaryEdge
+                        | K::NonManifoldEdge
+                        | K::InconsistentWinding
+                        | K::SelfIntersection
+                        | K::CoplanarOverlap
+                )
+            })
+            .count()
+    }
+
+    /// The box of the corners of every face that differs between `self` and
+    /// `next`, a copy of `self` after a local change.
+    fn changed_box(&self, next: &Global) -> Option<([f64; 3], [f64; 3])> {
+        let (mut lo, mut hi) = ([f64::INFINITY; 3], [f64::NEG_INFINITY; 3]);
+        let mut any = false;
+        let mut take = |g: &Global, f: usize| {
+            any = true;
+            for i in g.tris[f] {
+                for k in 0..3 {
+                    lo[k] = lo[k].min(g.v[i as usize][k]);
+                    hi[k] = hi[k].max(g.v[i as usize][k]);
+                }
+            }
+        };
+        for f in 0..next.tris.len() {
+            let old = f < self.tris.len();
+            let same = old && self.alive[f] == next.alive[f] && self.tris[f] == next.tris[f];
+            if same {
+                continue;
+            }
+            if old && self.alive[f] {
+                take(self, f);
+            }
+            if next.alive[f] {
+                take(next, f);
+            }
+        }
+        any.then_some((lo, hi))
+    }
+
+    /// Flips edge `e` of face `f` (from corner `e` to the next) with the one
+    /// face across it.
+    fn flip(&mut self, f: usize, e: usize) -> bool {
+        let t = self.tris[f];
+        let (p, q, m) = (t[e], t[(e + 1) % 3], t[(e + 2) % 3]);
+        let opp: Vec<usize> = self
+            .live()
+            .filter(|&x| {
+                let u = self.tris[x];
+                (0..3).any(|k| u[k] == q && u[(k + 1) % 3] == p)
+            })
+            .collect();
+        let [g] = opp[..] else {
+            return false;
+        };
+        let u = self.tris[g];
+        let k = (0..3).find(|&k| u[k] == q).expect("runs the edge");
+        let d = u[(k + 2) % 3];
+        if d == m {
+            return false;
+        }
+        self.alive[f] = false;
+        self.alive[g] = false;
+        self.push([p, d, m], f);
+        self.push([d, q, m], g);
+        true
+    }
+
+    /// The local changes tried for the problem pairs and flat faces of
+    /// `report`: joins, collapses and insertions of a corner of one face
+    /// into the other within its wide hot box, and flips of their edges.
+    fn candidates(&self, report: &wireframes_core::MeshReport, ids: &[usize]) -> Vec<Change> {
+        use wireframes_core::MeshProblemKind as K;
+        let mut out = vec![];
+        for p in &report.problems {
+            let faces: Vec<usize> = match p.kind {
+                K::SelfIntersection | K::CoplanarOverlap | K::DegenerateFace => [p.face, p.other]
+                    .into_iter()
+                    .flatten()
+                    .map(|f| ids[f as usize])
+                    .collect(),
+                _ => continue,
+            };
+            for &f in &faces {
+                for e in 0..3 {
+                    out.push(Change::Flip(f, e));
+                }
+            }
+            let [f, o] = faces[..] else {
+                continue;
+            };
+            out.push(Change::Join(f, o));
+            for (a, b) in [(f, o), (o, f)] {
+                let tb = self.tris[b];
+                let cb = tb.map(|i| self.v[i as usize]);
+                for h in self.tris[a] {
+                    if tb.contains(&h) {
+                        continue;
+                    }
+                    let (lo, hi) = hot_box(self.v[h as usize], &cb, true);
+                    if !box_meets(&cb, lo, hi) {
+                        continue;
+                    }
+                    for k in 0..3 {
+                        if box_meets(&[cb[k]], lo, hi) {
+                            out.push(Change::Collapse(h, tb[k]));
+                        }
+                        if box_meets(&[cb[k], cb[(k + 1) % 3]], lo, hi) {
+                            out.push(Change::Insert(h, b, Some(k)));
+                        }
+                    }
+                    out.push(Change::Insert(h, b, None));
+                }
+            }
+        }
+        let mut seen = HashSet::new();
+        out.retain(|c| seen.insert(*c));
+        out
+    }
+
+    fn apply(&mut self, c: Change) -> bool {
+        match c {
+            Change::Flip(f, e) => self.alive[f] && self.flip(f, e),
+            Change::Join(f, o) => self.join_opposite(f, o),
+            Change::Collapse(h, c) => self.collapse(h, c),
+            Change::Insert(h, g, e) => self.alive[g] && self.insert(h, g, e),
+        }
+    }
+
+    /// Applies the change among [`Global::candidates`] that, with the
+    /// cancellations it allows, lowers the count of problems most; the first
+    /// such in candidate order on ties, and returns it; `None`, changing
+    /// nothing, when none lowers it. Each applied change lowers the count of
+    /// problems of the whole mesh by at least one, since faces outside the
+    /// changed box and their pairs are the same before and after.
+    fn descend(&mut self, report: &wireframes_core::MeshReport, ids: &[usize]) -> Option<Change> {
+        let mut best: Option<(usize, Change, Global)> = None;
+        for c in self.candidates(report, ids) {
+            let mut next = self.clone();
+            if !next.apply(c) {
+                continue;
+            }
+            cancel_pairs(&next.tris, &mut next.alive);
+            let Some((lo, hi)) = self.changed_box(&next) else {
+                continue;
+            };
+            let (before, after) = (self.local_problems(lo, hi), next.local_problems(lo, hi));
+            if after < before && best.as_ref().is_none_or(|(d, ..)| before - after > *d) {
+                best = Some((before - after, c, next));
+            }
+        }
+        let (_, c, next) = best?;
+        *self = next;
+        Some(c)
     }
 
     fn push(&mut self, t: [u32; 3], like: usize) {
@@ -1354,17 +1569,26 @@ fn zip_bound(v: usize, f: usize) -> usize {
     f.saturating_add(v.saturating_mul(f).saturating_mul(4))
 }
 
+/// The descents over all shells for `v` vertices and `f` faces that the loop
+/// allows: it counts them and takes none past this.
+fn descent_bound(v: usize, f: usize) -> usize {
+    v.saturating_add(f).saturating_mul(4)
+}
+
 /// The bound on the operations over all shells for `v` vertices and `f`
 /// faces: at most `i = v f` insertions (one per exact point and original
 /// face), each adding at most two faces; merges, collapses, cancellations and
 /// removals each remove a vertex or a face of the at most `v + f + 2 i` there
 /// ever are; at most [`zip_bound`] removals of flat runs, a count the loop
-/// enforces; and one round per insertion, collapse or removal plus the last.
+/// enforces; one round per insertion, collapse or removal plus the last; and
+/// per descent (at most [`descent_bound`], a count the loop enforces) its
+/// change, its round, and the removal of the at most two faces it adds.
 fn global_step_bound(v: usize, f: usize) -> usize {
     let i = v.saturating_mul(f);
     i.saturating_mul(9)
         .saturating_add(v.saturating_mul(3))
         .saturating_add(f.saturating_mul(2))
+        .saturating_add(descent_bound(v, f).saturating_mul(4))
         .saturating_add(1)
 }
 
@@ -1372,20 +1596,20 @@ fn global_step_bound(v: usize, f: usize) -> usize {
 /// operations cannot certify a closed draft, the result is the per-shell
 /// cleanup without the move cap, a closed mesh for the error to carry, with
 /// `certified` false and its report's `move_bound` raised to its `max_move`.
-pub(crate) fn materialize(d: Draft) -> Result<Rounded> {
+pub(crate) fn materialize(d: Draft, descend: bool) -> Result<Rounded> {
     if d.home.iter().flatten().any(|x| !x.is_finite()) {
         return Err(Error::kernel(
             "non-finite: an exact coordinate of the result rounds outside the f64 range",
         ));
     }
-    let (r, solid) = run(&d, true)?;
+    let (r, solid) = run(&d, true, descend)?;
     if solid || !d.closed {
         return Ok(Rounded {
             certified: true,
             ..r
         });
     }
-    let (mut r, _) = run(&d, false)?;
+    let (mut r, _) = run(&d, false, false)?;
     for k in 0..3 {
         r.report.move_bound[k] = r.report.move_bound[k].max(r.report.max_move[k]);
     }
@@ -1398,7 +1622,7 @@ pub(crate) fn materialize(d: Draft) -> Result<Rounded> {
 /// One rounding of `d`: the per-shell cleanup, with the move cap when `cap`,
 /// then, with `cap` and a closed draft that is not yet a solid, the operations
 /// over all shells. Also returns whether the mesh is a solid.
-fn run(d: &Draft, cap: bool) -> Result<(Rounded, bool)> {
+fn run(d: &Draft, cap: bool, descend: bool) -> Result<(Rounded, bool)> {
     let nv = d.home.len();
     let rho: Vec<f64> = d.err.iter().map(|e| up(norm(*e))).collect();
     let raw: Vec<[[f64; 3]; 3]> = d
@@ -1506,12 +1730,13 @@ fn run(d: &Draft, cap: bool) -> Result<(Rounded, bool)> {
         let before = (g.clone(), report.clone());
         let mut done: HashSet<(u32, u32)> = HashSet::new();
         let (mut zips, zip_limit) = (0usize, zip_bound(g.v.len(), g.tris.len()));
+        let (mut descents, descent_limit) = (0usize, descent_bound(g.v.len(), g.tris.len()));
         loop {
             let merged = g.merge_equal();
             report.merged_vertices += merged;
             let cancelled = cancel_pairs(&g.tris, &mut g.alive);
             report.cancelled_faces += cancelled;
-            let removed = g.remove_flat_shells(&err_g)?;
+            let removed = g.remove_flat_shells(&err_g, descend)?;
             report.removed_shells += removed;
             report.steps += merged + cancelled / 2 + removed + 1;
             let (m, ids) = g.mesh()?;
@@ -1522,7 +1747,7 @@ fn run(d: &Draft, cap: bool) -> Result<(Rounded, bool)> {
             if found.summary.is_solid() {
                 break;
             }
-            if zips < zip_limit {
+            if descents == 0 && zips < zip_limit {
                 let seeds: HashSet<usize> = found
                     .problems
                     .iter()
@@ -1538,14 +1763,30 @@ fn run(d: &Draft, cap: bool) -> Result<(Rounded, bool)> {
                     continue;
                 }
             }
-            let (mut inserted, mut collapsed) = g.insert_hot_points(&found, &ids, &mut done, false);
-            if inserted + collapsed == 0 {
-                (inserted, collapsed) = g.insert_hot_points(&found, &ids, &mut done, true);
+            let (mut inserted, mut collapsed) = (0, 0);
+            if descents == 0 {
+                (inserted, collapsed) = g.insert_hot_points(&found, &ids, &mut done, false);
+                if inserted + collapsed == 0 {
+                    (inserted, collapsed) = g.insert_hot_points(&found, &ids, &mut done, true);
+                }
             }
             report.inserted_points += inserted;
             report.collapsed_edges += collapsed;
             report.steps += inserted + collapsed;
             if inserted + collapsed == 0 {
+                if descend
+                    && descents < descent_limit
+                    && let Some(c) = g.descend(&found, &ids)
+                {
+                    descents += 1;
+                    report.steps += 1;
+                    match c {
+                        Change::Flip(..) => report.flipped_edges += 1,
+                        Change::Join(..) | Change::Collapse(..) => report.collapsed_edges += 1,
+                        Change::Insert(..) => report.inserted_points += 1,
+                    }
+                    continue;
+                }
                 break;
             }
         }
@@ -2028,7 +2269,7 @@ pub(crate) mod checks {
             )
         }) / &six;
         let (home, rows, point) = (d.home.clone(), d.rows.clone(), d.point.clone());
-        let r = materialize(d).expect("finite");
+        let r = materialize(d, false).expect("finite");
         let out = &r.mesh.vertices;
         let vol_out = r.mesh.triangles.iter().fold(q(0.0), |acc, t| {
             let c = t.map(|i| out[i as usize].map(q));
@@ -2229,6 +2470,46 @@ mod operations {
 
     fn live(g: &Global) -> Vec<[u32; 3]> {
         g.live().map(|f| g.tris[f]).collect()
+    }
+
+    /// A tetrahedron whose bottom face has a rounded point `E` an ulp across
+    /// edge `AB`, joined to the three bottom corners: the sliver `B A E`
+    /// folds over the other two faces. Each descent lowers the problem count
+    /// and the last leaves a solid.
+    #[test]
+    fn descents_lower_the_problem_count_until_none_does() {
+        let e = [1.0, -1e-16, 0.0];
+        let mut g = global(
+            vec![A, B, C, D, e],
+            vec![
+                [0, 1, 3],
+                [0, 3, 2],
+                [1, 2, 3],
+                [0, 2, 4],
+                [2, 1, 4],
+                [1, 0, 4],
+            ],
+            vec![0, 1, 2, 3, 4],
+        );
+        let problems = |g: &Global| {
+            let (m, ids) = g.mesh().unwrap();
+            (m.validate(0.0).unwrap(), ids)
+        };
+        let (mut found, mut ids) = problems(&g);
+        assert!(!found.summary.is_solid());
+        let mut steps = 0;
+        let mut count = found.problems.len();
+        while g.descend(&found, &ids).is_some() {
+            cancel_pairs(&g.tris, &mut g.alive);
+            (found, ids) = problems(&g);
+            assert!(found.problems.len() < count);
+            count = found.problems.len();
+            steps += 1;
+            assert!(steps <= descent_bound(5, 6));
+        }
+        assert!(found.summary.is_solid(), "{:?}", found.summary);
+        assert!(is_closed_manifold(&live(&g)));
+        assert!(g.descend(&found, &ids).is_none());
     }
 
     #[test]

@@ -187,7 +187,9 @@ No other dependency without a line in this table.
    one exact point); C4, opposite faces on the same three vertices cancel across
    shells; C3, an edge-connected component whose rounded volume is zero, or
    negative while `validate` reports it as an inward shell, is removed when that
-   volume is within the bound (V) gives for rounding its faces. Then, while
+   volume is within the bound (V) gives for rounding its faces; in a run with
+   descents (below), so does a component that holds a face of a
+   self-intersecting, overlapping or flat problem. Then, while
    `validate` reports self-intersecting or overlapping face pairs, for each pair
    a corner `h` of one face whose hot box meets the other face, the box tested
    exactly by separating axes on expansions: C2, when the box holds a corner of
@@ -204,7 +206,8 @@ No other dependency without a line in this table.
    segment between its two extreme vertices, is removed whole, and the edges of
    the faces around it are split at its vertices in order along that segment, so
    the two sides meet edge for edge; it is put back when the edges along the
-   segment then do not pair. No operation puts two copies of one exact point on
+   segment then do not pair, or when the faces it makes hold as many flat faces
+   as the run did. No operation puts two copies of one exact point on
    one face or repeats a live face with the same orientation, and opposite faces
    on the same coordinates whose corners differ only by such copies have them
    joined and cancel. `cancelled_faces` counts the faces of removed runs too. Each
@@ -243,7 +246,15 @@ No other dependency without a line in this table.
    vol(b xor b')`). The report counts the points inserted (`inserted_points`) and
    the edges flipped (`flipped_edges`), and adds the steps and the step bound of
    conforming. The result of the conformed inputs is returned only when it is
-   certified. No case in the tests meets `uncertified`. Operations on the exact
+   certified. When neither is, both run once more with descents
+   (`rounding.md` section 9): each time the operations above find nothing to do,
+   the rounding tries, for every problem pair and flat face, the flips of their
+   edges, the join of opposite copies, and the collapses and insertions of a
+   corner of one face into the other within its wide hot box, and keeps the
+   change that lowers the problem count of the faces it touches the most (the
+   first in that order on ties); it then takes only descents, at most
+   `4 (v + f)`, until none lowers the count. A split
+   descends on its first run. Operations on the exact
    inputs still move nothing: clip the difference
    (`(s2 - s1).clip_by_surface(topo)`) rather than taking the difference of clipped
    pieces. Tests that meet the limit read the mesh from the

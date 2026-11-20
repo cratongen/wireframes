@@ -1,7 +1,6 @@
 //! Failures found by adversarial mining scenarios against the rounding of
 //! exact results to `f64`, each reduced to the two inputs of the operation
-//! that failed, in `tests/data/attacks/<name>.txt`. Every test is ignored with
-//! its reason until the rounding handles it.
+//! that failed, in `tests/data/attacks/<name>.txt`.
 
 use num_rational::BigRational as Q;
 use std::sync::mpsc;
@@ -52,6 +51,31 @@ fn pair(name: &str) -> (Mesh, Mesh) {
     };
     let a = read();
     (a, read())
+}
+
+/// The results of every attack pair do not depend on the thread count.
+#[test]
+fn attack_results_do_not_depend_on_thread_count() {
+    let cases = [
+        ("repeat_overlap", Op::Difference),
+        ("repeat_tilted", Op::Difference),
+        ("stope_minus_drive", Op::Difference),
+        ("development_chain", Op::Union),
+    ];
+    for (name, op) in cases {
+        let (a, b) = pair(name);
+        let go = |n: usize| {
+            rayon::ThreadPoolBuilder::new()
+                .num_threads(n)
+                .build()
+                .unwrap()
+                .install(|| boolean(&a, &b, op, &BooleanOptions::default()).unwrap())
+        };
+        let (r1, r4) = (go(1), go(4));
+        assert_eq!(r1.mesh, r4.mesh, "{name}");
+        assert_eq!(r1.face_source, r4.face_source, "{name}");
+        assert_eq!(r1.rounding, r4.rounding, "{name}");
+    }
 }
 
 fn q(x: f64) -> Q {
@@ -125,7 +149,6 @@ fn identity_holds(name: &str, op: Op) {
 /// horizontal line on its top, one at a time, then with a lid tilted by
 /// 1.7e-12 rad.
 #[test]
-#[ignore = "attack: union of a chain of tilted lids does not finish (over 15 minutes in release)"]
 fn union_of_a_chain_of_lids_tilted_by_tiny_angles_finishes() {
     identity_holds("lid_chain", Op::Union);
 }
@@ -133,7 +156,6 @@ fn union_of_a_chain_of_lids_tilted_by_tiny_angles_finishes() {
 /// A box minus thirteen overlapping caps tilted by alternating angles of
 /// 1e-13 rad, one at a time, then minus a fourteenth.
 #[test]
-#[ignore = "attack: difference of a chain of tilted caps does not finish (over 3 minutes in release)"]
 fn difference_of_a_chain_of_tilted_caps_finishes() {
     identity_holds("cut_chain", Op::Difference);
 }
@@ -141,7 +163,6 @@ fn difference_of_a_chain_of_tilted_caps_finishes() {
 /// `x = (a | b) - b` for boxes rotated to strike and dip at UTM coordinates,
 /// then `(x | b) - b` again: the second difference.
 #[test]
-#[ignore = "attack: repeated union then difference of the same body raises KernelError uncertified"]
 fn repeated_union_then_difference_of_one_body_is_a_solid() {
     identity_holds("repeat_overlap", Op::Difference);
 }
@@ -149,7 +170,6 @@ fn repeated_union_then_difference_of_one_body_is_a_solid() {
 /// The same loop with `b` turned by a degree in strike and dip: the fifth
 /// difference.
 #[test]
-#[ignore = "attack: fifth repeated difference of a tilted body does not finish (over 10 minutes in release)"]
 fn repeated_difference_of_a_tilted_body_finishes() {
     identity_holds("repeat_tilted", Op::Difference);
 }
@@ -157,7 +177,6 @@ fn repeated_difference_of_a_tilted_body_finishes() {
 /// Twenty-four face-sharing stopes rotated to strike 271.3 and dip 85 at UTM
 /// coordinates, united, minus three drives, then minus a vertical raise.
 #[test]
-#[ignore = "attack: stope block minus a raise after three drives raises KernelError uncertified"]
 fn stope_block_minus_a_raise_after_drives_is_a_solid() {
     identity_holds("stope_minus_drive", Op::Difference);
 }
@@ -165,7 +184,6 @@ fn stope_block_minus_a_raise_after_drives_is_a_solid() {
 /// A drive turned to strike 23.7 at UTM coordinates united with six
 /// crosscuts and raises one at a time, then with a seventh.
 #[test]
-#[ignore = "attack: seventh union of development turned to strike raises KernelError uncertified"]
 fn seventh_union_of_development_turned_to_strike_is_a_solid() {
     identity_holds("development_chain", Op::Union);
 }
@@ -173,7 +191,6 @@ fn seventh_union_of_development_turned_to_strike_is_a_solid() {
 /// Two conical pit shells clipped by the same contour topography at UTM
 /// coordinates: their union.
 #[test]
-#[ignore = "attack: union of two pits clipped by the same topography does not finish (over 17 minutes in release)"]
 fn union_of_pits_clipped_by_the_same_topography_finishes() {
     identity_holds("pits_sharing_topography", Op::Union);
 }
@@ -181,7 +198,6 @@ fn union_of_pits_clipped_by_the_same_topography_finishes() {
 /// A stope rotated to strike 33 and dip 70 at UTM coordinates, split by the
 /// plane of one of its own faces (origin and normal on the last line).
 #[test]
-#[ignore = "attack: split of a rotated stope along its own face plane raises KernelError uncertified"]
 fn split_of_a_rotated_stope_along_its_own_face_is_two_solids() {
     let (m, _) = pair("split_along_face");
     let path = format!(

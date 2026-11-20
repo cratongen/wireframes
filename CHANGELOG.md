@@ -122,6 +122,17 @@ All notable changes to wireframes are listed here. The format follows
   its longest edge, where a stope wall cuts a drive wall quad that is planar
   only to rounding. In a seeded scan of 240 stope and drive booleans, 29
   results were invalid before and none after.
+- Rounding no longer cycles on a flat run it removes and puts back: the union
+  of two pit shells clipped by one topography ran for more than 17 minutes
+  and now returns a solid. A run's removal is kept only when the faces it
+  makes hold fewer flat faces than the run.
+- Rounding certifies the adversarial cases that raised `uncertified`: a stope
+  split along its own face plane (a sub-ulp sliver part is removed within its
+  volume bound), repeated union then difference of one body, a rotated stope
+  block minus a raise, development turned to strike, and chains of lids and
+  caps tilted by 1e-13 rad. When the other operations stall, the rounding
+  descends: it keeps the local flip, join, collapse or insertion that lowers
+  the problem count most (`docs/design/rounding.md` section 9).
 - `block_fraction` is exactly 0 or 1 for a block that no face meets, instead
   of picking up `f64` residue from the faces above it.
 - `loft` links each band with both rings centred and the band axis removed.
@@ -133,7 +144,8 @@ All notable changes to wireframes are listed here. The format follows
 
 - Rounding has no general 3D validity theorem: a boolean, clip or split the
   rounding operations cannot certify raises `wf.KernelError` whose message
-  starts with `uncertified`. No case in the tests raises it.
+  starts with `uncertified`. No case in the tests raises it, the adversarial
+  cases of `crates/boolean/tests/attacks.rs` included.
 - `loft` does not branch, `extrude` has no path sweep, and `offset` is not a
   Minkowski offset.
 - No real Datamine Studio export is tested yet.

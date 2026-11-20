@@ -434,11 +434,10 @@ Measured on the reduced cases and on the 648 inclined splits of `sphere(2)`
   collinear or a problem face, and only when every vertex lies within the wide
   reach of the segment between the run's extreme vertices; a run along a curve,
   such as thin faces around an icosphere's cap, would otherwise be split in the
-  wrong order. It is put back when the edges along the line do not pair. The
-  faces a removal makes can themselves be flat by the hot-box test (a needle
-  between two points an ulp apart), so no potential argument bounds removals;
-  the loop counts them and takes none past `f + 4 v f` (`zip_bound`), which is
-  part of `step_bound`.
+  wrong order. It is put back when the edges along the line do not pair, or
+  when the faces it makes hold as many flat faces as the run (section 9). The
+  loop also counts removals and takes none past `f + 4 v f` (`zip_bound`),
+  which is part of `step_bound`.
 
 ## 8. Conforming inputs that agree to rounding
 
@@ -478,3 +477,106 @@ overlap no face near them (exact pair tests, found through a BVH of the input fa
   first step and asserted, and its steps join the report's.
 - **Result.** The result of the conformed inputs is returned only when certified;
   otherwise the first, uncertified result is the error.
+
+## 9. Adversarial cases
+
+An adversarial tester built mining scenarios against sections 7 and 8; each
+failure is reduced to the two inputs of the operation that failed, in
+`crates/boolean/tests/data/attacks/`, and runs in
+`crates/boolean/tests/attacks.rs` with the volume identity checked in rationals
+against the sum of the volume bounds. Two root causes and one missing operation
+explain all eight.
+
+### Flat runs that come back
+
+The union of two pit shells clipped by one topography never finished. The loop
+removed a one-face flat run, split the face across it into two faces, one of
+which was flat by the hot-box test, and on the next round removed that face and
+recreated the first: two states, alternating, with the live face count fixed.
+The `zip_bound` cap ended the loop after about `4 v f` rounds, a validate each,
+so the bound proved termination and no useful time.
+
+A removal is now kept only when the faces it makes hold fewer flat faces than
+the run it removed. Faces next to a run are not flat (flat faces joined by an
+edge belong to one run), so the number of flat live faces drops by at least one
+with each kept removal. Between two other operations the loop can therefore
+take at most as many removals as there are live faces, and a removal can never
+undo the one before it. With this change the pits union returns a solid; the
+three chains (lids, caps, the turned body) finish too, then needed the descent
+below.
+
+### Sub-ulp parts with crossing faces
+
+`split_by_plane` along a rotated stope's own face plane (origin a face vertex,
+normal the `f64` cross product of the face's edges) puts the plane within about
+1e-15 m of the face, a fraction of the 9.3e-10 m ulp at UTM northings, at an
+angle that lets it cross the nearly parallel edges anywhere along their length.
+One part is a wedge thinner than an ulp whose crossing points round off its
+faces by half an ulp, so its cap and its wall cross. C3 removed a component only
+when its rounded volume was zero or wrong-signed; this one has a small positive
+volume and two self-intersections. C3 now also takes a component that holds a
+face of a self-intersecting, overlapping or flat problem, under the same test:
+its rounded volume is at most its own (V) sum, so its exact volume is at most
+twice that sum, and `volume_bound` counts the removal through the exact volume
+change. The upper part of the split comes back empty, which the test accepts.
+The wider test runs only where descents run (below). Run on every boolean and
+clip, it certified the first run of a pit clipped twice by one topography with
+53 sliver shells above it, where the conformed inputs give the empty part the
+Python test `test_rounding_report_comes_last_and_its_bounds_hold` expects.
+
+### Descent
+
+The other five (repeated union then difference, the stope block minus a raise,
+development turned to strike, the lid and cap chains) stalled with every
+operation of section 7 refusing or making no progress: insertions created
+non-manifold edges and further crossings, and nothing undid them. Their inputs
+are themselves rounded results, holding fins and walls a few ulps thick that
+earlier operations left (M3 compounded over a chain).
+
+The descent replaces the heuristic order with a measured one. When neither C2
+nor C5 finds anything, the loop collects candidate changes from the problems
+`validate` reports: for each self-intersecting, overlapping or flat face, the
+flip of each of its edges with the face across; for each pair, the join of
+opposite copies (C4) and, for each corner `h` of one face whose wide hot box
+meets the other, the collapse of `h` into each corner within the box (C2) and
+its insertion into the face, inside or on each edge within the box (C5). Each
+candidate is applied to a copy, opposite pairs cancel, and the loop counts the
+problems `validate` finds among the faces whose bounding boxes meet the box of
+every face the change made or removed. The change that lowers that count the
+most is kept, the first in candidate order on ties; when none lowers it, the
+loop ends.
+
+- **The local count is the global count.** A face the change made or removed
+  lies inside the box, so every pair it is in, and every edge it has, is among
+  the faces counted; faces outside the box and their pairs are the same before
+  and after. Each kept descent therefore lowers the problem count of the whole
+  mesh by at least one, and no sequence of descents repeats a state.
+- **Only descents after the first.** Once the loop descends it takes nothing
+  else, so the insertions that the descent undoes cannot be made again; with
+  them interleaved the problem count of a reduced case alternated between two
+  values.
+- **Termination.** Each descent lowers a non-negative count, and the loop also
+  counts descents and takes none past `4 (v + f)` (`descent_bound`); each
+  descent adds its change, its round and the removal of the at most two faces
+  it adds, `4 * descent_bound`, to `step_bound`. A descent tries at most
+  49 candidates per problem pair and 3 per flat face, each with one copy of
+  the mesh and one `validate` of the faces in its box. Time: not measured.
+- **Bounds.** Flips and insertions move no vertex. Collapses go through C2 and
+  keep the move cap of section 7, so `move_bound` stands. Every change replaces
+  faces, and `volume_bound` already adds the exact volume change from the draft
+  to the output over the faces that differ.
+- **When it runs.** Descents cost a copy and a local validate per candidate, so
+  a boolean or clip first runs as before: the inputs, then the conformed inputs
+  (section 8). Only when neither is certified do both run again with descents.
+  A split has no conformed retry and descends on its first run. The descent
+  leaves results that sections 7 and 8 certify as they were.
+
+Determinism: candidate order follows `validate`'s problem order and fixed loops
+over corners and edges, so `attack_results_do_not_depend_on_thread_count`
+compares four attack cases on one and four threads, mesh, face sources and
+report.
+
+The descent has no more of a 3D theorem than the rest of method C: it ends when
+no single local change lowers the count, which can leave problems a sequence of
+two changes would remove. Such a case still raises `uncertified`; none in the
+tests does.
