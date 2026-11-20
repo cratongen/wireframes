@@ -571,8 +571,10 @@ loop ends.
   counts descents and takes none past `4 (v + f)` (`descent_bound`); each
   descent adds its change, its round and the removal of the at most two faces
   it adds, `4 * descent_bound`, to `step_bound`. A descent tries at most
-  49 candidates per problem pair and 3 per flat face, each with one copy of
-  the mesh and one `validate` of the faces in its box. Time: not measured.
+  49 candidates per problem pair, 3 per flat face, and for a non-manifold edge
+  of `k` faces `3 k` flips and 43 candidates for each of its `k (k - 1) / 2`
+  pairs, each with one copy of the mesh and one `validate` of the faces in its
+  box. Time: not measured.
 - **Bounds.** Flips and insertions move no vertex. Collapses go through C2 and
   keep the move cap of section 7, so `move_bound` stands. Every change replaces
   faces, and `volume_bound` already adds the exact volume change from the draft
@@ -582,6 +584,22 @@ loop ends.
   (section 8). Only when neither is certified do both run again with descents.
   A split has no conformed retry and descends on its first run. The descent
   leaves results that sections 7 and 8 certify as they were.
+
+### Faces around a non-manifold edge
+
+The second round of attacks chained union then difference of a body turned by
+under a degree at UTM coordinates (`repeat_fifth_union`,
+`repeat_turned_third_difference`). Their first inputs touch themselves along 2
+to 6 edges, so the exact result holds several copies of one exact point. After
+rounding, two faces of one input landed on the same coordinates with opposite
+orientation, differing only by such copies, and `validate` reported the edge
+they share as non-manifold: four faces whose order does not alternate. C4 joined
+copies only for crossing or overlapping pairs, and the descent took candidates
+only from those pairs and from flat faces, so nothing acted on the edge. Now C4
+also joins copies among the faces around each non-manifold edge, and the
+descent treats every two faces around such an edge as a pair, with the same
+joins, collapses, insertions and flips. Both chains then return solids within
+their bounds.
 
 Determinism: candidate order follows `validate`'s problem order and fixed loops
 over corners and edges, so `attack_results_do_not_depend_on_thread_count`

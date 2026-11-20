@@ -272,7 +272,6 @@ fn split_holds(name: &str) {
 /// coordinates, `b` turned by 0.7 degrees, then `x = (x | b) - b` four
 /// times: the fifth union.
 #[test]
-#[ignore = "attack: fifth union of a repeated union then difference raises KernelError (self_intersections=31)"]
 fn fifth_union_of_a_repeated_union_then_difference_is_a_solid() {
     identity_holds("repeat_fifth_union", Op::Union);
 }
@@ -280,7 +279,6 @@ fn fifth_union_of_a_repeated_union_then_difference_is_a_solid() {
 /// A seeded pair of boxes rotated to strike and dip, `b` turned by under a
 /// degree, `x = (a - b)`, then `x = (x | b) - b`: the third difference.
 #[test]
-#[ignore = "attack: third difference of a repeated union then difference raises KernelError (duplicate_vertices=13)"]
 fn third_difference_of_a_turned_body_is_a_solid() {
     identity_holds("repeat_turned_third_difference", Op::Difference);
 }

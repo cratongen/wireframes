@@ -210,7 +210,8 @@ No other dependency without a line in this table.
    as the run did. No operation puts two copies of one exact point on
    one face or repeats a live face with the same orientation, and opposite faces
    on the same coordinates whose corners differ only by such copies have them
-   joined and cancel. `cancelled_faces` counts the faces of removed runs too. Each
+   joined and cancel, both in a self-intersecting or overlapping pair and among
+   the faces around a non-manifold edge. `cancelled_faces` counts the faces of removed runs too. Each
    (exact point, original face) pair is inserted at most once, and no vertex ends
    more than four ulps of its largest coordinate, on any axis, from the exact
    position of any exact vertex that ends at it (`move_bound`), in the per-shell cleanup as well. For a result these
@@ -248,7 +249,8 @@ No other dependency without a line in this table.
    conforming. The result of the conformed inputs is returned only when it is
    certified. When neither is, both run once more with descents
    (`rounding.md` section 9): each time the operations above find nothing to do,
-   the rounding tries, for every problem pair and flat face, the flips of their
+   the rounding tries, for every problem pair, flat face and pair of faces around
+   a non-manifold edge, the flips of their
    edges, the join of opposite copies, and the collapses and insertions of a
    corner of one face into the other within its wide hot box, and keeps the
    change that lowers the problem count of the faces it touches the most (the

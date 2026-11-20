@@ -898,6 +898,9 @@ impl Global {
         Ok(removed)
     }
 
+    /// C4 for the faces around each non-manifold edge `validate` reports: any
+    /// two of them on the same coordinates with opposite orientation have the
+    /// copies of one exact point that tell them apart joined, so they cancel.
     /// C5 for each self-intersecting or overlapping pair `validate` reports:
     /// a corner `h` of one face whose hot box meets the other face `g`, not at
     /// a corner, is inserted into `g`, on the edge of `g` the box meets when
@@ -919,6 +922,19 @@ impl Global {
                 && let Some(f) = p.face
             {
                 inserted += usize::from(self.unflatten(ids[f as usize], done));
+                continue;
+            }
+            if p.kind == K::NonManifoldEdge
+                && let (Some(f), Some(e)) = (p.face, p.edge)
+            {
+                let around = self.around(ids[f as usize], e as usize);
+                for (i, &x) in around.iter().enumerate() {
+                    for &y in &around[i + 1..] {
+                        if self.join_opposite(x, y) {
+                            collapsed += 1;
+                        }
+                    }
+                }
                 continue;
             }
             if !matches!(p.kind, K::SelfIntersection | K::CoplanarOverlap) {
@@ -1378,8 +1394,9 @@ impl Global {
         true
     }
 
-    /// The local changes tried for the problem pairs and flat faces of
-    /// `report`: joins, collapses and insertions of a corner of one face
+    /// The local changes tried for the problem pairs, flat faces and
+    /// non-manifold edges of `report` (every two faces around such an edge
+    /// form a pair): joins, collapses and insertions of a corner of one face
     /// into the other within its wide hot box, and flips of their edges.
     fn candidates(&self, report: &wireframes_core::MeshReport, ids: &[usize]) -> Vec<Change> {
         use wireframes_core::MeshProblemKind as K;
@@ -1391,6 +1408,12 @@ impl Global {
                     .flatten()
                     .map(|f| ids[f as usize])
                     .collect(),
+                K::NonManifoldEdge => {
+                    let (Some(f), Some(e)) = (p.face, p.edge) else {
+                        continue;
+                    };
+                    self.around(ids[f as usize], e as usize)
+                }
                 _ => continue,
             };
             for &f in &faces {
@@ -1398,36 +1421,54 @@ impl Global {
                     out.push(Change::Flip(f, e));
                 }
             }
-            let [f, o] = faces[..] else {
-                continue;
-            };
-            out.push(Change::Join(f, o));
-            for (a, b) in [(f, o), (o, f)] {
-                let tb = self.tris[b];
-                let cb = tb.map(|i| self.v[i as usize]);
-                for h in self.tris[a] {
-                    if tb.contains(&h) {
-                        continue;
-                    }
-                    let (lo, hi) = hot_box(self.v[h as usize], &cb, true);
-                    if !box_meets(&cb, lo, hi) {
-                        continue;
-                    }
-                    for k in 0..3 {
-                        if box_meets(&[cb[k]], lo, hi) {
-                            out.push(Change::Collapse(h, tb[k]));
-                        }
-                        if box_meets(&[cb[k], cb[(k + 1) % 3]], lo, hi) {
-                            out.push(Change::Insert(h, b, Some(k)));
-                        }
-                    }
-                    out.push(Change::Insert(h, b, None));
-                }
+            let pairs: Vec<(usize, usize)> = (0..faces.len())
+                .flat_map(|i| (i + 1..faces.len()).map(move |j| (i, j)))
+                .map(|(i, j)| (faces[i], faces[j]))
+                .collect();
+            for (f, o) in pairs {
+                self.pair_candidates(f, o, &mut out);
             }
         }
         let mut seen = HashSet::new();
         out.retain(|c| seen.insert(*c));
         out
+    }
+
+    /// The live faces on the edge `e` of face `f`, `f` among them.
+    fn around(&self, f: usize, e: usize) -> Vec<usize> {
+        let t = self.tris[f];
+        let (a, b) = (t[e], t[(e + 1) % 3]);
+        self.live()
+            .filter(|&g| self.tris[g].contains(&a) && self.tris[g].contains(&b))
+            .collect()
+    }
+
+    /// The join of faces `f` and `o`, and the collapses and insertions of a
+    /// corner of one into the other within its wide hot box.
+    fn pair_candidates(&self, f: usize, o: usize, out: &mut Vec<Change>) {
+        out.push(Change::Join(f, o));
+        for (a, b) in [(f, o), (o, f)] {
+            let tb = self.tris[b];
+            let cb = tb.map(|i| self.v[i as usize]);
+            for h in self.tris[a] {
+                if tb.contains(&h) {
+                    continue;
+                }
+                let (lo, hi) = hot_box(self.v[h as usize], &cb, true);
+                if !box_meets(&cb, lo, hi) {
+                    continue;
+                }
+                for k in 0..3 {
+                    if box_meets(&[cb[k]], lo, hi) {
+                        out.push(Change::Collapse(h, tb[k]));
+                    }
+                    if box_meets(&[cb[k], cb[(k + 1) % 3]], lo, hi) {
+                        out.push(Change::Insert(h, b, Some(k)));
+                    }
+                }
+                out.push(Change::Insert(h, b, None));
+            }
+        }
     }
 
     fn apply(&mut self, c: Change) -> bool {
