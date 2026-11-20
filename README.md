@@ -269,21 +269,22 @@ tonnage without warning. `wireframes` enforces three rules:
 ## Performance
 
 `mise run bench` runs the criterion benches. The table below gives criterion medians
-measured on 2026-11-19 on a 13th Gen Intel Core i9-13980HX (32 logical CPUs,
-wireframes on 32 threads) at commit `5d5ab30`. The
-[performance page](docs/performance.md) lists the commands, versions, confidence
-intervals, load and the results for every kernel and reader. Booleans,
-`clip_by_surface` and `split_by_plane` now run `validate` on each result; the boolean
-rows predate that, and its cost is not measured. Comparison with other libraries:
-not measured.
+measured on a 13th Gen Intel Core i9-13980HX (32 logical CPUs, wireframes on 32
+threads). The `validate`, boolean and slicing rows are medians of three runs at commit
+`cf79bfb` on 2026-11-20, interleaved with three runs of `ba8a660`, the commit before
+the rounding work (1-minute load 7.9 to 16.5); the boolean rows include the `validate`
+call each boolean runs on its result. The other rows come from commit `5d5ab30` on
+2026-11-19. The [performance page](docs/performance.md) lists the commands, versions,
+confidence intervals, load, the before and after rows and the results for every kernel
+and reader. Comparison with other libraries: not measured.
 
 | Operation | Dataset | Median |
 |---|---|---|
 | STL binary write, read (in memory) | 100k-triangle torus | 3.29 ms, 6.94 ms |
 | PLY binary write, read (in memory) | 100k-triangle torus | 0.720 ms, 2.86 ms |
-| Mesh validation (`validate`) | 100k-triangle torus | 126 ms |
-| Exact boolean (`union`) | Two 100k-triangle tori | 958 ms |
-| Exact boolean (`difference`) | Two 100k-triangle tori | 1.06 s |
+| Mesh validation (`validate`) | 100k-triangle torus | 125 ms |
+| Exact boolean (`union`) | Two 100k-triangle tori | 1.47 s (1.09 s before rounding) |
+| Exact boolean (`difference`) | Two 100k-triangle tori | 1.51 s (1.17 s before rounding) |
 | Plane slicing (`slice_by_plane`) | 100k-triangle torus across 50 sections | 86.3 ms |
 | Point location (`locate_all`), index prebuilt | 1e5 points in a 100k-triangle torus | 4.68 ms |
 | Signed distance, index prebuilt | 1e5 points, 100k-triangle torus | 56.9 ms |

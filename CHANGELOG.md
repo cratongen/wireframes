@@ -35,9 +35,11 @@ All notable changes to wireframes are listed here. The format follows
   plots and `to_polars`/`to_pandas`/`to_pyarrow` conversions.
 - Numbered examples for every public capability, and an mkdocs guide.
 - Criterion benches for I/O, booleans, slicing, validation and queries.
-  `docs/performance.md` records the timings
-  taken at commit `5d5ab30`; the cost of the `validate` call that booleans
-  now run on each result is not measured.
+  `docs/performance.md` records the timings taken at commit `5d5ab30`, and
+  `validate`, `union`, `difference` and `slice_by_plane` before (`ba8a660`) and
+  after (`cf79bfb`) the rounding work: on two 100k tori `union` went from 1.09 s
+  to 1.47 s and `difference` from 1.17 s to 1.51 s (medians of three
+  interleaved runs; `validate` and slicing unchanged).
 - Tests: boitata's validate and repair fixtures ported to `wireframes-ops`,
   thread-count determinism tests for `io` and `build`, commutativity of union
   and intersection in `locate`, a Datamine triangle-id alias test, and

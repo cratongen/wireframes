@@ -1,7 +1,7 @@
 # Performance
 
-Every number on this page comes from benchmarks run on 2026-11-19 on one machine, in
-one session, one command at a time. Cells marked "not measured" have no benchmark
+Every number on this page comes from benchmarks run on one machine, one command at a
+time: on 2026-11-19 at commit `5d5ab30`, and on 2026-11-20 for the rounding section. Cells marked "not measured" have no benchmark
 behind them.
 
 ## Machine and versions
@@ -12,7 +12,7 @@ behind them.
 | Memory | 31 GiB; every run capped at 4 GiB with `systemd-run --user --scope -p MemoryMax=4G -p MemorySwapMax=0` |
 | OS | Linux 7.2.15 (Omarchy), glibc 2.44, laptop with a desktop session open |
 | Rust | rustc 1.97.1, release profile, criterion 0.8.2, rayon 1.12.0 |
-| wireframes | 0.1.0, code at commit `5d5ab30` |
+| wireframes | 0.1.0, code at commit `5d5ab30` (rounding section: `ba8a660` and `cf79bfb`) |
 | Threads | `RAYON_NUM_THREADS` unset, so wireframes uses 32 threads |
 
 Results do not depend on the thread count, but timings do.
@@ -101,6 +101,39 @@ The parallel sort, measured the same way against the first fix alone:
 
 The 1-minute load average ranged from 2.6 to 20.2 during these runs.
 
+## Rounding to f64, measured before and after
+
+The rounding work of `docs/design/rounding.md` (method C, conforming of inputs, flat-run
+removal, descents and slot closing) landed in commits `257bbba` to `cf79bfb`. These
+benches ran on 2026-11-20 on the same machine against bench binaries built from
+`ba8a660`, the commit before the first kernel change, and from `cf79bfb`. Both commits
+already run `validate` on each boolean result, so the boolean rows below include that
+call. The bench sources are identical at the two commits.
+
+Each binary ran three times, alternating before and after, with
+`--bench --discard-baseline --noplot 'torus_pair/(union|difference|validate|slice)'`,
+10 samples per run, under `systemd-run --user --scope -p MemoryMax=4G -p MemorySwapMax=0`.
+The table gives the median of the three criterion medians. The 1-minute load average
+ranged from 7.9 to 16.5 across the six runs, most of it from the benchmarks' own 32
+threads.
+
+| Kernel | Input | `ba8a660` | `cf79bfb` |
+|---|---|---|---|
+| `union` | two 1k tori | 31.4 ms | 41.1 ms |
+| `union` | two 10k tori | 155 ms | 200 ms |
+| `union` | two 100k tori | 1.09 s | 1.47 s |
+| `difference` | two 1k tori | 31.3 ms | 40.9 ms |
+| `difference` | two 10k tori | 149 ms | 194 ms |
+| `difference` | two 100k tori | 1.17 s | 1.51 s |
+| `validate` | 1k torus | 2.47 ms | 2.46 ms |
+| `validate` | 10k torus | 14.4 ms | 14.5 ms |
+| `validate` | 100k torus | 126 ms | 125 ms |
+| `slice_by_plane`, 50 planes | 100k torus | 86.5 ms | 86.3 ms |
+
+On these torus pairs `union` and `difference` take 29 to 35 percent longer at `cf79bfb` (ratios of the medians above).
+Which stage costs that time: not measured. The cost of the retries (conforming,
+descents, slot closing) on inputs that need them: not measured.
+
 wireframes decides topology with exact
 predicates that always evaluate with expansions (the floating-point filter in front of
 them is not written yet), and every boolean validates three meshes before it returns.
@@ -109,7 +142,8 @@ Speed with the filter: not measured.
 ## Not measured
 
 - Other libraries as a reference: not measured.
-- The cost of the `validate` call that booleans, `clip_by_surface` and
-  `split_by_plane` now run on each result: not measured. The boolean rows above
-  predate it.
+- The share of the `validate` call that booleans, `clip_by_surface` and
+  `split_by_plane` run on each result: not measured on its own. The `5d5ab30` boolean
+  rows in the first table predate that call; the rows in the rounding table include it.
+- `clip_by_surface` and `split_by_plane`: no bench exists, not measured.
 - Read and write speed of files larger than the page cache: not measured.
