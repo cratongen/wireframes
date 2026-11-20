@@ -229,3 +229,159 @@ fn split_of_a_rotated_stope_along_its_own_face_is_two_solids() {
     let bound = q(6.0 * r[0].volume_bound) + q(6.0 * r[1].volume_bound);
     assert!(err.clone() <= bound && -err <= bound);
 }
+
+/// The split of the pair `name` by the plane on its last line is two solids
+/// within their bounds whose volumes add up to the input within the summed
+/// volume bounds.
+fn split_holds(name: &str) {
+    let (m, _) = pair(name);
+    let path = format!(
+        "{}/tests/data/attacks/{name}.txt",
+        env!("CARGO_MANIFEST_DIR")
+    );
+    let plane: Vec<f64> = std::fs::read_to_string(path)
+        .unwrap()
+        .lines()
+        .last()
+        .unwrap()
+        .split(' ')
+        .map(|x| x.parse().unwrap())
+        .collect();
+    let (lo, hi, r) = split_by_plane_report(
+        &m,
+        [plane[0], plane[1], plane[2]],
+        [plane[3], plane[4], plane[5]],
+    )
+    .unwrap_or_else(|e| panic!("{name}: {e}"));
+    assert!(solid(&lo) && solid(&hi), "{name}: not solids");
+    for x in &r {
+        assert!(x.steps <= x.step_bound, "{name}: steps");
+        for k in 0..3 {
+            assert!(x.max_move[k] <= x.move_bound[k], "{name}: move");
+        }
+    }
+    let err = volume6(&lo) + volume6(&hi) - volume6(&m);
+    let bound = q(6.0 * r[0].volume_bound) + q(6.0 * r[1].volume_bound);
+    assert!(
+        err.clone() <= bound && -err <= bound,
+        "{name}: volume identity"
+    );
+}
+
+/// `x = (a - b)` for boxes rotated to strike 31 and dip 77 at UTM
+/// coordinates, `b` turned by 0.7 degrees, then `x = (x | b) - b` four
+/// times: the fifth union.
+#[test]
+#[ignore = "attack: fifth union of a repeated union then difference raises KernelError (self_intersections=31)"]
+fn fifth_union_of_a_repeated_union_then_difference_is_a_solid() {
+    identity_holds("repeat_fifth_union", Op::Union);
+}
+
+/// A seeded pair of boxes rotated to strike and dip, `b` turned by under a
+/// degree, `x = (a - b)`, then `x = (x | b) - b`: the third difference.
+#[test]
+#[ignore = "attack: third difference of a repeated union then difference raises KernelError (duplicate_vertices=13)"]
+fn third_difference_of_a_turned_body_is_a_solid() {
+    identity_holds("repeat_turned_third_difference", Op::Difference);
+}
+
+/// Sixteen grid stopes against a common wall rotated to strike 271.3 and
+/// dip 85 at UTM coordinates, united one at a time, minus a drive along
+/// strike through all of them.
+#[test]
+#[ignore = "attack: stope chain minus a drive along strike raises KernelError for union, difference and intersection"]
+fn stope_chain_minus_a_drive_along_strike_is_a_solid() {
+    identity_holds("stope_chain_minus_drive", Op::Difference);
+}
+
+/// Eight grid stopes rotated to strike 118.4 and dip 62.5 at UTM
+/// coordinates, united one at a time, minus a drive along strike.
+#[test]
+#[ignore = "attack: stopes dipping 62.5 minus a drive along strike raises KernelError (self_intersections=231)"]
+fn stopes_dipping_62_minus_a_drive_is_a_solid() {
+    identity_holds("stopes_dipping_62_minus_drive", Op::Difference);
+}
+
+/// The same block minus a drive along strike on the stope floor.
+#[test]
+#[ignore = "attack: stopes dipping 62.5 minus a drive on their floor raises KernelError (self_intersections=262)"]
+fn stopes_dipping_62_minus_a_footwall_drive_is_a_solid() {
+    identity_holds("stopes_dipping_62_minus_footwall_drive", Op::Difference);
+}
+
+/// A 2 x 2 x 3 grid stope rotated to strike 33 and dip 70 at UTM coordinates,
+/// elevation -400, split by the plane through the first vertex of one of its
+/// faces with that face's f64 normal.
+#[test]
+#[ignore = "attack: split of a rotated grid stope along its own face plane raises KernelError (non_manifold_edges=1)"]
+fn split_along_own_face_a_is_two_solids() {
+    split_holds("split_face_a");
+}
+
+/// A seeded grid stope rotated to strike and dip at UTM coordinates near
+/// elevation 15, split by the plane through the first vertex of one of its
+/// faces with that face's f64 normal.
+#[test]
+#[ignore = "attack: split of a rotated grid stope along its own face plane raises KernelError (non_manifold_edges=1)"]
+fn split_along_own_face_b_is_two_solids() {
+    split_holds("split_face_b");
+}
+
+/// A seeded grid stope rotated to strike and dip at UTM coordinates near
+/// elevation -400, split by the plane through the first vertex of one of its
+/// faces with that face's f64 normal.
+#[test]
+#[ignore = "attack: split of a rotated grid stope along its own face plane raises KernelError (non_manifold_edges=1)"]
+fn split_along_own_face_c_is_two_solids() {
+    split_holds("split_face_c");
+}
+
+/// A seeded grid stope rotated to strike and dip at UTM coordinates near
+/// elevation 4800, split by the plane through the first vertex of one of its
+/// faces with that face's f64 normal.
+#[test]
+#[ignore = "attack: split of a rotated grid stope along its own face plane raises KernelError (non_manifold_edges=1)"]
+fn split_along_own_face_d_is_two_solids() {
+    split_holds("split_face_d");
+}
+
+/// The stope of `split_face_d` split by the plane through the first vertex of one of its
+/// faces with that face's f64 normal.
+#[test]
+#[ignore = "attack: split of a rotated grid stope along its own face plane raises KernelError (non_manifold_edges=1)"]
+fn split_along_own_face_e_is_two_solids() {
+    split_holds("split_face_e");
+}
+
+/// Another seeded grid stope rotated to strike and dip at UTM coordinates
+/// near elevation 4800, split by the plane through the first vertex of one of its
+/// faces with that face's f64 normal.
+#[test]
+#[ignore = "attack: split of a rotated grid stope along its own face plane raises KernelError (non_manifold_edges=1)"]
+fn split_along_own_face_f_is_two_solids() {
+    split_holds("split_face_f");
+}
+
+/// The stope of `split_face_f` split by the plane through the first vertex of one of its
+/// faces with that face's f64 normal.
+#[test]
+#[ignore = "attack: split of a rotated grid stope along its own face plane raises KernelError (non_manifold_edges=1)"]
+fn split_along_own_face_g_is_two_solids() {
+    split_holds("split_face_g");
+}
+
+/// The stope of `split_face_f` split by the plane through the first vertex of one of its
+/// faces with that face's f64 normal.
+#[test]
+#[ignore = "attack: split of a rotated grid stope along its own face plane raises KernelError (non_manifold_edges=1)"]
+fn split_along_own_face_h_is_two_solids() {
+    split_holds("split_face_h");
+}
+
+/// The stope of `split_face_f` split by the plane through the first vertex of one of its
+/// faces with that face's f64 normal.
+#[test]
+#[ignore = "attack: split of a rotated grid stope along its own face plane raises KernelError (non_manifold_edges=1)"]
+fn split_along_own_face_i_is_two_solids() {
+    split_holds("split_face_i");
+}
