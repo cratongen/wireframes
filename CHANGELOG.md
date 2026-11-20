@@ -133,6 +133,14 @@ All notable changes to wireframes are listed here. The format follows
   caps tilted by 1e-13 rad. When the other operations stall, the rounding
   descends: it keeps the local flip, join, collapse or insertion that lowers
   the problem count most (`docs/design/rounding.md` section 9).
+- Rounding certifies a second round of adversarial cases: nine splits of
+  rotated grid stopes along their own face planes, the fifth union and the third
+  difference of repeated union then difference of turned bodies, and stopes
+  dipping 62.5 degrees minus a drive along strike. C3 removes sliver parts whose
+  wedges meet on a non-manifold edge, C4 and the descent act on the faces around
+  non-manifold edges, and a last retry closes slots thinner than rounding that an
+  input holds between walls of bodies united earlier (`docs/design/rounding.md`
+  section 9).
 - `block_fraction` is exactly 0 or 1 for a block that no face meets, instead
   of picking up `f64` residue from the faces above it.
 - `loft` links each band with both rings centred and the band axis removed.
@@ -144,8 +152,10 @@ All notable changes to wireframes are listed here. The format follows
 
 - Rounding has no general 3D validity theorem: a boolean, clip or split the
   rounding operations cannot certify raises `wf.KernelError` whose message
-  starts with `uncertified`. No case in the tests raises it, the adversarial
-  cases of `crates/boolean/tests/attacks.rs` included.
+  starts with `uncertified`. Two adversarial cases still raise it and run as
+  ignored tests in `crates/boolean/tests/attacks.rs`: sixteen grid stopes
+  against a common wall at strike 271.3 and dip 85 minus a drive along strike,
+  and stopes dipping 62.5 degrees minus a drive on their floor.
 - `loft` does not branch, `extrude` has no path sweep, and `offset` is not a
   Minkowski offset.
 - No real Datamine Studio export is tested yet.

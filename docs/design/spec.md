@@ -256,7 +256,20 @@ No other dependency without a line in this table.
    change that lowers the problem count of the faces it touches the most (the
    first in that order on ties); it then takes only descents, at most
    `4 (v + f)`, until none lowers the count. A split
-   descends on its first run. Operations on the exact
+   descends on its first run. When none of these runs is certified, a boolean or
+   clip closes the thin slots of each closed input (`rounding.md` section 9) and
+   runs the closed inputs, conformed, with and without descents: faces of one
+   input facing each other within the wide hot box, flush within four ulps of
+   each other's planes and overlapping in projection, are paired and
+   two-coloured; vertices of each colour are inserted into faces of the other
+   within the wide hot box, edges recovered on the other colour by the flips
+   above, and faces that end on the same three vertices in opposite
+   orientation cancel. Inward shells this seals off are removed when they hold
+   at most a sheet `4 rho` thick over their faces. The closed copy is used only
+   when it is a solid. No vertex moves; the tetrahedra of each insertion and
+   flip and the exact volume of each removed void bound the volume change,
+   which joins `volume_bound`, and the report
+   counts the insertions, flips and cancelled faces with the rest. Operations on the exact
    inputs still move nothing: clip the difference
    (`(s2 - s1).clip_by_surface(topo)`) rather than taking the difference of clipped
    pieces. Tests that meet the limit read the mesh from the

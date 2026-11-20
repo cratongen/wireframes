@@ -198,9 +198,14 @@ tonnage without warning. `wireframes` enforces three rules:
     `crates/boolean/tests/attacks.rs`: pits clipped by one topography and
     united, chains of lids and caps tilted by 1e-13 rad, repeated union then
     difference of one body, a stope split along its own face plane, a rotated
-    stope block minus a raise, and development turned to strike. The method has
-    no general 3D validity theorem, so `wf.KernelError` (`uncertified`) stays
-    possible for inputs the tests have not met.
+    stope block minus a raise, development turned to strike, and from a second
+    round nine face-plane splits of grid stopes, repeated union then difference
+    of turned bodies, and stopes dipping 62.5 degrees minus a drive. Two cases
+    of that round still raise `wf.KernelError` (`uncertified`) and stay ignored:
+    a sixteen-stope chain against a common wall minus a drive along strike, and
+    the dipping stopes minus a drive on their floor. The method has no general
+    3D validity theorem, so `uncertified` stays possible for inputs the tests
+    have not met.
 
 ### M5: Spatial queries for drillholes and block models
 

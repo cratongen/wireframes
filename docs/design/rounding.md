@@ -601,6 +601,55 @@ descent treats every two faces around such an edge as a pair, with the same
 joins, collapses, insertions and flips. Both chains then return solids within
 their bounds.
 
+### Thin slots inside one input
+
+Stopes rotated to strike 118.4 and dip 62.5, united one at a time, then minus a
+drive along strike (`stopes_dipping_62_minus_drive`) failed with 231
+self-intersections; the descent left about ten. Of the crossing pairs, 106 joined
+two faces of the stope block, 86 a face of the block and one of the drive, and
+44 two faces of the drive. No face of the drive is within 1e-6 rad of parallel to
+a face of the block, so the conforming of section 8 has nothing to match. The
+block holds 321 pairs of opposite faces closer than an ulp: where two stopes
+agreed only to rounding when they were united, the union left slots between their
+walls a fraction of an ulp wide. Rounding the drive's crossing points on both
+walls of a slot swaps the walls, and no single local change undoes it: moving a
+merged crossing vertex by one ulp put two walls back in order on one edge of the
+stope chain case and made eleven new problems nearby.
+
+`conform.rs` now closes such slots before the arrangement, as a last retry after
+sections 7, 8 and the descent. Faces of one input that face opposite ways, lie
+within four ulps of each other's planes and overlap in the projection along the
+first face's dominant axis are paired, and the pairs are two-coloured (a slot
+has two walls); an odd cycle drops the retry. One sheet holds the whole input with
+a colour per face, and edges and clashes are kept per colour, so the two walls of
+a slot can share vertices and edges. Each vertex of one colour is inserted, at
+most once, into a face of the other colour that its wide hot box meets away from
+the face's corners; then each face whose corners are all vertices of the other
+colour has its edges recovered on the other colour by section 8's flips. Faces
+that then hold the same three vertices in opposite orientation cancel, which
+closes the slot where its walls agree, and an inward shell that seals off is
+removed when it holds at most the volume of a sheet `4 rho` thick over its faces.
+The pass repeats on its own output while it cancels faces, at most once per face
+of the input. The closed copy is kept only when exact `validate` passes it as a
+solid, and the boolean then runs on it with section 8's conforming and with
+descents.
+
+- **No vertex moves.** Inserted points are vertices of the same input.
+- **Volume.** Each insertion and flip replaces faces across tetrahedra; their
+  exact volumes, summed, bound `vol(a xor a')`, as in section 8, and join
+  `volume_bound`. Cancelling two faces on the same vertices changes no volume.
+  Removing a sealed-off void adds its exact volume, rounded up. The unit test
+  `closing_the_slots_of_rotated_stopes_ends_within_its_bounds` checks the bound
+  on the closed input against rationals.
+- **Termination.** One pass makes at most `2 v` insertions (each vertex once per
+  colour) and the recoveries of section 8 on at most `f + 4 v` faces; its bound,
+  `step_bound(2 v, f)`, is computed before the first step and asserted. Passes
+  stop when one cancels nothing, and a counter allows at most one per input face.
+- **Reach.** Pairing and insertion use the wide hot box, about 3.5 ulps of the
+  largest coordinate at UTM northings. Slots wider than that stay open.
+
+With this, `stopes_dipping_62_minus_drive` returns a solid within its bounds.
+
 Determinism: candidate order follows `validate`'s problem order and fixed loops
 over corners and edges, so `attack_results_do_not_depend_on_thread_count`
 compares four attack cases on one and four threads, mesh, face sources and

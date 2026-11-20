@@ -61,6 +61,7 @@ fn attack_results_do_not_depend_on_thread_count() {
         ("repeat_tilted", Op::Difference),
         ("stope_minus_drive", Op::Difference),
         ("development_chain", Op::Union),
+        ("stopes_dipping_62_minus_drive", Op::Difference),
     ];
     for (name, op) in cases {
         let (a, b) = pair(name);
@@ -295,7 +296,6 @@ fn stope_chain_minus_a_drive_along_strike_is_a_solid() {
 /// Eight grid stopes rotated to strike 118.4 and dip 62.5 at UTM
 /// coordinates, united one at a time, minus a drive along strike.
 #[test]
-#[ignore = "attack: stopes dipping 62.5 minus a drive along strike raises KernelError (self_intersections=231)"]
 fn stopes_dipping_62_minus_a_drive_is_a_solid() {
     identity_holds("stopes_dipping_62_minus_drive", Op::Difference);
 }

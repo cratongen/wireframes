@@ -5,7 +5,7 @@ use wireframes_ops::{RepairOptions, RepairReport, repair};
 use crate::BooleanOptions;
 use crate::arrangement::{self, Arrangement};
 use crate::classify::{self, Sample, Target};
-use crate::conform::conform;
+use crate::conform::{close_and_conform, conform};
 use crate::hp::Pt;
 use crate::ops::{Piece, assemble, build_mesh, prepare, shells, solid_result};
 use crate::round::{self, RoundingReport};
@@ -177,18 +177,22 @@ pub fn clip_by_surface(solid: &Mesh, surface: &Mesh, opts: &BooleanOptions) -> R
     } else {
         conform(&a, &b)?
     };
-    for descend in [false, true] {
+    let mut closed = None;
+    for (stage, descend) in [(0, false), (0, true), (1, false), (1, true)] {
         if parts[0].2 && parts[1].2 {
             break;
         }
-        if descend {
+        if stage == 0 && descend {
             let first = run(&a, &b, true)?;
             if first[0].2 && first[1].2 {
                 parts = first;
                 break;
             }
         }
-        let Some(c) = &conformed else {
+        if stage == 1 && !descend {
+            closed = close_and_conform(&a, &b)?;
+        }
+        let Some(c) = (if stage == 0 { &conformed } else { &closed }) else {
             continue;
         };
         let mut again = run(&c.meshes[0], &c.meshes[1], descend)?;
@@ -198,6 +202,7 @@ pub fn clip_by_surface(solid: &Mesh, surface: &Mesh, opts: &BooleanOptions) -> R
                 if k == 0 {
                     r.inserted_points += c.inserted;
                     r.flipped_edges += c.flips;
+                    r.cancelled_faces += c.cancelled;
                     r.steps += c.steps;
                 }
                 r.step_bound = r.step_bound.saturating_add(c.step_bound);

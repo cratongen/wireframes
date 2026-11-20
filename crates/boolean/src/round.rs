@@ -96,13 +96,13 @@ fn sub(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
     [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
 }
 
-fn norm(a: [f64; 3]) -> f64 {
+pub(crate) fn norm(a: [f64; 3]) -> f64 {
     (a[0] * a[0] + a[1] * a[1] + a[2] * a[2]).sqrt()
 }
 
 /// Upper bound on the volume of `t + B(r)` for a triangle `t`, by Steiner's
 /// formula `2 A r + (pi / 2) P r^2 + (4 / 3) pi r^3`.
-fn tube(t: [[f64; 3]; 3], r: f64) -> f64 {
+pub(crate) fn tube(t: [[f64; 3]; 3], r: f64) -> f64 {
     if r == 0.0 {
         return 0.0;
     }
@@ -134,7 +134,7 @@ fn det(t: [[f64; 3]; 3]) -> Expansion {
 }
 
 /// `|vol(after) - vol(before)|`, rounded up, from the faces that differ.
-fn volume_change(before: &[[[f64; 3]; 3]], after: &[[[f64; 3]; 3]]) -> f64 {
+pub(crate) fn volume_change(before: &[[[f64; 3]; 3]], after: &[[[f64; 3]; 3]]) -> f64 {
     let key = |t: &[[f64; 3]; 3]| {
         let b = t.map(|p| p.map(|x| (x + 0.0).to_bits()));
         let k = (0..3).min_by_key(|&k| b[k]).expect("three corners");

@@ -7,7 +7,7 @@ use wireframes_ops::{RepairOptions, RepairReport, repair};
 
 use crate::arrangement::{self, Arrangement};
 use crate::classify::{self, Status};
-use crate::conform::conform;
+use crate::conform::{close_and_conform, conform};
 use crate::hp;
 use crate::round::{self, Assembled, Draft, RoundingReport};
 
@@ -374,24 +374,29 @@ pub fn boolean(a: &Mesh, b: &Mesh, op: Op, opts: &BooleanOptions) -> Result<Bool
     };
     let (mut mesh, mut face_source, mut rounding, mut certified) = run(&a, &b, false)?;
     let conformed = if certified { None } else { conform(&a, &b)? };
-    for descend in [false, true] {
+    let mut closed = None;
+    for (stage, descend) in [(0, false), (0, true), (1, false), (1, true)] {
         if certified {
             break;
         }
-        if descend {
+        if stage == 0 && descend {
             let first = run(&a, &b, true)?;
             if first.3 {
                 (mesh, face_source, rounding, certified) = first;
                 break;
             }
         }
-        let Some(c) = &conformed else {
+        if stage == 1 && !descend {
+            closed = close_and_conform(&a, &b)?;
+        }
+        let Some(c) = (if stage == 0 { &conformed } else { &closed }) else {
             continue;
         };
         let (m, fs, mut r, ok) = run(&c.meshes[0], &c.meshes[1], descend)?;
         if ok {
             r.inserted_points += c.inserted;
             r.flipped_edges += c.flips;
+            r.cancelled_faces += c.cancelled;
             r.steps += c.steps;
             r.step_bound = r.step_bound.saturating_add(c.step_bound);
             r.volume_bound = round::up(r.volume_bound + c.volume);
