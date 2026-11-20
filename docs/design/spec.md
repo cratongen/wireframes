@@ -189,7 +189,7 @@ No other dependency without a line in this table.
    negative while `validate` reports it as an inward shell, is removed when that
    volume is within the bound (V) gives for rounding its faces; in a run with
    descents (below), so does a component that holds a face of a
-   self-intersecting, overlapping or flat problem. Then, while
+   self-intersecting, overlapping, flat or non-manifold problem. Then, while
    `validate` reports self-intersecting or overlapping face pairs, for each pair
    a corner `h` of one face whose hot box meets the other face, the box tested
    exactly by separating axes on expansions: C2, when the box holds a corner of

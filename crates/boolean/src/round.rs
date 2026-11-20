@@ -802,9 +802,9 @@ impl Global {
 
     /// C3: removes each edge-connected component whose rounded volume is zero,
     /// or negative while `validate` reports it as an inward shell, or, with
-    /// `crossing`, that holds a face of a self-intersecting, overlapping or
-    /// flat problem, when that volume is within the bound (V) gives for
-    /// rounding it, so its exact volume is too.
+    /// `crossing`, that holds a face of a self-intersecting, overlapping, flat
+    /// or non-manifold problem, when that volume is within the bound (V) gives
+    /// for rounding it, so its exact volume is too.
     fn remove_flat_shells(&mut self, err: &[f64], crossing: bool) -> Result<usize> {
         let (m, ids) = self.mesh()?;
         let report = m.validate(0.0)?;
@@ -849,7 +849,11 @@ impl Global {
             .filter(|p| {
                 matches!(
                     p.kind,
-                    K::SelfIntersection | K::CoplanarOverlap | K::DegenerateFace
+                    K::SelfIntersection
+                        | K::CoplanarOverlap
+                        | K::DegenerateFace
+                        | K::NonManifoldEdge
+                        | K::NonManifoldVertex
                 )
             })
             .flat_map(|p| [p.face, p.other])

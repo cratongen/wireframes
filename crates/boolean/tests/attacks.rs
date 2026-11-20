@@ -313,7 +313,6 @@ fn stopes_dipping_62_minus_a_footwall_drive_is_a_solid() {
 /// elevation -400, split by the plane through the first vertex of one of its
 /// faces with that face's f64 normal.
 #[test]
-#[ignore = "attack: split of a rotated grid stope along its own face plane raises KernelError (non_manifold_edges=1)"]
 fn split_along_own_face_a_is_two_solids() {
     split_holds("split_face_a");
 }
@@ -322,7 +321,6 @@ fn split_along_own_face_a_is_two_solids() {
 /// elevation 15, split by the plane through the first vertex of one of its
 /// faces with that face's f64 normal.
 #[test]
-#[ignore = "attack: split of a rotated grid stope along its own face plane raises KernelError (non_manifold_edges=1)"]
 fn split_along_own_face_b_is_two_solids() {
     split_holds("split_face_b");
 }
@@ -331,7 +329,6 @@ fn split_along_own_face_b_is_two_solids() {
 /// elevation -400, split by the plane through the first vertex of one of its
 /// faces with that face's f64 normal.
 #[test]
-#[ignore = "attack: split of a rotated grid stope along its own face plane raises KernelError (non_manifold_edges=1)"]
 fn split_along_own_face_c_is_two_solids() {
     split_holds("split_face_c");
 }
@@ -340,7 +337,6 @@ fn split_along_own_face_c_is_two_solids() {
 /// elevation 4800, split by the plane through the first vertex of one of its
 /// faces with that face's f64 normal.
 #[test]
-#[ignore = "attack: split of a rotated grid stope along its own face plane raises KernelError (non_manifold_edges=1)"]
 fn split_along_own_face_d_is_two_solids() {
     split_holds("split_face_d");
 }
@@ -348,7 +344,6 @@ fn split_along_own_face_d_is_two_solids() {
 /// The stope of `split_face_d` split by the plane through the first vertex of one of its
 /// faces with that face's f64 normal.
 #[test]
-#[ignore = "attack: split of a rotated grid stope along its own face plane raises KernelError (non_manifold_edges=1)"]
 fn split_along_own_face_e_is_two_solids() {
     split_holds("split_face_e");
 }
@@ -357,7 +352,6 @@ fn split_along_own_face_e_is_two_solids() {
 /// near elevation 4800, split by the plane through the first vertex of one of its
 /// faces with that face's f64 normal.
 #[test]
-#[ignore = "attack: split of a rotated grid stope along its own face plane raises KernelError (non_manifold_edges=1)"]
 fn split_along_own_face_f_is_two_solids() {
     split_holds("split_face_f");
 }
@@ -365,7 +359,6 @@ fn split_along_own_face_f_is_two_solids() {
 /// The stope of `split_face_f` split by the plane through the first vertex of one of its
 /// faces with that face's f64 normal.
 #[test]
-#[ignore = "attack: split of a rotated grid stope along its own face plane raises KernelError (non_manifold_edges=1)"]
 fn split_along_own_face_g_is_two_solids() {
     split_holds("split_face_g");
 }
@@ -373,7 +366,6 @@ fn split_along_own_face_g_is_two_solids() {
 /// The stope of `split_face_f` split by the plane through the first vertex of one of its
 /// faces with that face's f64 normal.
 #[test]
-#[ignore = "attack: split of a rotated grid stope along its own face plane raises KernelError (non_manifold_edges=1)"]
 fn split_along_own_face_h_is_two_solids() {
     split_holds("split_face_h");
 }
@@ -381,7 +373,6 @@ fn split_along_own_face_h_is_two_solids() {
 /// The stope of `split_face_f` split by the plane through the first vertex of one of its
 /// faces with that face's f64 normal.
 #[test]
-#[ignore = "attack: split of a rotated grid stope along its own face plane raises KernelError (non_manifold_edges=1)"]
 fn split_along_own_face_i_is_two_solids() {
     split_holds("split_face_i");
 }

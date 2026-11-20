@@ -519,6 +519,18 @@ face of a self-intersecting, overlapping or flat problem, under the same test:
 its rounded volume is at most its own (V) sum, so its exact volume is at most
 twice that sum, and `volume_bound` counts the removal through the exact volume
 change. The upper part of the split comes back empty, which the test accepts.
+
+A second round of attacks split rotated grid stopes the same way and found 9 of
+218 face splits that failed with one non-manifold edge instead
+(`split_along_own_face_a` to `_i` in `attacks.rs`). The plane passes through a
+vertex of the wall with the wall's `f64` normal, so every other wall vertex lies
+within a fraction of an ulp of it, on either side. One part is the sliver between
+the plane and the wall: the wall's faces and cap faces a fraction of an ulp away.
+Where a wall edge meets the cap, rounding leaves the edge with two wall faces and
+two cap faces in an order that does not alternate, which `validate` reports as a
+non-manifold edge, not as a crossing. C3 now also takes a component that holds a
+face of a non-manifold edge or vertex, under the same volume test, and the sliver
+part comes back empty.
 The wider test runs only where descents run (below). Run on every boolean and
 clip, it certified the first run of a pit clipped twice by one topography with
 53 sliver shells above it, where the conformed inputs give the empty part the
