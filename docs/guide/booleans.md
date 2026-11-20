@@ -81,7 +81,7 @@ rounding.moved_input_vertices, rounding.volume_bound  # 0 and about 7e-07 m3
 last: how many vertices moved and how far at most (`max_move`, `move_bound`), what each operation did, and
 `volume_bound`, a proven bound on the difference from the exact result's volume.
 
-Combining the closed, unclipped solids first and clipping once keeps every wall exact, so nothing needs to move:
+Clipping the difference of the closed, unclipped solids once gives the pushback too:
 
 ```python
 pushback = (closed2 - closed1).clip_by_surface(topography)[0]
@@ -90,8 +90,10 @@ pushback.is_solid  # True
 
 A result the rounding cannot certify raises `wf.KernelError` whose message starts with `uncertified`;
 `error.report` holds the `MeshReport` of the rounded result and `error.mesh` the result itself, closed, so you can
-still read its volume. None of the cases known to the tests raises it. An exact coordinate beyond the f64 range
-raises it with `non-finite`.
+still read its volume. Two adversarial cases in `crates/boolean/tests/attacks.rs` still raise it (stope chains against
+a common wall minus a drive along strike or on their floor, both at steep dips) and run as ignored tests; the method
+has no general validity theorem, so other inputs can raise it too. An exact coordinate beyond the f64 range raises it
+with `non-finite`.
 
 Underground work meets it in long chains of booleans. Each result carries rounded vertices along its intersection
 lines, and a boolean that takes it as input treats them as exact; long, thin triangles near them would fold over

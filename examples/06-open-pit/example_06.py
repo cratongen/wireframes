@@ -206,10 +206,8 @@ for k, (shell, pit) in enumerate(zip(shells, pits, strict=True), start=1):
     assert pit.is_solid and abs(pit.volume - cut) <= 1e-9 * cut
 
 # %% [markdown]
-# Each stage's own volume is the difference between consecutive closed shells, clipped by the topography. The
-# order matters: take the difference of the closed shells, which share exact walls, and clip once. Clipping each
-# pit first and subtracting the clipped pits makes two copies of the topography cap that differ by rounding, and
-# the library then refuses the slivers between them (see the last section).
+# Each stage's own volume is the difference between consecutive closed shells, clipped by the topography.
+# Subtracting the clipped pits gives the same stage as a solid too: section 5 shows what the rounding does there.
 
 # %%
 stages = [closed[0]] + [closed[k] - closed[k - 1] for k in (1, 2)]
@@ -487,7 +485,9 @@ save(fig, "open_pit_survey")
 # %% [markdown]
 # ## 5. What can go wrong
 #
-# The library refuses bad geometry instead of guessing. Three cases come up in open-pit work.
+# The library refuses bad geometry instead of guessing. Two such cases come up in open-pit work, and a third case,
+# surfaces that agree only to rounding, shows what the library does where the exact result is thinner than a
+# 64-bit number can place.
 #
 # **A hole in a solid.** A pit solid that lost triangles on export, here three faces of the stage 2 pushback, is
 # open. `validate()` returns a report with a count per problem and one row per offending edge or face, and every
@@ -531,7 +531,7 @@ else:
 # vertices into the other pit's cap where they lie within rounding of it, and flips edges until the two caps match
 # there. The caps then coincide exactly, the slivers vanish, and the difference is a solid. No input vertex moves.
 # `rounding_report=True` returns what the rounding did and the proven bound on how far the volume can be from the
-# exact result's. Section 2 still subtracts the closed shells and clips once, which keeps every wall exact.
+# exact result's.
 
 # %%
 pushback, rounding = wf.difference(pits[1], pits[0], rounding_report=True)

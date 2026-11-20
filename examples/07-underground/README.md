@@ -501,7 +501,8 @@ stopes is *dilution*: it goes to the mill with the ore at zero grade and lowers 
 The dilution comes from two booleans that do not use the stoped solid: the waste in the stopes, `stopes -
 orebody`, minus the waste already taken by development inside the stopes, `shared - orebody`. The direct route,
 `stoped - orebody`, works on a solid that already carries rounded intersection vertices from the development
-subtraction, and its result fails validation (section 7 explains this kind of failure).
+subtraction. It gives a solid too, and its volume agrees with the two-boolean route to 1e-9 of the dilution
+(section 7 explains the rounding).
 
 The last lines are the balance check of the report: the gold in the six ore parts must equal the gold in the
 orebody, and stoped ore plus dilution must equal the stoped volume from section 3.
@@ -510,6 +511,8 @@ orebody, and stoped ore plus dilution must equal the stoped volume from section 
 stope_waste, development_waste = stopes - orebody, shared - orebody
 assert stope_waste.is_solid and development_waste.is_solid
 dilution = stope_waste.volume - development_waste.volume
+direct = stoped - orebody
+assert direct.is_solid and abs(direct.volume - dilution) <= 1e-9 * dilution
 
 
 def tonnage(f, density):
@@ -719,7 +722,8 @@ save(fig, "underground_sections")
 
 ## 7. What can go wrong
 
-The library refuses bad geometry and bad input instead of guessing. Four cases come up in underground work.
+The library refuses bad geometry and bad input instead of guessing. Three such cases come up in underground
+work, and a fourth, a chain of booleans on rounded results, shows what the library does with rounding.
 
 **A stope wireframe with a hole.** A stope exported without one of its triangles is open: it has no inside, so it
 has no volume. `validate()` returns a report with a count per problem and one row per offending edge or face. Every

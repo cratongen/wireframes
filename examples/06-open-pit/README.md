@@ -233,10 +233,8 @@ stage 2: clipped pit 4,221,639.7 m3, cut 4,221,639.7 m3, difference -6.5e-09 m3
 stage 3: clipped pit 4,973,279.4 m3, cut 4,973,279.4 m3, difference +8.5e-08 m3
 ```
 
-Each stage's own volume is the difference between consecutive closed shells, clipped by the topography. The
-order matters: take the difference of the closed shells, which share exact walls, and clip once. Clipping each
-pit first and subtracting the clipped pits makes two copies of the topography cap that differ by rounding, and
-the library then refuses the slivers between them (see the last section).
+Each stage's own volume is the difference between consecutive closed shells, clipped by the topography.
+Subtracting the clipped pits gives the same stage as a solid too: section 5 shows what the rounding does there.
 
 ```python
 stages = [closed[0]] + [closed[k] - closed[k - 1] for k in (1, 2)]
@@ -575,7 +573,9 @@ save(fig, "open_pit_survey")
 
 ## 5. What can go wrong
 
-The library refuses bad geometry instead of guessing. Three cases come up in open-pit work.
+The library refuses bad geometry instead of guessing. Two such cases come up in open-pit work, and a third case,
+surfaces that agree only to rounding, shows what the library does where the exact result is thinner than a
+64-bit number can place.
 
 **A hole in a solid.** A pit solid that lost triangles on export, here three faces of the stage 2 pushback, is
 open. `validate()` returns a report with a count per problem and one row per offending edge or face, and every
@@ -629,7 +629,7 @@ place, and rounding them would fold them into their neighbours. So the boolean f
 vertices into the other pit's cap where they lie within rounding of it, and flips edges until the two caps match
 there. The caps then coincide exactly, the slivers vanish, and the difference is a solid. No input vertex moves.
 `rounding_report=True` returns what the rounding did and the proven bound on how far the volume can be from the
-exact result's. Section 2 still subtracts the closed shells and clips once, which keeps every wall exact.
+exact result's.
 
 ```python
 pushback, rounding = wf.difference(pits[1], pits[0], rounding_report=True)
@@ -652,7 +652,7 @@ print(
 ```text
 solid: True, 673,495.6 m3 against stage 2 at 673,495.6 m3
 457 points inserted, 177 edges flipped, 0 vertices moved; volume within 5.0e-06 m3 of the exact result
-36 rounded vertices, 0 merged, 0 collapsed, 0 shells removed, 0 faces cancelled; largest move 4.7e-10 m within 3.7e-09 m; 23696 steps of at most 817338419013946
+36 rounded vertices, 0 merged, 0 collapsed, 0 shells removed, 0 faces cancelled; largest move 4.7e-10 m within 3.7e-09 m; 23696 steps of at most 817338460569128
 ```
 
 Full script: [`example_06.py`](example_06.py), run by `mise run examples`.
