@@ -8,7 +8,8 @@ use std::collections::{HashMap, HashSet};
 
 use wireframes_core::exact::{Expansion, shell_volume_sign};
 use wireframes_core::predicates::{Sign, collinear3, kept_axes, orient2d_axis, orient3d};
-use wireframes_core::{Error, Mesh, Result};
+use wireframes_core::topology::Shells;
+use wireframes_core::{EdgeMap, Error, Mesh, Result};
 
 /// What rounding the exact result to `f64` did, and the bounds it proves.
 ///
@@ -804,7 +805,10 @@ impl Global {
     /// or negative while `validate` reports it as an inward shell, or, with
     /// `crossing`, that holds a face of a self-intersecting, overlapping, flat
     /// or non-manifold problem, when that volume is within the bound (V) gives
-    /// for rounding it, so its exact volume is too.
+    /// for rounding it, so its exact volume is too. With `crossing`, when no
+    /// component goes, the same test takes each shell (edges paired into
+    /// wedges, as `validate` pairs them) that `validate` reports as inward, of
+    /// either sign: a sliver part left inside another shell that touches it.
     fn remove_flat_shells(&mut self, err: &[f64], crossing: bool) -> Result<usize> {
         let (m, ids) = self.mesh()?;
         let report = m.validate(0.0)?;
@@ -893,6 +897,39 @@ impl Global {
                     self.alive[ids[k]] = false;
                 }
                 removed += 1;
+            }
+        }
+        if crossing && removed == 0 && !inward.is_empty() {
+            let shells = Shells::new(&m, &EdgeMap::new(&m, None));
+            let mut flagged: Vec<u32> = inward.iter().map(|&k| shells.of[k]).collect();
+            flagged.sort_unstable();
+            flagged.dedup();
+            for s in flagged.into_iter().filter(|&s| s != u32::MAX) {
+                let ks: Vec<usize> = (0..ids.len()).filter(|&k| shells.of[k] == s).collect();
+                if ks.len() == ids.len() {
+                    continue;
+                }
+                let corners: Vec<[[f64; 3]; 3]> = ks
+                    .iter()
+                    .map(|&k| self.tris[ids[k]].map(|i| self.v[i as usize]))
+                    .collect();
+                let allowed: f64 = ks
+                    .iter()
+                    .zip(&corners)
+                    .map(|(&k, c)| {
+                        let r = self.tris[ids[k]]
+                            .iter()
+                            .map(|&i| err[i as usize])
+                            .fold(0.0, f64::max);
+                        tube(*c, 2.0 * r)
+                    })
+                    .sum();
+                if volume_change(&corners, &[]) <= allowed {
+                    for &k in &ks {
+                        self.alive[ids[k]] = false;
+                    }
+                    removed += 1;
+                }
             }
         }
         Ok(removed)

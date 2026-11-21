@@ -305,3 +305,97 @@ fn chains_the_property_test_found_stay_solid() {
         chain(o, strike, &offsets).unwrap();
     }
 }
+
+/// `p` turned to dip `dip` (degrees from horizontal, about the strike axis
+/// `x`) and strike `strike` (radians about the vertical), then moved to `o`,
+/// each step rounded to `f64`.
+fn orient(p: [f64; 3], o: [f64; 3], strike: f64, dip: f64) -> [f64; 3] {
+    let (st, ct) = (90.0 - dip).to_radians().sin_cos();
+    let (y, z) = (p[1] * ct - p[2] * st, p[1] * st + p[2] * ct);
+    let (ss, cs) = strike.sin_cos();
+    [
+        o[0] + p[0] * cs - y * ss,
+        o[1] + p[0] * ss + y * cs,
+        o[2] + z,
+    ]
+}
+
+/// Stopes four along strike in two levels, all with their footwall on the
+/// common wall `y = 0`, each with its own height and thickness and each upper
+/// stope standing on the top of the one below, oriented and united one at a
+/// time; every union is checked to be a solid.
+fn stope_chain(
+    o: [f64; 3],
+    strike: f64,
+    dip: f64,
+    sizes: &[(f64, f64)],
+) -> std::result::Result<Mesh, TestCaseError> {
+    let w = 12.0;
+    let mut chain: Option<Mesh> = None;
+    for (k, &(height, thick)) in sizes.iter().enumerate() {
+        let x = w * (k % 4) as f64;
+        let z0 = if k >= 4 { sizes[k - 4].0 } else { 0.0 };
+        let stope = corners([x, 0.0, z0], [x + w, thick, z0 + height]);
+        let stope = mesh(stope.iter().map(|&p| orient(p, o, strike, dip)).collect());
+        chain = Some(match chain {
+            None => stope,
+            Some(c) => {
+                let r = on_threads(1, &c, &stope, Op::Union)?;
+                prop_assert!(solid(&r.mesh), "union {k}");
+                r.mesh
+            }
+        });
+    }
+    Ok(chain.unwrap())
+}
+
+/// `a - b` and `a & b` are solids within their bounds, the difference is the
+/// same on 1 and 4 threads, and `vol(a - b) + vol(a & b) = vol(a)` holds
+/// exactly within the sum of their volume bounds.
+fn difference_holds(a: &Mesh, b: &Mesh) -> std::result::Result<(), TestCaseError> {
+    let d = on_threads(1, a, b, Op::Difference)?;
+    let i = on_threads(1, a, b, Op::Intersection)?;
+    for (r, op) in [(&d, "difference"), (&i, "intersection")] {
+        prop_assert!(solid(&r.mesh), "{op}");
+        prop_assert!(r.rounding.steps <= r.rounding.step_bound, "{op}");
+        for k in 0..3 {
+            prop_assert!(r.rounding.max_move[k] <= r.rounding.move_bound[k], "{op}");
+        }
+    }
+    prop_assert!(
+        same(&d.mesh, &on_threads(4, a, b, Op::Difference)?.mesh),
+        "difference threads"
+    );
+    let err = volume6(&d.mesh) + volume6(&i.mesh) - volume6(a);
+    let bound = q(6.0 * d.rounding.volume_bound) + q(6.0 * i.rounding.volume_bound);
+    let abs = if err < q(0.0) { -err } else { err };
+    prop_assert!(abs <= bound, "difference and intersection");
+    Ok(())
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig { cases: 6, ..ProptestConfig::default() })]
+
+    /// A chain of eight stopes in two levels against a common wall at a dip
+    /// from 45 to 90 degrees, turned to strike at UTM coordinates, minus a
+    /// drive along strike on the floor of the lower level or through the
+    /// common wall.
+    #[test]
+    fn stope_chains_minus_a_drive_along_strike(
+        o in utm(),
+        strike in 0.0..std::f64::consts::PI,
+        dip in prop_oneof![Just(90.0), 45.0f64..90.0],
+        sizes in proptest::collection::vec((18.0f64..30.0, 4.0f64..8.0), 8),
+        through_wall in any::<bool>(),
+    ) {
+        let a = stope_chain(o, strike, dip, &sizes)?;
+        let (lo, hi) = if through_wall {
+            ([-6.0, -2.0, 6.0], [54.0, 2.5, 10.0])
+        } else {
+            ([-6.0, 0.5, -1.5], [54.0, 4.0, 2.5])
+        };
+        let drive = corners(lo, hi);
+        let b = mesh(drive.iter().map(|&p| orient(p, o, strike, dip)).collect());
+        difference_holds(&a, &b)?;
+    }
+}

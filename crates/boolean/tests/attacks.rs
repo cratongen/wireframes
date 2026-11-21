@@ -444,3 +444,12 @@ fn results_certified_before_rounding_2_are_unchanged() {
     let want: Vec<(&str, u64)> = cases.iter().map(|&(n, _, h)| (n, h)).collect();
     assert_eq!(got, want);
 }
+
+/// Eight stopes in two levels against a common wall, vertical, turned to
+/// strike 64.6 degrees at UTM coordinates, united one at a time: the union
+/// with the seventh stope, which left a sliver shell inside the block. Found
+/// by `stope_chains_minus_a_drive_along_strike` in `rounding_props.rs`.
+#[test]
+fn seventh_union_of_a_stacked_stope_chain_is_a_solid() {
+    identity_holds("stacked_stope_chain_union", Op::Union);
+}

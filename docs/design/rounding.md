@@ -929,3 +929,43 @@ count among `cancelled_faces` through the pass, and its insertions among
 none proven for a named class. Exact `validate` certifies each result, and
 `uncertified` stays possible. The cluster snap stays the documented escalation
 for a slot that neither strict variant closes.
+
+### The class as a property test
+
+`stope_chains_minus_a_drive_along_strike` in `rounding_props.rs` builds the
+class these cases stand for: eight stopes, four along strike in two levels,
+each upper stope standing on the top of the one below, all with their footwall
+on one common wall, each with its own height (18 to 30 m) and thickness (4 to
+8 m), turned to a dip from 45 to 90 degrees (90 drawn on its own) and to a
+strike, and moved to UTM coordinates, every vertex rounded to `f64` at each
+step. The stopes are united one at a time, every union checked to be a solid,
+and a drive along strike is taken away, on the floor of the lower level or
+through the common wall. The difference and the intersection must be solids
+within their step and move bounds, the difference the same on 1 and 4 threads,
+and `vol(a - b) + vol(a & b) = vol(a)` must hold in rationals within the summed
+volume bounds. It runs 6 cases in the gate.
+
+### Sliver shells nested in the block
+
+With 300 cases on two other seeds in a release build (not part of the gate),
+that test found a union that the stages above left with one problem: an inward
+shell. Eight vertical stopes in two levels against
+a common wall, turned to strike at UTM coordinates, united one at a time; the
+union with the seventh stope (`seventh_union_of_a_stacked_stope_chain_is_a_solid`)
+rounded to a block and an eight-face shell about 5 m long whose volume is about
+2e-10 m3. The shell lies inside the block and touches it along one edge and at
+four vertices, so `validate` reports it as wound against its nesting parity.
+C3 missed it twice: it groups faces by edge connectivity, which joins the shell
+to the block through the edge they share, and it took inward components only
+when their volume is negative, while this one is positive.
+
+With `crossing` (the runs with descents), when no component goes, C3 now also
+takes each shell, as `validate` pairs edges into wedges, that holds the face of
+an `InwardShell` problem, of either sign, under the same test: its rounded
+volume at most its own (V) sum, so its exact volume is at most twice that sum.
+`volume_bound` counts the removal through the exact volume change from the
+draft to the output, as for every C3 removal. The rule runs only in runs with
+descents, only when no component went and `validate` reports an inward shell;
+the five results that `results_certified_before_rounding_2_are_unchanged` pins
+keep their bytes. It adds no loop: it is one more test inside C3, whose
+removals `step_bound` already counts.

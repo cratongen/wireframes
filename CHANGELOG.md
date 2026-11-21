@@ -24,6 +24,9 @@ All notable changes to wireframes are listed here. The format follows
   also absorbs a sliver face across a slot's rim and keeps opposite walls that
   lie in one plane from overlapping, so stopes dipping 62.5 degrees minus a
   drive on their floor give a solid too.
+- Rounding with descents removes a sliver shell left inside another shell
+  that touches it, so a union in a chain of stacked stopes against a common
+  wall gives a solid.
 
 - Rust workspace with `core` (mesh, polylines, point sets, typed tables, exact
   predicates, validation), `io`, `ops` (measures, repair, components,
