@@ -962,6 +962,25 @@ mod tests {
     }
 
     #[test]
+    fn faces_that_bound_no_wedge_leave_an_edge_unpaired() {
+        use crate::topology::{EdgeMap, Radial, Shells, radial_pairs_at};
+        let (p, q) = ([0.0, 0.0, 0.0], [1.0, 0.0, 0.0]);
+        let v = vec![p, q, [0.0, 1.0, 0.0], [0.0, -1.0, 0.0], [2.0, 0.0, 0.0], q];
+        let flat = vec![[0, 1, 2], [1, 0, 3], [0, 1, 4], [1, 0, 2]];
+        let m = Mesh::new(v.clone(), flat).unwrap();
+        assert_eq!(radial_pairs_at(&m, &[0, 1, 2, 3], p, q), Radial::Unbalanced);
+        let shells = Shells::new(&m, &EdgeMap::new(&m, None));
+        assert_eq!(shells.non_manifold.len(), 1);
+        let off = Mesh::new(v.clone(), vec![[0, 1, 2], [1, 0, 3], [2, 3, 4]]).unwrap();
+        assert_eq!(radial_pairs_at(&off, &[0, 1, 2], p, q), Radial::Unbalanced);
+        let collapsed = vec![[1, 5, 2], [5, 1, 3], [1, 5, 4], [5, 1, 2]];
+        let m = Mesh::new(v, collapsed).unwrap();
+        assert_eq!(radial_pairs_at(&m, &[0, 1, 2, 3], q, q), Radial::Unbalanced);
+        let shells = Shells::new(&m, &EdgeMap::new(&m, None));
+        assert_eq!(shells.non_manifold.len(), 1);
+    }
+
+    #[test]
     fn soup_reports_duplicates_not_crossings() {
         let soup = fixtures::soup(&fixtures::cube());
         let s = summary(&soup);

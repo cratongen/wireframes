@@ -291,32 +291,35 @@ pub fn radial_pairs(
 }
 
 /// [`radial_pairs`] for faces of `mesh` around the edge whose endpoints have
-/// the coordinates `p` and `q`, its direction `q - p`. Every face must have
-/// one corner exactly at `p`, one at `q` and a third one off their line.
+/// the coordinates `p` and `q`, its direction `q - p`. A face without one
+/// corner exactly at `p`, another at `q` and a third off their line bounds no
+/// wedge, so the edge is [`Radial::Unbalanced`].
 pub fn radial_pairs_at(mesh: &Mesh, faces: &[u32], p: [f64; 3], q: [f64; 3]) -> Radial {
     let key = |x: [f64; 3]| x.map(|c| crate::tolerance::canonical(c).to_bits());
     let (kp, kq) = (key(p), key(q));
+    let o = |r: [f64; 3], k: usize| Sign::of(crate::predicates::orient2d_axis(p, q, r, k));
     let mut forward = vec![];
     let mut third = vec![];
+    let mut axis = vec![];
     for &f in faces {
         let c = mesh.corners(f);
-        let at = |k: [u64; 3]| {
-            (0..3)
-                .find(|&i| key(c[i]) == k)
-                .expect("corner on the edge")
+        let at = |k: [u64; 3]| (0..3).find(|&i| key(c[i]) == k);
+        let (Some(i), Some(j)) = (at(kp), at(kq)) else {
+            return Radial::Unbalanced;
         };
-        let (i, j) = (at(kp), at(kq));
+        if i == j {
+            return Radial::Unbalanced;
+        }
+        let r = c[3 - i - j];
+        let Some(k) = (0..3).find(|&k| o(r, k) != Sign::Zero) else {
+            return Radial::Unbalanced;
+        };
         forward.push((i + 1) % 3 == j);
-        third.push(c[3 - i - j]);
+        third.push(r);
+        axis.push(k);
     }
     let turn = |a: usize, b: usize| side_of_plane(third[b], p, q, third[a]);
-    let same = |a: usize, b: usize| {
-        let o = |r: [f64; 3], k: usize| Sign::of(crate::predicates::orient2d_axis(p, q, r, k));
-        let k = (0..3)
-            .find(|&k| o(third[a], k) != Sign::Zero)
-            .expect("third corner off the edge");
-        o(third[a], k) == o(third[b], k)
-    };
+    let same = |a: usize, b: usize| o(third[a], axis[a]) == o(third[b], axis[a]);
     radial_pairs(&forward, turn, same)
 }
 
