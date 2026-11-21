@@ -284,7 +284,13 @@ No other dependency without a line in this table.
    possible; one input in `crates/boolean/tests/attacks.rs` still meets it (eight
    stopes in two levels against a common wall at dip 89.6 minus a drive on their
    floor, found by the property test of `rounding.md` section 10) and runs as an
-   ignored test. Tests that meet the limit read the mesh from the
+   ignored test. The mining scenarios of `crates/boolean/tests/attacks_2.rs`
+   found more, each kept as an ignored test marked `attack 2`: splits of rotated
+   stope blocks through their own vertices and through a slot a few ulps wide,
+   repeated union then difference of a raise in a worked orebody, and the
+   running union of pushbacks clipped by one ground. Two of the splits panic in
+   `radial_pairs_at` instead of raising `uncertified`, a defect against this
+   rule. Tests that meet the limit read the mesh from the
    error and keep their checks on it, and report the failure rate, never hide it.
 
 ## 3. wireframes-core

@@ -463,3 +463,123 @@ fn seventh_union_of_a_stacked_stope_chain_is_a_solid() {
 fn stacked_stope_chain_minus_a_floor_drive_is_a_solid() {
     identity_holds("stacked_stope_chain_minus_floor_drive", Op::Difference);
 }
+
+/// `op` of the pair `name` is a solid within its bounds and finishes within
+/// `limit`.
+fn finishes_within(name: &str, op: Op, limit: Duration) {
+    let (_, _, r) = run(name, op, limit);
+    certified(name, &r);
+}
+
+/// A 120 x 20 x 80 m orebody turned to strike and dip at UTM coordinates,
+/// with drives, raises and stopes taken away and backfill put back one at a
+/// time (each body turned by under half a degree), then `x = (x | b) - b`
+/// for the last raise `b`: the third union. Found by
+/// `long_chains_on_one_orebody_feed_each_result_forward` in `attacks_2.rs`,
+/// seed 3.
+#[test]
+#[ignore = "attack 2: the union raises uncertified (658 self-intersections, 3 non-manifold edges) after 988 s in one release run, for 1098 + 12 faces"]
+fn third_union_of_a_raise_into_a_worked_orebody_is_a_solid() {
+    identity_holds("chain_again_union_slow", Op::Union);
+}
+
+/// The same chain, seed 2: the third difference, whose intersection is the
+/// other half of the volume identity.
+#[test]
+#[ignore = "attack 2: the intersection raises uncertified (190 self-intersections, 3 boundary and 3 non-manifold edges) for 748 + 12 faces"]
+fn third_difference_of_a_raise_from_a_worked_orebody_is_a_solid() {
+    identity_holds("chain_again_intersection", Op::Difference);
+}
+
+/// The same chain, seed 1: the third difference certifies, but slowly.
+#[test]
+#[ignore = "attack 2: the difference takes 243 s in one release run, not a benchmark, for 824 + 12 faces, where the chain's other operations take under 2 s"]
+fn third_difference_of_a_raise_from_a_worked_orebody_finishes_within_a_minute() {
+    finishes_within("chain_again_difference_slow", Op::Difference, MINUTE);
+}
+
+/// A sublevel layout of twelve stopes (three along strike, two across, two
+/// levels) turned to strike and dip at UTM coordinates and united one at a
+/// time, split by an inclined plane through one of its own vertices. Found by
+/// `stope_blocks_split_by_planes_through_their_vertices_and_clipped_by_faults`
+/// in `attacks_2.rs`, seed 11.
+#[test]
+#[ignore = "attack 2: the split panics in round::run (Shells::new, radial_pairs_at: third corner off the edge) for 152 faces"]
+fn split_of_a_stope_block_by_an_inclined_plane_through_its_vertex_does_not_panic() {
+    split_holds("split_block_inclined_panic");
+}
+
+/// A twelve-stope layout as above, seed 1, split by the horizontal plane
+/// through one of its own vertices.
+#[test]
+#[ignore = "attack 2: the split raises uncertified (3 boundary edges, 1 non-manifold edge, 23 self-intersections) for 138 faces"]
+fn level_split_of_a_stope_block_through_its_vertex_a_is_two_solids() {
+    split_holds("split_block_level_a");
+}
+
+/// Seed 12, the first of two horizontal planes through its vertices.
+#[test]
+#[ignore = "attack 2: the split raises uncertified (2 non-manifold edges, 3 self-intersections) for 210 faces"]
+fn level_split_of_a_stope_block_through_its_vertex_b_is_two_solids() {
+    split_holds("split_block_level_b");
+}
+
+/// Seed 12, the second horizontal plane.
+#[test]
+#[ignore = "attack 2: the split raises uncertified (14 self-intersections, 4 coplanar overlaps) for 210 faces"]
+fn level_split_of_a_stope_block_through_its_vertex_c_is_two_solids() {
+    split_holds("split_block_level_c");
+}
+
+/// Seed 19, a horizontal plane through one of its vertices.
+#[test]
+#[ignore = "attack 2: the split raises uncertified (6 degenerate faces, 9 boundary edges, 3 non-manifold edges) for 166 faces"]
+fn level_split_of_a_stope_block_through_its_vertex_d_is_two_solids() {
+    split_holds("split_block_level_d");
+}
+
+/// A sublevel layout of 120 stopes (ten along strike, three across, four
+/// levels) united one at a time, split by the horizontal plane through one of
+/// its own vertices. Seed 1 of the larger layouts.
+#[test]
+#[ignore = "attack 2: the split panics in round::run (Shells::new, radial_pairs_at: index out of bounds) for 1822 faces"]
+fn level_split_of_a_large_stope_block_through_its_vertex_does_not_panic() {
+    split_holds("split_large_block_index_panic");
+}
+
+/// Ten stopes along a northing whose end walls overlap, touch or leave gaps of
+/// up to three ulps, turned to strike and dip, united, minus three drives and
+/// a crosscut on a slot wall, split across strike through a slot. Found by
+/// `slots_a_few_ulps_wide_crossed_by_development` in `attacks_2.rs`, seed 1 of
+/// the larger layouts.
+#[test]
+#[ignore = "attack 2: the split raises uncertified (3 boundary edges, 35 self-intersections, 32 coplanar overlaps) for a block of 1330 faces with slots a few ulps wide"]
+fn split_through_a_slot_a_few_ulps_wide_is_two_solids() {
+    split_holds("split_on_slot");
+}
+
+/// Pushback stages of one benched pit growing in one sector at UTM
+/// coordinates, each clipped by the same rough ground, the stages united one
+/// at a time: the union with the tenth stage. Found by
+/// `pushback_sequences_clipped_by_the_same_ground` in `attacks_2.rs`, seed 0
+/// of the larger layouts.
+#[test]
+#[ignore = "attack 2: the union raises uncertified (241 self-intersections, 7 boundary edges) after 198 s in one release run, for 14612 + 650 faces"]
+fn union_of_twelve_pushbacks_clipped_by_one_ground_is_a_solid() {
+    identity_holds("pushbacks_cumulative_union", Op::Union);
+}
+
+/// The same sequence, seed 2: the union with the seventh stage certifies, but
+/// slowly.
+#[test]
+#[ignore = "attack 2: the union takes 359 s in one release run, not a benchmark, for 3522 + 468 faces"]
+fn union_of_pushbacks_clipped_by_one_ground_finishes_within_a_minute() {
+    finishes_within("pushbacks_cumulative_union_slow", Op::Union, MINUTE);
+}
+
+/// The same sequence, seed 1: the union with the eighth stage.
+#[test]
+#[ignore = "attack 2: the union takes 881 s in one release run, not a benchmark, for 3864 + 630 faces"]
+fn union_of_more_pushbacks_clipped_by_one_ground_finishes_within_a_minute() {
+    finishes_within("pushbacks_cumulative_union_slow_b", Op::Union, MINUTE);
+}

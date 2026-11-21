@@ -163,9 +163,18 @@ All notable changes to wireframes are listed here. The format follows
 
 - Rounding has no general 3D validity theorem: a boolean, clip or split the
   rounding operations cannot certify raises `wf.KernelError` whose message
-  starts with `uncertified`. One adversarial case still raises it and runs as
-  an ignored test in `crates/boolean/tests/attacks.rs`: eight stopes in two
-  levels against a common wall at dip 89.6 minus a drive on their floor.
+  starts with `uncertified`. Ignored tests in `crates/boolean/tests/attacks.rs`
+  keep the cases that still raise it: eight stopes in two levels against a
+  common wall at dip 89.6 minus a drive on their floor; splits of rotated
+  stope blocks by a level or inclined plane through one of their own
+  vertices, and a split through a slot a few ulps wide; the third union and
+  difference of a raise in a worked orebody; and the running union of ten
+  pushbacks clipped by one ground.
+- Two of those splits panic in the rounding (`radial_pairs_at` in
+  `crates/core/src/topology.rs`) instead of raising `wf.KernelError`.
+- Some booleans on inputs of a few thousand faces take minutes: the running
+  union of pushbacks took 359 s and 881 s, and a difference in a worked
+  orebody 243 s, each in one release run (not a benchmark).
 - `loft` does not branch, `extrude` has no path sweep, and `offset` is not a
   Minkowski offset.
 - No real Datamine Studio export is tested yet.

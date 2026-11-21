@@ -204,7 +204,15 @@ tonnage without warning. `wireframes` enforces three rules:
     on their floor, and a sixteen-stope chain against a common wall minus a
     drive along strike. One case a property test found later still raises
     `wf.KernelError` (`uncertified`) and is ignored: stacked stopes at dip 89.6
-    minus a drive on their floor. The method has no general
+    minus a drive on their floor. A third round of mining scenarios
+    (`crates/boolean/tests/attacks_2.rs`) added thirteen ignored cases: five
+    level or inclined splits of rotated stope blocks through their own
+    vertices and one split through a slot a few ulps wide raise `uncertified`,
+    two of these splits panic inside the rounding, and a repeated union then
+    difference of a raise in a worked orebody and the running union of
+    pushbacks clipped by one ground raise `uncertified` or take minutes on a
+    few thousand faces. Intersecting the block with a box whose top lies on
+    the level plane certified in every case the sweep tried. The method has no general
     3D validity theorem, so `uncertified` stays possible for inputs the tests
     have not met.
 

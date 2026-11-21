@@ -90,9 +90,12 @@ pushback.is_solid  # True
 
 A result the rounding cannot certify raises `wf.KernelError` whose message starts with `uncertified`;
 `error.report` holds the `MeshReport` of the rounded result and `error.mesh` the result itself, closed, so you can
-still read its volume. One ignored test in `crates/boolean/tests/attacks.rs` still raises it (stacked stopes at dip 89.6 minus a
-drive on their floor), and the method has no general validity theorem, so inputs the tests have not met can
-raise it too. An exact coordinate beyond the f64 range raises it
+still read its volume. Ignored tests in `crates/boolean/tests/attacks.rs` still raise it: stacked stopes at dip 89.6 minus a
+drive on their floor, splits of rotated stope blocks through one of their own vertices, a split through a slot a few ulps
+wide, repeated union then difference of a raise in a worked orebody, and the running union of ten pushbacks. Two of those
+splits panic instead of raising. To cut a stope block at a level that passes through its vertices, intersect it with a box
+whose top lies on the level; the tests certified that in every case they tried. The method has no general validity
+theorem, so inputs the tests have not met can raise it too. An exact coordinate beyond the f64 range raises it
 with `non-finite`.
 
 Underground work meets it in long chains of booleans. Each result carries rounded vertices along its intersection
