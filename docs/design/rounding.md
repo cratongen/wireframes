@@ -880,3 +880,52 @@ are tried.
 `stope_chain_minus_a_drive_along_strike_is_a_solid` now passes unchanged,
 difference and intersection, with the volume identity in rationals. The
 reduced chain and both footwall cases still raise `uncertified`.
+
+### Step 2 landed: absorbing slivers and coplanar walls; no cluster snap
+
+The escalation the decision names, the cluster snap, turned out not to be
+needed for these inputs, and it is not implemented. Two smaller changes to the
+strict closing of step 1 certify all three cases left, and this section
+replaces the cluster snap part of the decision above.
+
+1. **Absorbing the face across (footwall).** With `strict`, `Sheet::place` of a
+   point `h` on edge `a b` of face `f = (a, b, x)` checks whether `h` is the far
+   corner `d` of the face across, `g = (b, a, d)`. Before, that made two flat
+   faces, which the commit refused, so the rim sliver of the reduced footwall
+   slot could never go. Now `f` and `g` are both removed and `(a, h, x)`,
+   `(h, b, x)` take their place. The edges `a h` and `h b` of `g` stay used in
+   the same direction by the new faces, and `h x` is used once each way, so
+   the shell stays closed (`a_point_on_the_far_corner_absorbs_the_face_across`).
+   The faces before and after bound the tetrahedron `(a, b, x, h)`, whose exact
+   volume, rounded up, is returned and joins `volume_bound`. No vertex moves.
+2. **Coplanar walls (reduced chain).** The reduced chain pairs two walls that
+   lie exactly in one plane (their vertices sit on two vertical lines) and do
+   not overlap in the input. The strict commit skips the test between opposite
+   walls, so insertions and flips made them overlap in their plane, and they
+   could not cancel because their triangulations differ around two vertices
+   0.16 m apart. A second strict variant (`Sheet::coplanar`) also refuses a
+   made face that overlaps a face of the opposite wall exactly in a common
+   plane without holding the same three corners. It runs only when the plain
+   strict pass gives nothing: run first, it leaves the full footwall case with
+   one non-manifold edge, because there the walls must overlap in their plane
+   for a moment before they cancel.
+
+`close_all` with `strict` therefore tries, per pass, the strict pass and then
+the coplanar one. Each pass keeps the step bound of section 9, asserted, and the
+number of passes stays at most the face count of the input, so the closing does
+at most twice the work of section 9 per input face. No new loop was added.
+
+**Results.** `stope_chain_minus_a_drive_reduced_is_a_solid`,
+`stopes_dipping_62_minus_a_footwall_drive_is_a_solid` and
+`stopes_dipping_62_minus_a_footwall_drive_reduced_is_a_solid` pass unchanged,
+with the volume identity in rationals. The unit test
+`strict_closing_of_the_reduced_cases_ends_within_its_bounds` checks the step
+bound and, in rationals, the volume bound of the closed inputs. The thread-count
+test takes both reduced cases. `RoundingReport` gains no field: absorbed faces
+count among `cancelled_faces` through the pass, and its insertions among
+`inserted_points`.
+
+**Guarantee, unchanged.** This gives no validity guarantee for all inputs and
+none proven for a named class. Exact `validate` certifies each result, and
+`uncertified` stays possible. The cluster snap stays the documented escalation
+for a slot that neither strict variant closes.

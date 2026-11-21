@@ -44,6 +44,9 @@ struct Sheet {
     /// Commits test faces of different sides unless both are walls, and skip
     /// made faces that cancel a live face with the face they cancel.
     strict: bool,
+    /// With `strict`, also refuses a made face that overlaps a face of the
+    /// opposite wall in their common plane.
+    coplanar: bool,
 }
 
 /// Whether faces `a` and `b`, with corners equal by coordinates counted as
@@ -67,6 +70,14 @@ fn clash(a: [[f64; 3]; 3], b: [[f64; 3]; 3]) -> bool {
         }
         _ => false,
     }
+}
+
+/// Whether faces `a` and `b` lie in one plane, exactly, and overlap there
+/// without holding the same three corners.
+fn coplanar_overlap(a: [[f64; 3]; 3], b: [[f64; 3]; 3]) -> bool {
+    b.iter().all(|&p| orient3d(a[0], a[1], a[2], p) == 0.0)
+        && tri_tri(a, b) == TriTri::CoplanarOverlap
+        && !a.iter().all(|p| b.iter().any(|q| key(*p) == key(*q)))
 }
 
 fn key(p: [f64; 3]) -> [u64; 3] {
@@ -102,6 +113,7 @@ impl Sheet {
             attempts: 0,
             wall: vec![],
             strict: false,
+            coplanar: false,
         };
         for (i, p) in m.vertices().iter().enumerate() {
             s.at.entry(key(*p)).or_insert(i as u32);
@@ -133,7 +145,11 @@ impl Sheet {
         };
         let wall = |s: &Sheet, f: usize| s.wall.get(s.src[f] as usize).copied().unwrap_or(false);
         let apart = |s: &Sheet, f: usize, g: usize| {
-            s.side[g] != s.side[f] && (!s.strict || wall(s, f) && wall(s, g))
+            s.side[g] != s.side[f]
+                && (!s.strict
+                    || wall(s, f)
+                        && wall(s, g)
+                        && !(s.coplanar && coplanar_overlap(s.corners(f), s.corners(g))))
         };
         let ok = !made.iter().any(|&f| flat(self.corners(f)))
             && made.iter().all(|&f| {
@@ -276,6 +292,13 @@ impl Sheet {
                 let u = self.t[g];
                 let d = u[(0..3).find(|&k| u[k] != a && u[k] != b)?];
                 let h = self.vertex(p);
+                if h == d && self.strict {
+                    self.kill(f);
+                    self.kill(g);
+                    self.push([a, h, x], self.src[f], sf);
+                    self.push([h, b, x], self.src[f], sf);
+                    return Some(tet(c[0], c[1], c[2], p));
+                }
                 let vol = tet(c[0], c[1], c[2], p)
                     + tet(
                         self.v[b as usize],
@@ -636,7 +659,7 @@ pub(crate) fn conform(a: &Mesh, b: &Mesh) -> Result<Option<Conformed>> {
 /// the conforming counts and the bound on the volume between the input and the
 /// result; `None` when there is no slot, the pairs do not two-colour, or the
 /// result is not a solid.
-fn close_slots(m: &Mesh, strict: bool) -> Result<Option<Closed>> {
+fn close_slots(m: &Mesh, strict: bool, coplanar: bool) -> Result<Option<Closed>> {
     if m.is_empty() || !m.is_closed() {
         return Ok(None);
     }
@@ -762,6 +785,7 @@ fn close_slots(m: &Mesh, strict: bool) -> Result<Option<Closed>> {
     sh.live = sh.alive.len();
     if strict {
         sh.strict = true;
+        sh.coplanar = coplanar;
         sh.wall = colour.iter().map(Option::is_some).collect();
     }
     let bound = step_bound(2 * v.len(), tris.len());
@@ -983,7 +1007,12 @@ fn thin_voids(v: &[[f64; 3]], tris: &[[u32; 3]]) -> Result<(Vec<usize>, f64)> {
 fn close_all(m: &Mesh, strict: bool) -> Result<Option<Closed>> {
     let mut acc: Option<Closed> = None;
     for _ in 0..m.n_faces() {
-        let Some(next) = close_slots(acc.as_ref().map_or(m, |c| &c.mesh), strict)? else {
+        let at = acc.as_ref().map_or(m, |c| &c.mesh);
+        let next = match close_slots(at, strict, false)? {
+            None if strict => close_slots(at, true, true)?,
+            next => next,
+        };
+        let Some(next) = next else {
             break;
         };
         acc = Some(match acc {
@@ -1136,6 +1165,69 @@ mod tests {
         let bound = Q::from_float(6.0 * c.volume).unwrap();
         assert!(diff.clone() <= bound && -diff <= bound);
         assert_eq!(c.src.len(), c.mesh.n_faces());
+    }
+
+    /// The strict closing of the two reduced rounding 2 inputs ends within its
+    /// step bound, leaves a solid, and changes the volume by at most its
+    /// bound, checked exactly.
+    #[test]
+    fn strict_closing_of_the_reduced_cases_ends_within_its_bounds() {
+        for name in [
+            "stope_chain_minus_drive_reduced",
+            "stopes_dipping_62_minus_footwall_drive_reduced",
+        ] {
+            let m = first_input(name);
+            let c = close_all(&m, true).unwrap().expect("slots to close");
+            assert!(c.steps <= c.step_bound, "{name}");
+            assert!(c.cancelled > 0, "{name}");
+            assert!(c.mesh.validate(0.0).unwrap().summary.is_solid(), "{name}");
+            let diff = volume6(&c.mesh) - volume6(&m);
+            let bound = Q::from_float(6.0 * c.volume).unwrap();
+            assert!(diff.clone() <= bound && -diff <= bound, "{name}");
+            assert_eq!(c.src.len(), c.mesh.n_faces(), "{name}");
+        }
+    }
+
+    /// Placing the far corner of the face across an edge onto that edge
+    /// removes the face across and splits the other in two: every directed
+    /// edge stays used once, and the volume returned is the tetrahedron's.
+    #[test]
+    fn a_point_on_the_far_corner_absorbs_the_face_across() {
+        let v = vec![
+            [1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            [-1.0, 0.0, 0.0],
+            [0.0, -1.0, 0.0],
+            [0.0, 0.0, 1.0],
+            [0.0, 0.0, -1.0],
+        ];
+        let t = (0..4u32)
+            .flat_map(|k| [[k, (k + 1) % 4, 4], [(k + 1) % 4, k, 5]])
+            .collect();
+        let m = Mesh::new(v, t).unwrap();
+        assert!(m.validate(0.0).unwrap().summary.is_solid());
+        let mut sh = Sheet::new(&m, &[]);
+        sh.live = sh.alive.len();
+        sh.strict = true;
+        let [a, b, _] = sh.t[0];
+        let g = sh.edge[&(b, a, false)];
+        let d = *sh.t[g].iter().find(|&&k| k != a && k != b).unwrap();
+        let c = sh.corners(0);
+        let p = sh.v[d as usize];
+        let vol = sh.place(p, 0, Some(0)).unwrap();
+        assert_eq!(vol, tet(c[0], c[1], c[2], p));
+        assert_eq!(sh.live, 8);
+        let mut uses: HashMap<(u32, u32), i32> = HashMap::new();
+        for f in sh.live_faces() {
+            let t = sh.t[f];
+            for k in 0..3 {
+                *uses.entry((t[k], t[(k + 1) % 3])).or_default() += 1;
+            }
+        }
+        assert!(
+            uses.iter()
+                .all(|(&(u, w), &n)| n == 1 && uses.get(&(w, u)) == Some(&1))
+        );
     }
 
     /// A solid with no walls facing each other within rounding has no slot.

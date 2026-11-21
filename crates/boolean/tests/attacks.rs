@@ -62,6 +62,11 @@ fn attack_results_do_not_depend_on_thread_count() {
         ("stope_minus_drive", Op::Difference),
         ("development_chain", Op::Union),
         ("stopes_dipping_62_minus_drive", Op::Difference),
+        ("stope_chain_minus_drive_reduced", Op::Difference),
+        (
+            "stopes_dipping_62_minus_footwall_drive_reduced",
+            Op::Difference,
+        ),
     ];
     for (name, op) in cases {
         let (a, b) = pair(name);
@@ -301,7 +306,6 @@ fn stopes_dipping_62_minus_a_drive_is_a_solid() {
 
 /// The same block minus a drive along strike on the stope floor.
 #[test]
-#[ignore = "attack: stopes dipping 62.5 minus a drive on their floor raises KernelError (self_intersections=262)"]
 fn stopes_dipping_62_minus_a_footwall_drive_is_a_solid() {
     identity_holds("stopes_dipping_62_minus_footwall_drive", Op::Difference);
 }
@@ -378,7 +382,6 @@ fn split_along_own_face_i_is_two_solids() {
 /// cross after rounding: the stope chain within a box about 3.7 m along
 /// strike, 9.9 m across and 6.6 m high, minus the drive cut 0.5 m beyond it.
 #[test]
-#[ignore = "rounding 2: the closed copy of the stope chain is not a solid, so the slot stays open and the drive crossings on its walls cross"]
 fn stope_chain_minus_a_drive_reduced_is_a_solid() {
     identity_holds("stope_chain_minus_drive_reduced", Op::Difference);
 }
@@ -386,7 +389,6 @@ fn stope_chain_minus_a_drive_reduced_is_a_solid() {
 /// `stopes_dipping_62_minus_footwall_drive` with the stope block cropped to
 /// a box 54.5 m wide about the slot that stays open, minus the whole drive.
 #[test]
-#[ignore = "rounding 2: a slot whose rim face is itself thinner than rounding stays open after closing, and the drive's crossings on its walls cross"]
 fn stopes_dipping_62_minus_a_footwall_drive_reduced_is_a_solid() {
     identity_holds(
         "stopes_dipping_62_minus_footwall_drive_reduced",

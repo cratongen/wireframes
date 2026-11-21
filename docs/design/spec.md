@@ -273,13 +273,15 @@ No other dependency without a line in this table.
    runs are not certified either, closing runs once more with a stricter commit
    (`rounding.md` section 10): a made face is tested against every live face near
    it except a face of the opposite wall of a slot, and a made face that cancels
-   a live face on the same three vertices is left out of the test with that face.
+   a live face on the same three vertices is left out of the test with that face;
+   placing a point that is the far corner of the face across an edge removes that
+   face and splits the near one in two, across the tetrahedron of the near face
+   and the point. When that pass gives nothing, a second one also refuses a made
+   face that overlaps a face of the opposite wall exactly in their common plane.
    The difference of
    pits clipped by one topography and `(s2 - s1).clip_by_surface(topo)` both return
    solids. The rounding has no general 3D validity theorem, so `uncertified` stays
-   possible; one input class in `crates/boolean/tests/attacks.rs` still meets it
-   (stopes dipping 62.5 degrees minus a drive on their floor, and a cropped stope
-   chain minus a drive) and runs as ignored tests. Tests that meet the limit read the mesh from the
+   possible, although no test in the repository meets it now. Tests that meet the limit read the mesh from the
    error and keep their checks on it, and report the failure rate, never hide it.
 
 ## 3. wireframes-core
