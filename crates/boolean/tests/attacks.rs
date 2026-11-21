@@ -453,3 +453,13 @@ fn results_certified_before_rounding_2_are_unchanged() {
 fn seventh_union_of_a_stacked_stope_chain_is_a_solid() {
     identity_holds("stacked_stope_chain_union", Op::Union);
 }
+
+/// Eight stopes in two levels against a common wall at dip 89.6, turned to
+/// strike 25.7 degrees at UTM coordinates, united one at a time, minus a
+/// drive along strike on the floor of the lower level. Found by
+/// `stope_chains_minus_a_drive_along_strike` in `rounding_props.rs`.
+#[test]
+#[ignore = "rounding 2 found: the descent ends with an edge of three faces where the drive crosses a near-vertical wall along a line of rounded points"]
+fn stacked_stope_chain_minus_a_floor_drive_is_a_solid() {
+    identity_holds("stacked_stope_chain_minus_floor_drive", Op::Difference);
+}

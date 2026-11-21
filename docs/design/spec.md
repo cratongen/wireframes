@@ -281,7 +281,10 @@ No other dependency without a line in this table.
    The difference of
    pits clipped by one topography and `(s2 - s1).clip_by_surface(topo)` both return
    solids. The rounding has no general 3D validity theorem, so `uncertified` stays
-   possible, although no test in the repository meets it now. Tests that meet the limit read the mesh from the
+   possible; one input in `crates/boolean/tests/attacks.rs` still meets it (eight
+   stopes in two levels against a common wall at dip 89.6 minus a drive on their
+   floor, found by the property test of `rounding.md` section 10) and runs as an
+   ignored test. Tests that meet the limit read the mesh from the
    error and keep their checks on it, and report the failure rate, never hide it.
 
 ## 3. wireframes-core

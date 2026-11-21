@@ -90,8 +90,9 @@ pushback.is_solid  # True
 
 A result the rounding cannot certify raises `wf.KernelError` whose message starts with `uncertified`;
 `error.report` holds the `MeshReport` of the rounded result and `error.mesh` the result itself, closed, so you can
-still read its volume. No test in `crates/boolean/tests/attacks.rs` raises it now, but the method
-has no general validity theorem, so inputs the tests have not met can raise it. An exact coordinate beyond the f64 range raises it
+still read its volume. One ignored test in `crates/boolean/tests/attacks.rs` still raises it (stacked stopes at dip 89.6 minus a
+drive on their floor), and the method has no general validity theorem, so inputs the tests have not met can
+raise it too. An exact coordinate beyond the f64 range raises it
 with `non-finite`.
 
 Underground work meets it in long chains of booleans. Each result carries rounded vertices along its intersection

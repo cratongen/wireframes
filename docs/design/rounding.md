@@ -969,3 +969,17 @@ descents, only when no component went and `validate` reports an inward shell;
 the five results that `results_certified_before_rounding_2_are_unchanged` pins
 keep their bytes. It adds no loop: it is one more test inside C3, whose
 removals `step_bound` already counts.
+
+### A refusal the property test found
+
+Run with 300 cases on two other seeds in a release build (not part of the
+gate), it found two refusals. The first, a union of the chain, is fixed above.
+The second, on seed 11 after 90 passing cases, still raises `uncertified` and runs as the ignored test
+`stacked_stope_chain_minus_a_floor_drive_is_a_solid` (inputs of 236 and 12
+faces, dip 89.6, the drive on the floor). It is not a slot: closing finds no
+paired walls in either input and conforming finds nothing to match. The
+descent ends after five descents with one edge of three faces, five
+non-manifold vertices and three crossings, all between faces of the stope block
+where the drive crosses a near-vertical wall along a line of rounded points a
+few millimetres apart in `x` and `y`. No single change lowers the count from
+there. It is not reduced and not traced further in this pass.

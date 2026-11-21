@@ -163,7 +163,9 @@ All notable changes to wireframes are listed here. The format follows
 
 - Rounding has no general 3D validity theorem: a boolean, clip or split the
   rounding operations cannot certify raises `wf.KernelError` whose message
-  starts with `uncertified`. No test in the repository raises it now.
+  starts with `uncertified`. One adversarial case still raises it and runs as
+  an ignored test in `crates/boolean/tests/attacks.rs`: eight stopes in two
+  levels against a common wall at dip 89.6 minus a drive on their floor.
 - `loft` does not branch, `extrude` has no path sweep, and `offset` is not a
   Minkowski offset.
 - No real Datamine Studio export is tested yet.

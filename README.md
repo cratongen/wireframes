@@ -202,7 +202,9 @@ tonnage without warning. `wireframes` enforces three rules:
     round nine face-plane splits of grid stopes, repeated union then difference
     of turned bodies, stopes dipping 62.5 degrees minus a drive along strike or
     on their floor, and a sixteen-stope chain against a common wall minus a
-    drive along strike. No attack case is ignored. The method has no general
+    drive along strike. One case a property test found later still raises
+    `wf.KernelError` (`uncertified`) and is ignored: stacked stopes at dip 89.6
+    minus a drive on their floor. The method has no general
     3D validity theorem, so `uncertified` stays possible for inputs the tests
     have not met.
 
