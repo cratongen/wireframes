@@ -1,0 +1,169 @@
+# On a v* tag: build the sdist and one abi3 wheel (cp311-abi3) per platform, test every wheel in
+# a clean environment, then publish to PyPI with Trusted Publishing (environment `pypi`, no
+# token). A manual run builds and tests only.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  RUST_TOOLCHAIN: "1.97.1"
+
+jobs:
+  sdist:
+    if: github.repository == 'cratongen/wireframes'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1.51.0
+        with:
+          command: sdist
+          args: --out dist
+      # The tag is the Python version (v0.1.0a1); Cargo.toml spells the same one 0.1.0-alpha.1.
+      - name: Tag matches the package version
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          ls dist
+          if [ ! -f "dist/wireframes-${GITHUB_REF_NAME#v}.tar.gz" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match the sdist version"
+            exit 1
+          fi
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: dist-sdist
+          path: dist/*.tar.gz
+          if-no-files-found: error
+
+  wheels:
+    if: github.repository == 'cratongen/wireframes'
+    name: wheel ${{ matrix.platform }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { platform: manylinux-x86_64, runner: ubuntu-latest, target: x86_64-unknown-linux-gnu, manylinux: "2_28" }
+          - { platform: manylinux-aarch64, runner: ubuntu-latest, target: aarch64-unknown-linux-gnu, manylinux: "2_28" }
+          - { platform: macos-x86_64, runner: macos-15-intel, target: x86_64-apple-darwin, manylinux: auto }
+          - { platform: macos-arm64, runner: macos-15, target: aarch64-apple-darwin, manylinux: auto }
+          - { platform: windows-x64, runner: windows-latest, target: x86_64-pc-windows-msvc, manylinux: auto }
+    env:
+      MACOSX_DEPLOYMENT_TARGET: ${{ matrix.target == 'aarch64-apple-darwin' && '11.0' || '10.15' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        if: runner.os != 'Linux'
+        with:
+          python-version: "3.13"
+      - uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1.51.0
+        with:
+          target: ${{ matrix.target }}
+          manylinux: ${{ matrix.manylinux }}
+          rust-toolchain: ${{ env.RUST_TOOLCHAIN }}
+          args: --release --locked --strip --out dist
+      - name: One abi3 wheel, no sidecar library
+        shell: bash
+        run: |
+          ls -l dist
+          whl=(dist/*.whl); [ "${#whl[@]}" -eq 1 ]
+          case "${whl[0]}" in *-cp311-abi3-*) ;; *) echo "::error::not a cp311-abi3 wheel"; exit 1 ;; esac
+          if [ "$RUNNER_OS" = Windows ]; then py=python; else py=python3; fi
+          "$py" -m zipfile -l "${whl[0]}" | tee contents.txt
+          if grep -E '\.libs/|\.dylibs/|\.dll\b' contents.txt; then
+            echo "::error::the wheel carries a sidecar library"
+            exit 1
+          fi
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: dist-${{ matrix.platform }}
+          path: dist/*.whl
+          if-no-files-found: error
+
+  # Every wheel on the floor (3.11) and the newest classified Python (3.14). The Linux wheels run
+  # in the official python image, aarch64 on an arm64 runner; macOS and Windows use a uv-managed
+  # CPython. matplotlib is the `plot` extra; tests that need other optional packages skip.
+  test:
+    if: github.repository == 'cratongen/wireframes'
+    name: test ${{ matrix.platform }} py${{ matrix.python }}
+    needs: wheels
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [manylinux-x86_64, manylinux-aarch64, macos-x86_64, macos-arm64, windows-x64]
+        python: ["3.11", "3.14"]
+        include:
+          - { platform: manylinux-x86_64, runner: ubuntu-latest }
+          - { platform: manylinux-aarch64, runner: ubuntu-24.04-arm }
+          - { platform: macos-x86_64, runner: macos-15-intel }
+          - { platform: macos-arm64, runner: macos-15 }
+          - { platform: windows-x64, runner: windows-latest }
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: dist-${{ matrix.platform }}
+          path: dist
+      - name: pytest against the installed wheel (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          docker run --rm -v "$PWD:/src" -w /src "python:${{ matrix.python }}-slim" sh -ec '
+            python -m pip install -q --only-binary=:all: dist/wireframes-*.whl pytest matplotlib
+            python -c "import sys, wireframes; print(sys.version, sys.platform, wireframes.__file__)"
+            cd /tmp && python -m pytest -q -p no:cacheprovider --rootdir=/src -c /src/pyproject.toml /src/python/tests
+          '
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        if: runner.os != 'Linux'
+      - name: pytest against the installed wheel (macOS, Windows)
+        if: runner.os != 'Linux'
+        shell: bash
+        run: |
+          uv venv --python ${{ matrix.python }} --managed-python "$RUNNER_TEMP/venv"
+          if [ "$RUNNER_OS" = Windows ]; then py="$RUNNER_TEMP/venv/Scripts/python.exe"; else py="$RUNNER_TEMP/venv/bin/python"; fi
+          uv pip install --python "$py" --only-binary=:all: dist/wireframes-*.whl pytest matplotlib
+          "$py" -c "import sys, wireframes; print(sys.version, sys.platform, wireframes.__file__)"
+          cd "$RUNNER_TEMP"
+          "$py" -m pytest -q -p no:cacheprovider --rootdir="$GITHUB_WORKSPACE" -c "$GITHUB_WORKSPACE/pyproject.toml" "$GITHUB_WORKSPACE/python/tests"
+
+  # Publishes only from a v* tag push in cratongen/wireframes: never from a fork, a branch, a
+  # pull request or a manual run. The `pypi` environment is a second guard (required reviewer).
+  publish:
+    name: publish to PyPI
+    needs: [sdist, wheels, test]
+    if: >-
+      github.repository == 'cratongen/wireframes' &&
+      github.event_name == 'push' &&
+      startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/wireframes
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: dist-*
+          path: dist
+          merge-multiple: true
+      - name: The sdist and one wheel per platform tag
+        shell: bash
+        run: |
+          ls -l dist
+          sdist=(dist/*.tar.gz); [ "${#sdist[@]}" -eq 1 ]
+          whl=(dist/*.whl); [ "${#whl[@]}" -eq 5 ]
+          for tag in manylinux_2_28_x86_64 manylinux_2_28_aarch64 macosx_10_15_x86_64 macosx_11_0_arm64 win_amd64; do
+            ls dist/wireframes-*-cp311-abi3-*"$tag"*.whl
+          done
+      - uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # v1.14.3
