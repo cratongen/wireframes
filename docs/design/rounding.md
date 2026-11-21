@@ -1,7 +1,8 @@
 # Rounding exact results to f64
 
 Status: method C is implemented in `crates/boolean/src/round.rs`; section 7
-records where the implementation departs from this design and why. The API
+records where the implementation departs from this design and why, and section
+10 traces the two refusals left after section 9 and decides the next change. The API
 contract stays in `spec.md`; this file records why booleans, `clip_by_surface`
 and `split_by_plane` refused results, which materialization method replaced the
 refusal, and how we prove it.
@@ -659,3 +660,203 @@ The descent has no more of a 3D theorem than the rest of method C: it ends when
 no single local change lowers the count, which can leave problems a sequence of
 two changes would remove. Such a case still raises `uncertified`; none in the
 tests does.
+
+## 10. Rounding 2: the two refusals left after section 9
+
+Two attack cases still raise `uncertified`:
+`stope_chain_minus_a_drive_along_strike_is_a_solid` and
+`stopes_dipping_62_minus_a_footwall_drive_is_a_solid` in `attacks.rs`. This
+section traces both, reduces them, and decides the next change. It changes no
+kernel code.
+
+### Reductions
+
+Cropping by axis-aligned planes through both inputs, as in section 1, changed the
+mechanism: the caps of `a` and `b` on one plane agree only to rounding (M2), and
+conforming (section 8) then acted where the original never did. The reduction
+that keeps the mechanism crops `a` with six planes (along the drive's horizontal
+axis, across it, and in `z`) about the slot that fails, crops the drive only
+along its axis, 0.5 m beyond the box, and accepts a crop only when the
+difference still raises `uncertified` and its trace has the same signature as
+the original: conforming does nothing, closing ends the same way, and every
+problem pair of the last run joins two faces of `a`. Bisection ran on a cube
+half-width, then on each of the six sides.
+
+| Case | Original (faces of a + b) | Reduced (faces of a + b) | Test, ignored as `rounding 2: ...` |
+|---|---|---|---|
+| Stope chain minus drive | 934 + 64 | 232 + 166 (box 3.7 x 9.9 x 6.6 m, drive cropped) | `stope_chain_minus_a_drive_reduced_is_a_solid` |
+| Stopes dipping 62.5 minus footwall drive | 590 + 64 | 282 + 64 (cube 54.5 m, whole drive) | `stopes_dipping_62_minus_a_footwall_drive_reduced_is_a_solid` |
+
+The cropped drive of the chain has more faces than the whole one, because each
+cut splits its long side faces; with the whole drive the cropped chain
+certifies, so the crop of the drive stays. The footwall case stops at a cube of
+half-width 27.25 m: at 27.19 m it certifies, and at 24 m closing fails
+differently. In a release build each of the four inputs gives an `uncertified`
+error, no other error and no panic; the check stays out of the default test run
+because it is slow in the debug build the gate uses (not measured as a benchmark).
+
+### Where each one refuses
+
+Both run every stage of `ops::boolean`: the plain run, conforming (section 8,
+which finds nothing to match in either case), the run with descents, and the
+closed inputs (section 9) with and without descents. Every problem left at the
+end of each run joins two faces of `a` that face opposite ways a fraction of an
+ulp apart: two walls of a slot in the stope block, cut by the drive. The two
+walls hold distinct exact crossing points with each drive face, closer than an
+ulp; each rounds to its own nearest `f64`, and when the two roundings land in
+the wrong order the walls cross.
+
+**Footwall drive.** The plain run ends with 153 self-intersections inside `a`,
+13 non-manifold edges and 8 non-manifold vertices after C1 to C5; the run with
+descents gets down to 6 self-intersections, then no single change lowers the
+count. Closing pairs 55 faces in its first pass, inserts 20 points, flips 23
+edges and cancels 74 faces; its second pass pairs 10 faces and changes nothing.
+The closed run still ends with 3 self-intersections between faces 550 and 137
+of the closed `a` (anti-parallel, 0 to 0.48 ulp apart), 1 non-manifold edge and
+4 non-manifold vertices. The slot left open is three faces: 550 = (76, 48, 45)
+on one side, 137 = (45, 46, 76) and 551 = (76, 46, 48) on the other, with
+vertex 46 within reach of edge 48-45. Inserting 46 on that edge would split 550
+into two faces that cancel 137 and 551 exactly. `Sheet::commit` refuses it:
+one face it makes from the face across the edge, (45, 46, 27), overlaps 137,
+and the commit tests that overlap before 137 cancels against the made face
+(46, 45, 76). A prototype that cancels such pairs inside the commit closes
+more (80 faces cancelled), but 8 faces stay paired. In the reduced case the
+reason shows: the face across the slot's rim, (42, 45, 24), is itself thinner
+than rounding (its corner 42 lies within reach of its edge 24-45), so every
+single insertion leaves a flat or crossing face that the commit refuses, and no
+order of single insertions reaches the state where the slot and the sliver
+vanish together.
+
+**Stope chain.** The plain run ends with 20 self-intersections inside `a`,
+8 non-manifold edges and 8 non-manifold vertices; descents leave 5
+self-intersections between faces 463 and 511 of `a` (anti-parallel, 0 to
+0.81 ulp apart), 2 non-manifold edges and 8 non-manifold vertices. Closing
+pairs 34 faces, inserts 8 points, flips 6 edges and cancels 24 faces, then
+`validate` rejects the closed copy (2 non-manifold edges, 2
+self-intersections), so `close_and_conform` returns nothing and the boolean
+never runs on a closed input. The crossing joins a face the closing made on one
+wall (colour true) with two faces next to the slot that no pair coloured,
+(294, 295, 293) and (294, 253, 295); vertices 293 and 295 differ only in `z`,
+by about 3e-10 m, under the 9.3e-10 m ulp of the northing. `Sheet::commit`
+skips the overlap test between faces of different sides, and faces outside any
+slot sit on side false, so nothing tested the made face against them. With the
+test kept for every pair except two walls of opposite sides (prototype, not
+committed), closing runs three passes, the closed copy is a solid, and the
+difference certifies. The reduced chain still fails with that prototype: its
+closed copy has 4 non-manifold edges, 5 non-manifold vertices, 4
+self-intersections and 15 overlaps.
+
+### Why C1 to C5 cannot repair it on the output
+
+Let `p1` and `p2` be the crossings of one drive face with the two walls, closer
+than an ulp, rounding to different `f64` points in swapped order. C1 needs
+`r(p1) = r(p2)`. C2 joins `p1` to `p2` when one hot box holds the other, but the
+two wall faces then share one vertex and nothing along the cut, which is the
+rise in non-manifold edges and vertices the descents show. C5 puts `p1` into
+the other wall, on the wrong side of it. C4 needs both walls to hold the same
+three vertices, which takes every crossing along the cut joined at once, a
+sequence of C2 steps each of which raises the local problem count, so the
+descent stops before it. C3 does not apply: the slot belongs to the large shell.
+Removing the slot needs one change over a cluster of faces, before the
+arrangement or after it.
+
+### Decision: snap the failing cluster as one change
+
+Two causes, one route.
+
+1. **Fix inside closing (chain).** `Sheet::commit` tests every made face against
+   every live face near it, except a made face of one wall against a face of the
+   opposite wall of the same slot; before the test it cancels each made face
+   against a live face on the same three vertices in opposite orientation, and
+   the pass counts those cancellations with the rest.
+2. **Escalation: cluster snap (footwall).** When a closing pass leaves paired
+   faces it cannot close, and when the output loop of section 7 ends uncertified
+   after descents, the loop takes a cluster `K`: the faces of the problems (the
+   paired faces left, or the problem faces `validate` reports), grown by every
+   face whose box meets the wide hot box of a vertex of `K`, until no face joins.
+   Let `H` be the vertices of `K`. For every face `f` of `K` and every `h` in `H`
+   that is not a corner of `f` and whose wide hot box meets `f` (exact test of
+   section 7), `h` is placed on `f`: on the edge the box meets, for both faces on
+   that edge, else inside. Each face of `K` is then triangulated at once over its
+   corners and placed points (points on an edge ordered along it, the
+   triangulation built by exact `orient2d` in the projection along the face's
+   dominant axis), faces whose corners are collinear go as flat runs (section
+   7), opposite pairs cancel (C4), and components of zero exact volume go (C3).
+   One exact `validate` of the faces whose boxes meet the cluster's box accepts
+   the whole change or rejects it. This is snap rounding with the rounding cells
+   of the result's own vertices as hot cells, applied to one cluster: the
+   rerouting of section 3.A without a grid, and without its proof.
+
+Both changes run only where today's pipeline ends `uncertified`: the corrected
+closing as a new retry after the current one, the cluster snap after that and
+as the last step of the output loop. A result certified today runs the same
+code and gives the same bytes; its timing is not measured here.
+
+**Guarantee, plainly.** This route gives no validity guarantee for all inputs,
+and none proven for a named class. Exact `validate` certifies each result, as
+for the rest of method C, and `uncertified` stays possible. The route aims at
+one class: inputs holding slots and slivers thinner than rounding (left by
+earlier unions of bodies that agreed only to rounding) crossed by the other
+input. The traces above argue that it closes the two refusals; that is
+evidence, and the tests will decide. A guarantee for all inputs would need the
+3D snap rounding of section 3.A (Devillers, Lazard and Lenhart) run on the
+cluster, with its worst-case output size and its proof checked; this route does
+not implement it.
+
+**Correctness of what is proven.** Placing `h` on an edge splits both faces on
+that edge, and each face of `K` is triangulated as the same polygon its
+neighbours see (the same points on each shared edge, in the same order), so
+every edge of the cluster stays used once in each direction; cancellation
+removes pairs and C3 removes whole components, so the mesh stays closed. The
+commit or `validate` decides the rest.
+
+**Termination.** Cluster growth adds faces and stops at the live face count `F`.
+One snap places at most `|H| |K| <= V F` points and triangulates each face once;
+a face holding `m` placed points becomes at most `2 m + 1` faces, so one snap
+makes at most `F + 2 V F` faces. Each cluster is seeded by problem faces, and a
+face seeds at most one cluster in a run, accepted or rejected, so a run takes at
+most `F` snaps. Closing passes stay bounded as in section 9 (one per input face)
+and each adds at most `F` snaps. The bound `F (V F + F + 2 V F)` per run joins
+`step_bound` before the first step and is asserted, as every bound in this
+file.
+
+**Movement.** Placed points are vertices that already exist: in closing,
+vertices of the same input; on the output, rounded vertices of the result. No
+vertex moves, so `moved_vertices`, `max_move` and `move_bound` keep their
+meaning. A face moves: every point of a face of `K` ends within the wide reach
+(twice the sum of the rounding radii of its corner and the placed point) of
+where it was, because each new face has corners on the old face or within that
+reach of it.
+
+**Volume.** Placements are applied in a fixed order (faces, then points by
+index), each replacing faces across the tetrahedron of the face and the point,
+as `Sheet::place` does; the exact volumes of those tetrahedra, summed, bound
+`vol(a xor a')` in closing and join `volume_bound` as in sections 8 and 9. On
+the output, `volume_bound` already adds the exact volume change between the
+draft and the output over the faces that differ.
+
+**Functions to change.**
+
+- `conform.rs`: `Sheet::commit` (overlap test across sides except between two
+  walls, cancellation of opposite pairs before the test, a count of them);
+  `Sheet` gains the wall flag per input face; `close_slots` counts
+  cancellations made in commits and calls a new `snap_cluster` when a pass
+  leaves paired faces; new `fn snap_cluster(&mut Sheet, seeds: &[usize]) ->
+  Option<f64>` (the volume of its tetrahedra) and `fn retriangulate(&mut Sheet,
+  f: usize, points: &[(u32, Option<usize>)])`.
+- `round.rs`: `Global::snap_cluster` with the same steps over the rounded
+  result, called in `run` after the descents end without a solid;
+  `global_step_bound` adds the bound above.
+- `ops.rs` (`boolean`) and `clip.rs`: a third retry with the corrected closing
+  after the current stages.
+- `RoundingReport` gains `snapped_clusters: usize`, with its `pyo3` binding,
+  `.pyi` stub and `spec.md` tolerance rule 5, in the commit that changes the
+  behaviour.
+
+**Tests that will prove it.** The four tests of this section run unchanged and
+pass, with the volume identity checked in rationals; a unit test snaps the
+footwall residue (the three slot faces, the sliver on the rim and their
+neighbours) by hand; a termination test asserts `steps <= step_bound` on a
+cluster built to grow to the whole mesh, run under the 4 GB scope first; the
+determinism test of section 9 takes the two cases; every attack, rounding and
+acceptance test passes as before.
