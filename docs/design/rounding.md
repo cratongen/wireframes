@@ -1016,9 +1016,36 @@ their shape, and an edge with more faces where one bounds no wedge joins them
 all, which keeps fewer copies and never opens a seam. Level splits a and d, the
 inclined split and the 120-stope split now pass unchanged.
 
-The level splits b and c and the split through a slot reach the rounding
-closed and still raise `uncertified`: they are failures of the rounding
+The level splits b and c and the split through a slot reached the rounding
+closed and still raised `uncertified`: they are failures of the rounding
 operations themselves, not of the split.
+
+**The split's draft against the boolean's.** Intersecting the block of level
+split b or c with a box whose top lies on the level certifies in stage 0 of
+`ops::boolean` (the plain run or the run with descents), with no conforming and
+no slot closing. So the gap lies in the draft the split builds. Two things
+differ: the boolean gives each exact point one copy per umbrella of faces about
+it and hands `materialize` one group per output shell, while the split gave a
+copy only where section points coincide and put all faces in one group. A part
+the first draft does not certify is now drafted the boolean's way and rounded
+again; the second result is kept only when it certifies, so every part
+certified before keeps its bytes. That certifies the split through a slot (each
+of its walls is cleaned up with its own shell). It does not certify b or c.
+
+**Level splits b and c.** In c the rounding loop ends with no crossings, one
+edge of four faces and six non-manifold vertices around it, and no descent
+lowers the count. The edge joins two rounded section points on the level, two
+cap faces and two faces above: a wall rising 25 m, and the upper part of an
+input face whose third corner lies 2.66e-11 m above the level and, in plan,
+almost on the edge's line. The input block holds a step 1.9e-11 m high there
+(two input vertices with equal `x` and `y`), left by the unions that built it.
+Rounding moves the two section points by about 1e-10 m in plan, more than the
+height of that face, so its half-plane about the edge swings past the wall and
+the faces no longer alternate in direction around the edge. Every operation of
+method C places the corner of that face at an existing point, and none of them
+moves it below the wall without inventing a coordinate. This is the gap section
+3.C names (a feature thinner than rounding with no hot point that repairs it),
+met inside one input. Not fixed in this pass.
 
 ## 12. Time
 

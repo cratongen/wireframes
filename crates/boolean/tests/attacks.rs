@@ -549,7 +549,6 @@ fn level_split_of_a_large_stope_block_through_its_vertex_does_not_panic() {
 /// `slots_a_few_ulps_wide_crossed_by_development` in `attacks_2.rs`, seed 1 of
 /// the larger layouts.
 #[test]
-#[ignore = "attack 2: the split raises uncertified (3 boundary edges, 35 self-intersections, 32 coplanar overlaps) for a block of 1330 faces with slots a few ulps wide"]
 fn split_through_a_slot_a_few_ulps_wide_is_two_solids() {
     split_holds("split_on_slot");
 }

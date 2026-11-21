@@ -105,6 +105,10 @@ All notable changes to wireframes are listed here. The format follows
 
 - Splits of rotated stope blocks through their own vertices no longer panic in
   `radial_pairs_at`: an edge with a face that bounds no wedge (corners on one
+- A split part the rounding does not certify is drafted again as a boolean
+  drafts its result (a vertex copy per umbrella of faces, each shell cleaned up
+  on its own) and kept when that certifies. A stope block with slots a few ulps
+  wide, split across strike through a slot, now gives two solids.
   line, or both ends at one point) is unpaired, so `Shells` reports it as
   non-manifold.
 - `split_by_plane` no longer hands the rounding an open part. It found shells on
@@ -182,8 +186,8 @@ All notable changes to wireframes are listed here. The format follows
   starts with `uncertified`. Ignored tests in `crates/boolean/tests/attacks.rs`
   keep the cases that still raise it: eight stopes in two levels against a
   common wall at dip 89.6 minus a drive on their floor; two level splits of a
-  rotated stope block through its own vertices, and a split through a slot a
-  few ulps wide; the third union and difference of a raise in a worked
+  rotated stope block through its own vertices; the third union and
+  difference of a raise in a worked
   orebody; and the running union of ten pushbacks clipped by one ground.
 - Some booleans on inputs of a few thousand faces take minutes: the running
   union of pushbacks took 359 s and 881 s, and a difference in a worked

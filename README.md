@@ -205,10 +205,10 @@ tonnage without warning. `wireframes` enforces three rules:
     drive along strike. One case a property test found later still raises
     `wf.KernelError` (`uncertified`) and is ignored: stacked stopes at dip 89.6
     minus a drive on their floor. A third round of mining scenarios
-    (`crates/boolean/tests/attacks_2.rs`) added thirteen ignored cases; four
-    splits of stope blocks through their own vertices now give solids, while
-    two level splits of one block and one split through a slot a few ulps
-    wide still raise `uncertified`, and a repeated union then
+    (`crates/boolean/tests/attacks_2.rs`) added thirteen ignored cases; five
+    splits of stope blocks through their own vertices or a slot a few ulps
+    wide now give solids, while two level splits of one block still raise
+    `uncertified`, and a repeated union then
     difference of a raise in a worked orebody and the running union of
     pushbacks clipped by one ground raise `uncertified` or take minutes on a
     few thousand faces. Intersecting the block with a box whose top lies on

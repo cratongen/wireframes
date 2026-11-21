@@ -286,8 +286,8 @@ No other dependency without a line in this table.
    floor, found by the property test of `rounding.md` section 10) and runs as an
    ignored test. The mining scenarios of `crates/boolean/tests/attacks_2.rs`
    found more, each kept as an ignored test marked `attack 2`: two level splits
-   of a rotated stope block through its own vertices and a split through a slot
-   a few ulps wide, repeated union then difference of a raise in a worked
+   of a rotated stope block through its own vertices, repeated union then
+   difference of a raise in a worked
    orebody, and the running union of pushbacks clipped by one ground. Tests that
    meet the limit read the mesh from the
    error and keep their checks on it, and report the failure rate, never hide it.
@@ -1173,6 +1173,11 @@ shares their copy, so each part reaches the rounding closed. Each part is then r
 rule 5 describes: the cleanup of section 6.2 item 7 with the exact plane normal of
 each face (the input face's for side faces, `normal` or its opposite for cap
 faces), then, for a closed input, the operations over all shells (C1 to C5).
+A part of a closed input that this does not certify is drafted again as a boolean
+drafts its result, and rounded again: each point gets a copy per umbrella of faces
+about it (faces joined across its edges as `Shells` joins them), and each shell is
+cleaned up on its own. The second draft is kept only when it certifies, so a part
+certified by the first is unchanged.
 `split_by_plane_report` returns the two parts with a `RoundingReport` each. When a
 part of a closed mesh is not a solid, the input is validated: for a solid input the
 part errors with `Error::Kernel` carrying its report and mesh (`"uncertified:
