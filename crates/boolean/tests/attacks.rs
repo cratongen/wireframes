@@ -374,3 +374,23 @@ fn split_along_own_face_h_is_two_solids() {
 fn split_along_own_face_i_is_two_solids() {
     split_holds("split_face_i");
 }
+
+/// `stope_chain_minus_drive` cropped by planes around the slot whose walls
+/// cross after rounding: the stope chain within a box about 3.7 m along
+/// strike, 9.9 m across and 6.6 m high, minus the drive cut 0.5 m beyond it.
+#[test]
+#[ignore = "rounding 2: the closed copy of the stope chain is not a solid, so the slot stays open and the drive crossings on its walls cross"]
+fn stope_chain_minus_a_drive_reduced_is_a_solid() {
+    identity_holds("stope_chain_minus_drive_reduced", Op::Difference);
+}
+
+/// `stopes_dipping_62_minus_footwall_drive` with the stope block cropped to
+/// a box 54.5 m wide about the slot that stays open, minus the whole drive.
+#[test]
+#[ignore = "rounding 2: a slot whose rim face is itself thinner than rounding stays open after closing, and the drive's crossings on its walls cross"]
+fn stopes_dipping_62_minus_a_footwall_drive_reduced_is_a_solid() {
+    identity_holds(
+        "stopes_dipping_62_minus_footwall_drive_reduced",
+        Op::Difference,
+    );
+}
