@@ -3,15 +3,16 @@
 `wireframes` reads, writes, plots, measures and combines 3D solids, surfaces and strings for mining, geology and
 petroleum. A Rust core does the geometry with exact predicates; you call it from Python as `import wireframes as wf`.
 
-No release is published yet: there are no wheels on PyPI, so `pip install wireframes` does not work. Build the
-wheel from a clone of the repository; this needs a Rust toolchain.
+The pre-release `0.1.0a1` is on PyPI. pip installs a pre-release only when you ask for one:
 
 ```sh
-pip install maturin
-maturin build --release --out dist   # in the repository root
-pip install dist/wireframes-*.whl    # numpy is the only required dependency
-pip install matplotlib               # optional, for wf.plot (the wireframes[plot] extra)
+pip install --pre wireframes           # numpy is the only required dependency
+pip install --pre "wireframes[plot]"   # adds matplotlib, for wf.plot
 ```
+
+PyPI has wheels for Linux x86_64 and aarch64 (glibc 2.28 or newer), macOS (Intel and Apple silicon) and
+Windows x64, for CPython 3.11 and newer. On another platform pip builds wireframes from the sdist, which needs a
+Rust toolchain.
 
 ## A first look
 

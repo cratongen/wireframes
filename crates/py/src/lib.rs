@@ -11,7 +11,11 @@ mod validate;
 
 #[pymodule]
 fn _wireframes(m: &Bound<PyModule>) -> PyResult<()> {
-    m.add("__version__", env!("CARGO_PKG_VERSION"))?;
+    let version = env!("CARGO_PKG_VERSION")
+        .replace("-alpha.", "a")
+        .replace("-beta.", "b")
+        .replace("-rc.", "rc");
+    m.add("__version__", version)?;
     containers::register(m)?;
     validate::register(m)?;
     io::register(m)?;

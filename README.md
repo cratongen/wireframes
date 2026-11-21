@@ -269,11 +269,13 @@ tonnage without warning. `wireframes` enforces three rules:
   ```sh
   mise -C ../boitata run verify   # boitata checked out next to wireframes
   ```
-- **Status**: not started. No release is tagged, no wheels are on PyPI, there
-  is no CI pipeline, and boitata does not depend on wireframes yet. Until the
-  first release, users build the wheel from a clone with `maturin build`
-  (docs/index.md shows the steps). `mise run compat` checks that the locally
-  built wheel installs with pip, uv, pixi and conda.
+- **Status**: partial. The pre-release `0.1.0a1` is on PyPI: install it with
+  `pip install --pre wireframes`. It has wheels for Linux x86_64 and aarch64
+  (glibc 2.28 or newer), macOS (Intel and Apple silicon) and Windows x64, and
+  pip builds from the sdist on other platforms. The release workflow builds and
+  tests each wheel when a `v*` tag is pushed. Pull requests have no CI yet, and
+  boitata does not depend on wireframes yet. `mise run compat` checks that a
+  locally built wheel installs with pip, uv, pixi and conda.
 
 ## Performance
 
@@ -283,7 +285,7 @@ threads). The `validate`, boolean and slicing rows are medians of three runs at 
 `cf79bfb` on 2026-11-20, interleaved with three runs of `ba8a660`, the commit before
 the rounding work (1-minute load 7.9 to 16.5); the boolean rows include the `validate`
 call each boolean runs on its result. The other rows come from commit `5d5ab30` on
-2026-11-19. The [performance page](docs/performance.md) lists the commands, versions,
+2026-11-19. The [performance page](https://github.com/cratongen/wireframes/blob/main/docs/performance.md) lists the commands, versions,
 confidence intervals, load, the before and after rows and the results for every kernel
 and reader. Comparison with other libraries: not measured.
 

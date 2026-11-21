@@ -1223,7 +1223,7 @@ dependencies = [
 
 [[package]]
 name = "wireframes-boolean"
-version = "0.1.0"
+version = "0.1.0-alpha.1"
 dependencies = [
  "criterion",
  "num-bigint",
@@ -1236,7 +1236,7 @@ dependencies = [
 
 [[package]]
 name = "wireframes-build"
-version = "0.1.0"
+version = "0.1.0-alpha.1"
 dependencies = [
  "criterion",
  "proptest",
@@ -1250,7 +1250,7 @@ dependencies = [
 
 [[package]]
 name = "wireframes-core"
-version = "0.1.0"
+version = "0.1.0-alpha.1"
 dependencies = [
  "num-bigint",
  "num-rational",
@@ -1262,7 +1262,7 @@ dependencies = [
 
 [[package]]
 name = "wireframes-io"
-version = "0.1.0"
+version = "0.1.0-alpha.1"
 dependencies = [
  "criterion",
  "flate2",
@@ -1273,7 +1273,7 @@ dependencies = [
 
 [[package]]
 name = "wireframes-ops"
-version = "0.1.0"
+version = "0.1.0-alpha.1"
 dependencies = [
  "proptest",
  "rayon",
@@ -1282,7 +1282,7 @@ dependencies = [
 
 [[package]]
 name = "wireframes-py"
-version = "0.1.0"
+version = "0.1.0-alpha.1"
 dependencies = [
  "numpy",
  "pyo3",
@@ -1296,7 +1296,7 @@ dependencies = [
 
 [[package]]
 name = "wireframes-query"
-version = "0.1.0"
+version = "0.1.0-alpha.1"
 dependencies = [
  "criterion",
  "proptest",

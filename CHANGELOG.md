@@ -6,6 +6,10 @@ All notable changes to wireframes are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.1.0a1] - 2026-11-21
+
+The first pre-release on PyPI.
+
 ### Added
 
 - Booleans, `clip_by_surface` and `split_by_plane` round exact results with
