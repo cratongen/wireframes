@@ -269,13 +269,17 @@ No other dependency without a line in this table.
    when it is a solid. No vertex moves; the tetrahedra of each insertion and
    flip and the exact volume of each removed void bound the volume change,
    which joins `volume_bound`, and the report
-   counts the insertions, flips and cancelled faces with the rest. The difference of
+   counts the insertions, flips and cancelled faces with the rest. When those
+   runs are not certified either, closing runs once more with a stricter commit
+   (`rounding.md` section 10): a made face is tested against every live face near
+   it except a face of the opposite wall of a slot, and a made face that cancels
+   a live face on the same three vertices is left out of the test with that face.
+   The difference of
    pits clipped by one topography and `(s2 - s1).clip_by_surface(topo)` both return
    solids. The rounding has no general 3D validity theorem, so `uncertified` stays
-   possible; two input classes in `crates/boolean/tests/attacks.rs` still meet it (a
-   chain of grid stopes against a common wall at strike 271.3 and dip 85 minus a drive
-   along strike, and stopes dipping 62.5 degrees minus a drive on their floor) and run as
-   ignored tests. Tests that meet the limit read the mesh from the
+   possible; one input class in `crates/boolean/tests/attacks.rs` still meets it
+   (stopes dipping 62.5 degrees minus a drive on their floor, and a cropped stope
+   chain minus a drive) and runs as ignored tests. Tests that meet the limit read the mesh from the
    error and keep their checks on it, and report the failure rate, never hide it.
 
 ## 3. wireframes-core

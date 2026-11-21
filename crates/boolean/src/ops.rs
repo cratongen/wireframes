@@ -375,7 +375,14 @@ pub fn boolean(a: &Mesh, b: &Mesh, op: Op, opts: &BooleanOptions) -> Result<Bool
     let (mut mesh, mut face_source, mut rounding, mut certified) = run(&a, &b, false)?;
     let conformed = if certified { None } else { conform(&a, &b)? };
     let mut closed = None;
-    for (stage, descend) in [(0, false), (0, true), (1, false), (1, true)] {
+    for (stage, descend) in [
+        (0, false),
+        (0, true),
+        (1, false),
+        (1, true),
+        (2, false),
+        (2, true),
+    ] {
         if certified {
             break;
         }
@@ -386,8 +393,8 @@ pub fn boolean(a: &Mesh, b: &Mesh, op: Op, opts: &BooleanOptions) -> Result<Bool
                 break;
             }
         }
-        if stage == 1 && !descend {
-            closed = close_and_conform(&a, &b)?;
+        if stage > 0 && !descend {
+            closed = close_and_conform(&a, &b, stage == 2)?;
         }
         let Some(c) = (if stage == 0 { &conformed } else { &closed }) else {
             continue;

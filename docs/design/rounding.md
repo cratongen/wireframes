@@ -860,3 +860,23 @@ neighbours) by hand; a termination test asserts `steps <= step_bound` on a
 cluster built to grow to the whole mesh, run under the 4 GB scope first; the
 determinism test of section 9 takes the two cases; every attack, rounding and
 acceptance test passes as before.
+
+### Step 1 landed: the strict commit
+
+`Sheet` carries a `strict` flag and a wall flag per input face; only a third
+closing retry, after the closing of section 9 and its runs, sets them, so a
+result certified before runs the same code (`results_certified_before_rounding_2_are_unchanged`
+pins five of them by a hash of their bytes). With the flag, a commit tests a made
+face against every live face near it except a face of the opposite colour when
+both are walls, and leaves out of the test each made face that has a live face
+on the same three vertices in opposite orientation, together with that face;
+the pair cancels at the end of the pass as before. This departs from the
+decision above in one point: the commit does not cancel such pairs itself, it
+only exempts them, so the undo log and the edge maps stay as they were and the
+cancellation count is the one the pass already makes. Termination and bounds
+are those of section 9: the commit decides which steps are kept, not how many
+are tried.
+
+`stope_chain_minus_a_drive_along_strike_is_a_solid` now passes unchanged,
+difference and intersection, with the volume identity in rationals. The
+reduced chain and both footwall cases still raise `uncertified`.

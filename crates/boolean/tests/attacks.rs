@@ -288,7 +288,6 @@ fn third_difference_of_a_turned_body_is_a_solid() {
 /// dip 85 at UTM coordinates, united one at a time, minus a drive along
 /// strike through all of them.
 #[test]
-#[ignore = "attack: stope chain minus a drive along strike raises KernelError for union, difference and intersection"]
 fn stope_chain_minus_a_drive_along_strike_is_a_solid() {
     identity_holds("stope_chain_minus_drive", Op::Difference);
 }

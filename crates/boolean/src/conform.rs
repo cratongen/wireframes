@@ -39,6 +39,11 @@ struct Sheet {
     live: usize,
     /// Flip attempts edge recovery has made.
     attempts: usize,
+    /// Per input face, whether it is a wall of a slot under closing.
+    wall: Vec<bool>,
+    /// Commits test faces of different sides unless both are walls, and skip
+    /// made faces that cancel a live face with the face they cancel.
+    strict: bool,
 }
 
 /// Whether faces `a` and `b`, with corners equal by coordinates counted as
@@ -95,6 +100,8 @@ impl Sheet {
             log: vec![],
             live: 0,
             attempts: 0,
+            wall: vec![],
+            strict: false,
         };
         for (i, p) in m.vertices().iter().enumerate() {
             s.at.entry(key(*p)).or_insert(i as u32);
@@ -116,8 +123,23 @@ impl Sheet {
             .map(|(f, _)| *f)
             .collect();
         let flat = |c: [[f64; 3]; 3]| collinear3(c[0], c[1], c[2]);
+        let cancels: HashSet<usize> = if self.strict {
+            made.iter()
+                .filter_map(|&f| self.twin(f).map(|g| [f, g]))
+                .flatten()
+                .collect()
+        } else {
+            HashSet::new()
+        };
+        let wall = |s: &Sheet, f: usize| s.wall.get(s.src[f] as usize).copied().unwrap_or(false);
+        let apart = |s: &Sheet, f: usize, g: usize| {
+            s.side[g] != s.side[f] && (!s.strict || wall(s, f) && wall(s, g))
+        };
         let ok = !made.iter().any(|&f| flat(self.corners(f)))
             && made.iter().all(|&f| {
+                if cancels.contains(&f) {
+                    return true;
+                }
                 let c = self.corners(f);
                 let mut near = vec![];
                 self.boxes
@@ -126,7 +148,8 @@ impl Sheet {
                     self.kids[o].iter().all(|&g| {
                         g == f
                             || !self.alive[g]
-                            || self.side[g] != self.side[f]
+                            || apart(self, f, g)
+                            || cancels.contains(&g)
                             || flat(self.corners(g))
                             || !clash(c, self.corners(g))
                     })
@@ -143,6 +166,17 @@ impl Sheet {
         }
         self.log.clear();
         ok
+    }
+
+    /// A live face other than `f` on the same three vertices in the opposite
+    /// orientation.
+    fn twin(&self, f: usize) -> Option<usize> {
+        let [a, b, c] = self.t[f];
+        let back = [[a, c, b], [c, b, a], [b, a, c]];
+        self.inc[a as usize]
+            .iter()
+            .copied()
+            .find(|&g| g != f && self.alive[g] && back.contains(&self.t[g]))
     }
 
     fn revive(&mut self, f: usize) {
@@ -602,7 +636,7 @@ pub(crate) fn conform(a: &Mesh, b: &Mesh) -> Result<Option<Conformed>> {
 /// the conforming counts and the bound on the volume between the input and the
 /// result; `None` when there is no slot, the pairs do not two-colour, or the
 /// result is not a solid.
-fn close_slots(m: &Mesh) -> Result<Option<Closed>> {
+fn close_slots(m: &Mesh, strict: bool) -> Result<Option<Closed>> {
     if m.is_empty() || !m.is_closed() {
         return Ok(None);
     }
@@ -726,6 +760,10 @@ fn close_slots(m: &Mesh) -> Result<Option<Closed>> {
     let merged = Mesh::new(v.clone(), tris.clone())?;
     let mut sh = Sheet::new(&merged, &side);
     sh.live = sh.alive.len();
+    if strict {
+        sh.strict = true;
+        sh.wall = colour.iter().map(Option::is_some).collect();
+    }
     let bound = step_bound(2 * v.len(), tris.len());
     let (mut inserted, mut flips, mut volume, mut steps) = (0, 0, 0.0, 0);
     let mut done: HashSet<(u32, bool)> = HashSet::new();
@@ -942,10 +980,10 @@ fn thin_voids(v: &[[f64; 3]], tris: &[[u32; 3]]) -> Result<(Vec<usize>, f64)> {
 /// most once per face of `m`: each pass cancels at least two faces of what
 /// the last pass left, and the counter bounds the passes whatever conforming
 /// adds. The passes' counts, sources and bounds compose.
-fn close_all(m: &Mesh) -> Result<Option<Closed>> {
+fn close_all(m: &Mesh, strict: bool) -> Result<Option<Closed>> {
     let mut acc: Option<Closed> = None;
     for _ in 0..m.n_faces() {
-        let Some(next) = close_slots(acc.as_ref().map_or(m, |c| &c.mesh))? else {
+        let Some(next) = close_slots(acc.as_ref().map_or(m, |c| &c.mesh), strict)? else {
             break;
         };
         acc = Some(match acc {
@@ -983,8 +1021,8 @@ struct Closed {
 /// `a` and `b` with their thin slots closed ([`close_slots`]), then conformed
 /// where they agree to rounding ([`conform`]); `None` when neither input has a
 /// slot to close.
-pub(crate) fn close_and_conform(a: &Mesh, b: &Mesh) -> Result<Option<Conformed>> {
-    let closed = [close_all(a)?, close_all(b)?];
+pub(crate) fn close_and_conform(a: &Mesh, b: &Mesh, strict: bool) -> Result<Option<Conformed>> {
+    let closed = [close_all(a, strict)?, close_all(b, strict)?];
     if closed.iter().all(Option::is_none) {
         return Ok(None);
     }
@@ -1090,7 +1128,7 @@ mod tests {
     #[test]
     fn closing_the_slots_of_rotated_stopes_ends_within_its_bounds() {
         let m = first_input("stopes_dipping_62_minus_drive");
-        let c = close_all(&m).unwrap().expect("slots to close");
+        let c = close_all(&m, false).unwrap().expect("slots to close");
         assert!(c.steps <= c.step_bound);
         assert!(c.cancelled > 0 && c.mesh.n_faces() < m.n_faces() + 2 * c.inserted);
         assert!(c.mesh.validate(0.0).unwrap().summary.is_solid());
@@ -1107,6 +1145,6 @@ mod tests {
             [700000.0, 7500000.0, -600.0],
             [700010.0, 7500020.0, -580.0],
         );
-        assert!(close_all(&m).unwrap().is_none());
+        assert!(close_all(&m, false).unwrap().is_none());
     }
 }

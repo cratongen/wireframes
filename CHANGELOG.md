@@ -18,6 +18,9 @@ All notable changes to wireframes are listed here. The format follows
   splits of `sphere(2)`, the pushback booleans, the rotated stopes and union 11
   of example 07 now give solids, and the six skipped Python acceptance tests and
   the ignored Rust one run.
+- Closing thin slots retries with a stricter commit when the first closing is
+  not certified, so sixteen grid stopes against a common wall at strike 271.3
+  and dip 85 minus a drive along strike now give a solid.
 
 - Rust workspace with `core` (mesh, polylines, point sets, typed tables, exact
   predicates, validation), `io`, `ops` (measures, repair, components,
@@ -154,10 +157,10 @@ All notable changes to wireframes are listed here. The format follows
 
 - Rounding has no general 3D validity theorem: a boolean, clip or split the
   rounding operations cannot certify raises `wf.KernelError` whose message
-  starts with `uncertified`. Two adversarial cases still raise it and run as
-  ignored tests in `crates/boolean/tests/attacks.rs`: sixteen grid stopes
-  against a common wall at strike 271.3 and dip 85 minus a drive along strike,
-  and stopes dipping 62.5 degrees minus a drive on their floor.
+  starts with `uncertified`. Adversarial cases still raise it and run as
+  ignored tests in `crates/boolean/tests/attacks.rs`: stopes dipping 62.5
+  degrees minus a drive on their floor, and a cropped chain of grid stopes
+  against a common wall minus a drive along strike.
 - `loft` does not branch, `extrude` has no path sweep, and `offset` is not a
   Minkowski offset.
 - No real Datamine Studio export is tested yet.

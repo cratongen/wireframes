@@ -178,7 +178,14 @@ pub fn clip_by_surface(solid: &Mesh, surface: &Mesh, opts: &BooleanOptions) -> R
         conform(&a, &b)?
     };
     let mut closed = None;
-    for (stage, descend) in [(0, false), (0, true), (1, false), (1, true)] {
+    for (stage, descend) in [
+        (0, false),
+        (0, true),
+        (1, false),
+        (1, true),
+        (2, false),
+        (2, true),
+    ] {
         if parts[0].2 && parts[1].2 {
             break;
         }
@@ -189,8 +196,8 @@ pub fn clip_by_surface(solid: &Mesh, surface: &Mesh, opts: &BooleanOptions) -> R
                 break;
             }
         }
-        if stage == 1 && !descend {
-            closed = close_and_conform(&a, &b)?;
+        if stage > 0 && !descend {
+            closed = close_and_conform(&a, &b, stage == 2)?;
         }
         let Some(c) = (if stage == 0 { &conformed } else { &closed }) else {
             continue;
