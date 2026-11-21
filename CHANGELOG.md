@@ -96,6 +96,15 @@ All notable changes to wireframes are listed here. The format follows
 
 ### Fixed
 
+- Splits of rotated stope blocks through their own vertices no longer panic in
+  `radial_pairs_at`: an edge with a face that bounds no wedge (corners on one
+  line, or both ends at one point) is unpaired, so `Shells` reports it as
+  non-manifold.
+- `split_by_plane` no longer hands the rounding an open part. It found shells on
+  the rounded section points and skipped faces that rounding flattens, so such
+  a face got its own copy of a section point shared by touching shells and came
+  apart from its neighbours. The level splits a and d, the inclined split and
+  the 120-stope level split in `attacks.rs` now give two solids.
 - Exact arithmetic no longer underflows or overflows: an expansion operation
   that would leave the `f64` range continues on an integer times a power of
   two, and `orient2d`, `orient3d`, `incircle` and `insphere` fall back to it
@@ -165,13 +174,10 @@ All notable changes to wireframes are listed here. The format follows
   rounding operations cannot certify raises `wf.KernelError` whose message
   starts with `uncertified`. Ignored tests in `crates/boolean/tests/attacks.rs`
   keep the cases that still raise it: eight stopes in two levels against a
-  common wall at dip 89.6 minus a drive on their floor; splits of rotated
-  stope blocks by a level or inclined plane through one of their own
-  vertices, and a split through a slot a few ulps wide; the third union and
-  difference of a raise in a worked orebody; and the running union of ten
-  pushbacks clipped by one ground.
-- Two of those splits panic in the rounding (`radial_pairs_at` in
-  `crates/core/src/topology.rs`) instead of raising `wf.KernelError`.
+  common wall at dip 89.6 minus a drive on their floor; two level splits of a
+  rotated stope block through its own vertices, and a split through a slot a
+  few ulps wide; the third union and difference of a raise in a worked
+  orebody; and the running union of ten pushbacks clipped by one ground.
 - Some booleans on inputs of a few thousand faces take minutes: the running
   union of pushbacks took 359 s and 881 s, and a difference in a worked
   orebody 243 s, each in one release run (not a benchmark).

@@ -504,7 +504,6 @@ fn third_difference_of_a_raise_from_a_worked_orebody_finishes_within_a_minute() 
 /// `stope_blocks_split_by_planes_through_their_vertices_and_clipped_by_faults`
 /// in `attacks_2.rs`, seed 11.
 #[test]
-#[ignore = "attack 2: the split panics in round::run (Shells::new, radial_pairs_at: third corner off the edge) for 152 faces"]
 fn split_of_a_stope_block_by_an_inclined_plane_through_its_vertex_does_not_panic() {
     split_holds("split_block_inclined_panic");
 }
@@ -512,7 +511,6 @@ fn split_of_a_stope_block_by_an_inclined_plane_through_its_vertex_does_not_panic
 /// A twelve-stope layout as above, seed 1, split by the horizontal plane
 /// through one of its own vertices.
 #[test]
-#[ignore = "attack 2: the split raises uncertified (3 boundary edges, 1 non-manifold edge, 23 self-intersections) for 138 faces"]
 fn level_split_of_a_stope_block_through_its_vertex_a_is_two_solids() {
     split_holds("split_block_level_a");
 }
@@ -533,7 +531,6 @@ fn level_split_of_a_stope_block_through_its_vertex_c_is_two_solids() {
 
 /// Seed 19, a horizontal plane through one of its vertices.
 #[test]
-#[ignore = "attack 2: the split raises uncertified (6 degenerate faces, 9 boundary edges, 3 non-manifold edges) for 166 faces"]
 fn level_split_of_a_stope_block_through_its_vertex_d_is_two_solids() {
     split_holds("split_block_level_d");
 }
@@ -542,7 +539,6 @@ fn level_split_of_a_stope_block_through_its_vertex_d_is_two_solids() {
 /// levels) united one at a time, split by the horizontal plane through one of
 /// its own vertices. Seed 1 of the larger layouts.
 #[test]
-#[ignore = "attack 2: the split panics in round::run (Shells::new, radial_pairs_at: index out of bounds) for 1822 faces"]
 fn level_split_of_a_large_stope_block_through_its_vertex_does_not_panic() {
     split_holds("split_large_block_index_panic");
 }

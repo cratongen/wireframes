@@ -504,7 +504,7 @@ with each kept removal. Between two other operations the loop can therefore
 take at most as many removals as there are live faces, and a removal can never
 undo the one before it. With this change the pits union returns a solid; the
 three chains (lids, caps, the turned body) finish too, then needed the descent
-below.
+operations themselves, not of the split.
 
 ### Sub-ulp parts with crossing faces
 
@@ -983,3 +983,39 @@ non-manifold vertices and three crossings, all between faces of the stope block
 where the drive crosses a near-vertical wall along a line of rounded points a
 few millimetres apart in `x` and `y`. No single change lowers the count from
 there. It is not reduced and not traced further in this pass.
+
+## 11. Attack 2: splits through a block's own vertices
+
+The mining scenarios of `attacks_2.rs` split twelve- and 120-stope blocks,
+turned to strike and dip at UTM coordinates, by planes through their own
+vertices. Seven splits failed: two panicked and five raised `uncertified`.
+Two defects caused four of them; neither is in the rounding operations.
+
+**The panics.** `radial_pairs_at` required every face around an edge to hold
+one corner at each end and a third off their line, and panicked otherwise
+(`third corner off the edge`, or an index of 3 when both ends of the edge share
+coordinates). `validate` keeps that precondition by building its edge map
+without degenerate faces, but C3 builds `Shells` over the live mesh of the
+rounding loop, where flat faces and faces with two corners on one point are
+ordinary states. Such a face bounds no wedge, so the edge is now
+`Radial::Unbalanced` and `Shells` reports it as non-manifold, which is what it
+is (`faces_that_bound_no_wedge_leave_an_edge_unpaired`).
+
+**The open draft.** With the panic gone, both cases and two of the level splits
+raised `uncertified` with boundary edges. Instrumenting `split_by_plane_report`
+showed that each part's faces, counted by section point, were closed, while the
+draft handed to `materialize` had 4 to 12 edges used unevenly. Section points at
+one exact position (shells of the block touching on the plane) get one copy
+per output shell, and `shells_of` labelled shells on the rounded section points
+with degenerate faces skipped. A face that is a triangle exactly but whose
+corners round onto one line (in the level split a, a wall face whose two
+section points differ by 9e-11 m in `z`) got no label, hence a copy of its own,
+and came apart from its neighbours: an open draft no rounding can certify.
+`shells_of` now keeps every face. An edge with two faces joins them whatever
+their shape, and an edge with more faces where one bounds no wedge joins them
+all, which keeps fewer copies and never opens a seam. Level splits a and d, the
+inclined split and the 120-stope split now pass unchanged.
+
+The level splits b and c and the split through a slot reach the rounding
+closed and still raise `uncertified`: they are failures of the rounding
+operations themselves, not of the split.

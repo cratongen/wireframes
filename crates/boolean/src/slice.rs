@@ -4,7 +4,6 @@ use std::collections::{HashMap, HashSet};
 use rayon::prelude::*;
 use wireframes_core::predicates::{Sign, orient2d_axis};
 use wireframes_core::topology::Shells;
-use wireframes_core::validate::degenerate_mask;
 use wireframes_core::{Column, EdgeMap, Error, Mesh, Polylines, Result, Table};
 
 use crate::hp::{self, Pt};
@@ -176,8 +175,7 @@ fn shells_of(
         ids.iter().map(|&g| coords(g)).collect(),
         list.iter().map(|(t, _)| t.map(at)).collect(),
     )?;
-    let skip = degenerate_mask(&m);
-    Ok(Shells::new(&m, &EdgeMap::new(&m, Some(&skip))).of)
+    Ok(Shells::new(&m, &EdgeMap::new(&m, None)).of)
 }
 
 /// `(negative, positive)`; points on the plane go to positive.

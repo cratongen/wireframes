@@ -285,12 +285,11 @@ No other dependency without a line in this table.
    stopes in two levels against a common wall at dip 89.6 minus a drive on their
    floor, found by the property test of `rounding.md` section 10) and runs as an
    ignored test. The mining scenarios of `crates/boolean/tests/attacks_2.rs`
-   found more, each kept as an ignored test marked `attack 2`: splits of rotated
-   stope blocks through their own vertices and through a slot a few ulps wide,
-   repeated union then difference of a raise in a worked orebody, and the
-   running union of pushbacks clipped by one ground. Two of the splits panic in
-   `radial_pairs_at` instead of raising `uncertified`, a defect against this
-   rule. Tests that meet the limit read the mesh from the
+   found more, each kept as an ignored test marked `attack 2`: two level splits
+   of a rotated stope block through its own vertices and a split through a slot
+   a few ulps wide, repeated union then difference of a raise in a worked
+   orebody, and the running union of pushbacks clipped by one ground. Tests that
+   meet the limit read the mesh from the
    error and keep their checks on it, and report the failure rate, never hide it.
 
 ## 3. wireframes-core
@@ -1167,7 +1166,10 @@ Crossing points on edges are exact implicit points, and they stay exact through
 the cap. Section points of a closed mesh at the same exact position (shells touching
 on the plane) are one point of the cap triangulation, represented by an input vertex
 when one of them is; each output shell then gets its own copy of such a point, so
-touching shells stay apart in both parts. Each part is then rounded as tolerance
+touching shells stay apart in both parts. Shells are found by joining faces across
+every edge with two faces, whatever their rounded shape: a face that is a triangle
+exactly but whose corners round onto one line stays in its neighbours' shell and
+shares their copy, so each part reaches the rounding closed. Each part is then rounded as tolerance
 rule 5 describes: the cleanup of section 6.2 item 7 with the exact plane normal of
 each face (the input face's for side faces, `normal` or its opposite for cap
 faces), then, for a closed input, the operations over all shells (C1 to C5).
