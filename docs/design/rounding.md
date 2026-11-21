@@ -1019,3 +1019,28 @@ inclined split and the 120-stope split now pass unchanged.
 The level splits b and c and the split through a slot reach the rounding
 closed and still raise `uncertified`: they are failures of the rounding
 operations themselves, not of the split.
+
+## 12. Time
+
+The attack cases that certify but take minutes spend their time in two places
+(release build, one profiled run each, not a benchmark). In the union of the
+lid chain, `insert_hot_points` took 8.2 of 13.4 s of rounding: every insertion,
+collapse, flip and flat-face split looked for faces on an edge or at a vertex by
+scanning every face ever made. `Global` now keeps, per vertex, every face that
+held it at some write; a lookup filters that list by liveness and current
+corners and sorts it, so it returns the faces a scan returns, in the same
+order, and results keep their bytes
+(`the_vertex_index_finds_what_a_scan_finds`). Faces are written only by `push`,
+`merge_equal`, `join_opposite` and `collapse`, and each lists the face it
+writes; a face that dies and comes back keeps its corners, so it is still
+listed.
+
+In the chain difference and the pushback union of `attacks.rs` the descent
+takes most of the time (34 of 38 s, and 87 of 104 s): for each candidate
+change it validates the faces whose boxes meet the changed region twice, before
+and after, about 5 ms per candidate over 8693 candidates in the chain
+difference. Counting only the problems that involve a changed face would make
+that local, but the count must equal `validate`'s exactly for the descent to
+choose the same change, which needs `validate`'s pair tests and edge rules
+exposed per face. Not done in this pass; the tests that ask these cases to
+finish within a minute in the debug build stay ignored.

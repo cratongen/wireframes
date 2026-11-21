@@ -634,6 +634,9 @@ struct Global {
     /// Per vertex, the largest distance per axis from its coordinates to the
     /// exact position of any exact vertex that ended at it, rounded up.
     span: Vec<[f64; 3]>,
+    /// Per vertex, every face that held it at some write of that face. Entries
+    /// are never removed, so a stale one is filtered by [`Global::faces_at`].
+    at: Vec<Vec<u32>>,
 }
 
 /// A local change [`Global::descend`] tries.
@@ -740,6 +743,53 @@ impl Global {
         (0..self.tris.len()).filter(|&f| self.alive[f])
     }
 
+    /// Lists face `f` under its corners; called after every write of `f`.
+    fn note(&mut self, f: usize) {
+        for i in self.tris[f] {
+            let i = i as usize;
+            if self.at.len() <= i {
+                self.at.resize(i + 1, vec![]);
+            }
+            if self.at[i].last() != Some(&(f as u32)) {
+                self.at[i].push(f as u32);
+            }
+        }
+    }
+
+    fn index(&mut self) {
+        self.at = vec![vec![]; self.v.len()];
+        for f in 0..self.tris.len() {
+            self.note(f);
+        }
+    }
+
+    /// The live faces holding vertex `v`, ascending: what a scan of
+    /// [`Global::live`] for `v` finds.
+    fn faces_at(&self, v: u32) -> Vec<usize> {
+        let Some(list) = self.at.get(v as usize) else {
+            return vec![];
+        };
+        let mut fs: Vec<usize> = list
+            .iter()
+            .map(|&f| f as usize)
+            .filter(|&f| self.alive[f] && self.tris[f].contains(&v))
+            .collect();
+        fs.sort_unstable();
+        fs.dedup();
+        fs
+    }
+
+    /// The live faces running the directed edge `a` to `b`, ascending.
+    fn running(&self, a: u32, b: u32) -> Vec<usize> {
+        self.faces_at(a)
+            .into_iter()
+            .filter(|&x| {
+                let u = self.tris[x];
+                (0..3).any(|k| u[k] == a && u[(k + 1) % 3] == b)
+            })
+            .collect()
+    }
+
     /// The live faces as a mesh of the vertices they use, with the face
     /// index of each.
     fn mesh(&self) -> Result<(Mesh, Vec<usize>)> {
@@ -792,7 +842,10 @@ impl Global {
                     continue;
                 }
                 let t = self.tris[f].map(|i| self.to[i as usize]);
-                self.tris[f] = t;
+                if t != self.tris[f] {
+                    self.tris[f] = t;
+                    self.note(f);
+                }
                 if t[0] == t[1] || t[1] == t[2] || t[0] == t[2] {
                     self.alive[f] = false;
                 }
@@ -1058,10 +1111,9 @@ impl Global {
             }
             joined = true;
             self.to[gone as usize] = keep;
-            for g in 0..self.tris.len() {
-                if self.alive[g] && self.tris[g].contains(&gone) {
-                    self.tris[g] = self.tris[g].map(|i| if i == gone { keep } else { i });
-                }
+            for g in self.faces_at(gone) {
+                self.tris[g] = self.tris[g].map(|i| if i == gone { keep } else { i });
+                self.note(g);
             }
         }
         joined
@@ -1273,10 +1325,7 @@ impl Global {
         let i = by[1];
         let (m, e) = (t[i], (i + 1) % 3);
         let (a, b) = (t[e], t[(e + 1) % 3]);
-        let Some(g) = self.live().find(|&x| {
-            let u = self.tris[x];
-            (0..3).any(|k| u[k] == b && u[(k + 1) % 3] == a)
-        }) else {
+        let Some(&g) = self.running(b, a).first() else {
             return false;
         };
         let key = (self.point[m as usize], self.orig[g]);
@@ -1309,23 +1358,21 @@ impl Global {
             return false;
         }
         let pk = self.point[keep as usize];
-        let joins_a_copy = self.live().any(|f| {
-            let t = self.tris[f];
-            t.contains(&gone)
-                && t.iter()
-                    .any(|&x| x != keep && x != gone && self.point[x as usize] == pk)
+        let around = self.faces_at(gone);
+        let joins_a_copy = around.iter().any(|&f| {
+            self.tris[f]
+                .iter()
+                .any(|&x| x != keep && x != gone && self.point[x as usize] == pk)
         });
         if joins_a_copy {
             return false;
         }
         self.span[keep as usize] = span;
         self.to[gone as usize] = keep;
-        for f in 0..self.tris.len() {
-            if !self.alive[f] || !self.tris[f].contains(&gone) {
-                continue;
-            }
+        for f in around {
             let t = self.tris[f].map(|i| if i == gone { keep } else { i });
             self.tris[f] = t;
+            self.note(f);
             if t[0] == t[1] || t[1] == t[2] || t[0] == t[2] {
                 self.alive[f] = false;
             }
@@ -1408,13 +1455,7 @@ impl Global {
     fn flip(&mut self, f: usize, e: usize) -> bool {
         let t = self.tris[f];
         let (p, q, m) = (t[e], t[(e + 1) % 3], t[(e + 2) % 3]);
-        let opp: Vec<usize> = self
-            .live()
-            .filter(|&x| {
-                let u = self.tris[x];
-                (0..3).any(|k| u[k] == q && u[(k + 1) % 3] == p)
-            })
-            .collect();
+        let opp = self.running(q, p);
         let [g] = opp[..] else {
             return false;
         };
@@ -1475,8 +1516,9 @@ impl Global {
     fn around(&self, f: usize, e: usize) -> Vec<usize> {
         let t = self.tris[f];
         let (a, b) = (t[e], t[(e + 1) % 3]);
-        self.live()
-            .filter(|&g| self.tris[g].contains(&a) && self.tris[g].contains(&b))
+        self.faces_at(a)
+            .into_iter()
+            .filter(|&g| self.tris[g].contains(&b))
             .collect()
     }
 
@@ -1553,6 +1595,7 @@ impl Global {
             self.nrm.push(self.nrm[like]);
         }
         self.orig.push(self.orig[like]);
+        self.note(self.tris.len() - 1);
     }
 
     /// Inserts vertex `h` into face `g`: on its edge `e` (from corner `e` to
@@ -1567,7 +1610,7 @@ impl Global {
             return false;
         }
         let twin = |g2: &Global, n: [u32; 3]| {
-            g2.live().any(|x| {
+            g2.faces_at(n[0]).into_iter().any(|x| {
                 let u = g2.tris[x];
                 (0..3).any(|k| u == [n[k], n[(k + 1) % 3], n[(k + 2) % 3]])
             })
@@ -1584,13 +1627,7 @@ impl Global {
             }
             Some(e) => {
                 let (a, b, c) = (t[e], t[(e + 1) % 3], t[(e + 2) % 3]);
-                let opp: Vec<usize> = self
-                    .live()
-                    .filter(|&x| {
-                        let u = self.tris[x];
-                        (0..3).any(|k| u[k] == b && u[(k + 1) % 3] == a)
-                    })
-                    .collect();
+                let opp = self.running(b, a);
                 if opp.len() != 1 {
                     return false;
                 }
@@ -1737,6 +1774,7 @@ fn run(d: &Draft, cap: bool, descend: bool) -> Result<(Rounded, bool)> {
         alive: vec![],
         to: vec![],
         orig: vec![],
+        at: vec![],
         span: vec![],
     };
     let mut origin: Vec<Option<u32>> = vec![None; nv];
@@ -1796,6 +1834,7 @@ fn run(d: &Draft, cap: bool, descend: bool) -> Result<(Rounded, bool)> {
     g.to = (0..g.v.len() as u32).collect();
     g.orig = (0..g.tris.len() as u32).collect();
     g.span = vec![[0.0; 3]; g.v.len()];
+    g.index();
     for (i, o) in origin.iter().enumerate() {
         if let Some(o) = *o {
             let at = g.v[o as usize];
@@ -2536,7 +2575,7 @@ mod operations {
     fn global(v: Vec<[f64; 3]>, tris: Vec<[u32; 3]>, point: Vec<u32>) -> Global {
         let n = v.len();
         let f = tris.len();
-        Global {
+        let mut g = Global {
             span: vec![[0.0; 3]; n],
             rows: (0..n as u32).map(|i| (i < 4).then_some(i)).collect(),
             to: (0..n as u32).collect(),
@@ -2547,7 +2586,10 @@ mod operations {
             alive: vec![true; f],
             orig: (0..f as u32).collect(),
             tris,
-        }
+            at: vec![],
+        };
+        g.index();
+        g
     }
 
     fn live(g: &Global) -> Vec<[u32; 3]> {
@@ -2631,6 +2673,35 @@ mod operations {
         assert!(is_closed_manifold(&live(&g)));
         assert_eq!(live(&g).len(), 6);
         assert!(live(&g).iter().all(|t| !(t.contains(&0) && t.contains(&1))));
+    }
+
+    #[test]
+    fn the_vertex_index_finds_what_a_scan_finds() {
+        let e = [1.0, 0.0, 0.0];
+        let f = [1.0000000000000002, 0.0, 0.0];
+        let mut g = global(
+            vec![A, B, C, D, e, f],
+            TETRA.to_vec(),
+            vec![0, 1, 2, 3, 4, 5],
+        );
+        let agrees = |g: &Global| {
+            (0..g.v.len() as u32).all(|v| {
+                let scan: Vec<usize> = g.live().filter(|&x| g.tris[x].contains(&v)).collect();
+                g.faces_at(v) == scan
+            })
+        };
+        assert!(agrees(&g));
+        assert!(g.insert(4, 1, Some(0)));
+        assert!(agrees(&g));
+        assert!(g.insert(5, 0, None));
+        assert!(agrees(&g));
+        let flipped = (0..g.tris.len()).any(|x| g.alive[x] && (0..3).any(|k| g.flip(x, k)));
+        assert!(flipped);
+        assert!(agrees(&g));
+        assert!(g.collapse(5, 4));
+        assert!(agrees(&g));
+        g.merge_equal();
+        assert!(agrees(&g));
     }
 
     #[test]

@@ -65,6 +65,13 @@ All notable changes to wireframes are listed here. The format follows
 
 ### Changed
 
+- The rounding operations find the faces around a vertex or an edge through
+  an index of faces per vertex instead of scanning every face, with the same
+  results. The union of the lid chain in `attacks.rs` (460 + 12 faces) took a
+  median of 17.55 s before and 12.75 s after, release build, three
+  interleaved rounds each on one machine at load average 6.7 to 8.2. The
+  descent still validates the faces about each candidate change twice, which
+  takes most of the time on the slow cases of `attacks.rs`.
 - Booleans, `clip_by_surface` and `split_by_plane` of a solid return only
   solids. A result that rounding to f64 left self-intersecting raises
   `wf.KernelError` with its report and mesh; before, it came back closed but
