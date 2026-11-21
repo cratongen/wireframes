@@ -91,7 +91,8 @@ jobs:
 
   # Every wheel on the floor (3.11) and the newest classified Python (3.14). The Linux wheels run
   # in the official python image, aarch64 on an arm64 runner; macOS and Windows use a uv-managed
-  # CPython. matplotlib is the `plot` extra; tests that need other optional packages skip.
+  # CPython. matplotlib is the `plot` extra; pandas, polars and pyarrow back the table conversions
+  # the docstring examples run.
   test:
     if: github.repository == 'cratongen/wireframes'
     name: test ${{ matrix.platform }} py${{ matrix.python }}
@@ -119,7 +120,7 @@ jobs:
         shell: bash
         run: |
           docker run --rm -v "$PWD:/src" -w /src "python:${{ matrix.python }}-slim" sh -ec '
-            python -m pip install -q --only-binary=:all: dist/wireframes-*.whl pytest matplotlib
+            python -m pip install -q --only-binary=:all: dist/wireframes-*.whl pytest matplotlib pandas polars pyarrow
             python -c "import sys, wireframes; print(sys.version, sys.platform, wireframes.__file__)"
             cd /tmp && python -m pytest -q -p no:cacheprovider --rootdir=/src -c /src/pyproject.toml /src/python/tests
           '
@@ -131,7 +132,7 @@ jobs:
         run: |
           uv venv --python ${{ matrix.python }} --managed-python "$RUNNER_TEMP/venv"
           if [ "$RUNNER_OS" = Windows ]; then py="$RUNNER_TEMP/venv/Scripts/python.exe"; else py="$RUNNER_TEMP/venv/bin/python"; fi
-          uv pip install --python "$py" --only-binary=:all: dist/wireframes-*.whl pytest matplotlib
+          uv pip install --python "$py" --only-binary=:all: dist/wireframes-*.whl pytest matplotlib pandas polars pyarrow
           "$py" -c "import sys, wireframes; print(sys.version, sys.platform, wireframes.__file__)"
           cd "$RUNNER_TEMP"
           "$py" -m pytest -q -p no:cacheprovider --rootdir="$GITHUB_WORKSPACE" -c "$GITHUB_WORKSPACE/pyproject.toml" "$GITHUB_WORKSPACE/python/tests"

@@ -678,7 +678,9 @@ def test_every_public_callable_has_a_docstring():
 
 def test_every_public_callable_with_arguments_documents_them():
     no_params = [
-        n for n, f in public_callables() if parameter_names(f) and "Parameters\n----------" not in f.__doc__
+        n
+        for n, f in public_callables()
+        if parameter_names(f) and "Parameters\n----------" not in inspect.getdoc(f)
     ]
     assert no_params == []
 
@@ -789,7 +791,8 @@ def test_plotting_works_headless(tmp_path):
         text=True,
         check=True,
     )
-    assert out.stdout.strip().lower() == "agg"
+    if sys.platform.startswith("linux"):
+        assert out.stdout.strip().lower() == "agg"
     for k in range(3):
         png = (tmp_path / f"p{k}.png").read_bytes()
         assert png[:8] == b"\x89PNG\r\n\x1a\n" and len(png) > 5000

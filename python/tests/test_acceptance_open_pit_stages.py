@@ -5,7 +5,6 @@ overhang, translation exactness, large meshes and determinism. All data are seed
 
 import itertools
 import os
-import resource
 import subprocess
 import sys
 from pathlib import Path
@@ -14,6 +13,11 @@ import numpy as np
 import pytest
 import wireframes as wf
 from conftest import close
+
+try:
+    import resource
+except ImportError:
+    resource = None
 from test_acceptance_open_pit import bench_edges, block_grid, cone, contour_dtm, flat
 
 O = wf.datasets.ORIGIN
@@ -399,6 +403,8 @@ def limit_memory():
 
 
 def intersect_runaway_pair():
+    if resource is None or sys.platform == "darwin":
+        pytest.skip("the address-space limit needs RLIMIT_AS, which Windows lacks and macOS refuses")
     code = RUNAWAY.format(path=str(DATA / "pushback_pair_runaway.npz"))
     env = dict(os.environ, RAYON_NUM_THREADS="2", MALLOC_ARENA_MAX="2")
     out = subprocess.run([sys.executable, "-c", code], env=env, capture_output=True, text=True, timeout=300, check=False,

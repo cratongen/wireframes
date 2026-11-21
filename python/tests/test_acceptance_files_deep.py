@@ -4,8 +4,8 @@ huge declared counts, attribute fidelity, and the Python API as a mining enginee
 are seeded and synthetic."""
 
 import re
-import resource
 import struct
+import sys
 import warnings
 import xml.etree.ElementTree as ET
 import zlib
@@ -14,6 +14,11 @@ from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 import pytest
 import wireframes as wf
+
+try:
+    import resource
+except ImportError:
+    resource = None
 
 TET = np.array([(0, 0, 0), (10, 0, 0), (0, 10, 0), (0, 0, 10)], float)
 TET_FACES = [(0, 2, 1), (0, 1, 3), (0, 3, 2), (1, 2, 3)]
@@ -961,7 +966,12 @@ def test_nonfinite_coordinates_fail_naming_the_file_and_place_everywhere(tmp_pat
 
 
 def peak_mb():
-    return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
+    if resource is None:
+        pytest.skip("the resource module is POSIX only")
+    # ru_maxrss is in bytes on macOS and in kibibytes on Linux
+    return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / (
+        1024**2 if sys.platform == "darwin" else 1024
+    )
 
 
 def test_huge_binary_counts_fail_cleanly_without_allocating(tmp_path):

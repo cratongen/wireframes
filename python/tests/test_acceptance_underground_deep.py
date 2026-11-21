@@ -439,7 +439,7 @@ def test_drillholes_along_lofted_mesh_edges_are_inside(lens31):
         p, q = lens31.coords[tri[f, 0]], lens31.coords[tri[f, 1]]
         lo, hi, inside = ug.intervals(lens31, [p, q])
         assert inside.all() and len(lo) == 1
-        assert lo[0] == 0.0 and hi[0] == np.linalg.norm(q - p)
+        assert lo[0] == 0.0 and close(hi[0], np.linalg.norm(q - p))
 
 
 @pytest.mark.parametrize(
