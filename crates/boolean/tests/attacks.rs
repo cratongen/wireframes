@@ -394,3 +394,52 @@ fn stopes_dipping_62_minus_a_footwall_drive_reduced_is_a_solid() {
         Op::Difference,
     );
 }
+
+/// FNV-1a over the result's coordinate bits, faces, face sources and report.
+fn fingerprint(r: &BooleanResult) -> u64 {
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    let mut eat = |bytes: &[u8]| {
+        for &b in bytes {
+            h = (h ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3);
+        }
+    };
+    for p in r.mesh.vertices() {
+        for x in p {
+            eat(&x.to_bits().to_le_bytes());
+        }
+    }
+    for t in r.mesh.triangles() {
+        for i in t {
+            eat(&i.to_le_bytes());
+        }
+    }
+    for (k, f) in &r.face_source {
+        eat(&[*k]);
+        eat(&f.to_le_bytes());
+    }
+    eat(format!("{:?}", r.rounding).as_bytes());
+    h
+}
+
+/// Results certified before rounding 2, one per stage that certifies them
+/// (plain, conformed, descents, closed slots), stay byte-identical.
+#[test]
+fn results_certified_before_rounding_2_are_unchanged() {
+    let cases = [
+        ("stope_minus_drive", Op::Difference, 8293389490789489354u64),
+        ("development_chain", Op::Union, 2595576053120604914),
+        ("repeat_overlap", Op::Difference, 13066390629059171789),
+        ("pits_sharing_topography", Op::Union, 1276108365545107383),
+        (
+            "stopes_dipping_62_minus_drive",
+            Op::Difference,
+            7529318376704502724,
+        ),
+    ];
+    let got: Vec<(&str, u64)> = cases
+        .iter()
+        .map(|&(name, op, _)| (name, fingerprint(&run(name, op, 5 * MINUTE).2)))
+        .collect();
+    let want: Vec<(&str, u64)> = cases.iter().map(|&(n, _, h)| (n, h)).collect();
+    assert_eq!(got, want);
+}
