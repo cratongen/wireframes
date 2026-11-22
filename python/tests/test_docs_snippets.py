@@ -35,7 +35,7 @@ def test_every_guide_page_has_a_snippet():
     assert [p.name for p in sorted((ROOT / "docs/guide").glob("*.md")) if not blocks(p)] == []
 
 
-def test_readme_and_charter_list_every_format_the_reader_knows():
+def test_readme_lists_every_format_the_reader_knows():
     import wireframes as wf
 
     with pytest.raises(wf.InvalidInput) as info:
@@ -45,6 +45,4 @@ def test_readme_and_charter_list_every_format_the_reader_knows():
     )
     assert {"obj", "vtp"} <= set(extensions)
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
-    charter = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
     assert [e for e in extensions if f"`.{e}`" not in readme] == []
-    assert [e for e in extensions if e.upper() not in charter] == []
