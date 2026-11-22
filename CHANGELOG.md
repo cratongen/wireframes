@@ -113,6 +113,12 @@ The first pre-release on PyPI.
   drafts its result (a vertex copy per umbrella of faces, each shell cleaned up
   on its own) and kept when that certifies. A stope block with slots a few ulps
   wide, split across strike through a slot, now gives two solids.
+- A split of a solid by a coordinate plane (a level, or a constant easting or
+  northing) that neither draft certifies is computed as the intersection or
+  difference of the solid with a box whose face lies exactly on the plane, and
+  kept when that certifies. Two level splits of a twelve-stope block through
+  its own vertices in `attacks.rs` now give two solids. An inclined plane has
+  no such box and can still raise `uncertified`.
   line, or both ends at one point) is unpaired, so `Shells` reports it as
   non-manifold.
 - `split_by_plane` no longer hands the rounding an open part. It found shells on
@@ -189,8 +195,7 @@ The first pre-release on PyPI.
   rounding operations cannot certify raises `wf.KernelError` whose message
   starts with `uncertified`. Ignored tests in `crates/boolean/tests/attacks.rs`
   keep the cases that still raise it: eight stopes in two levels against a
-  common wall at dip 89.6 minus a drive on their floor; two level splits of a
-  rotated stope block through its own vertices; the third union and
+  common wall at dip 89.6 minus a drive on their floor; the third union and
   difference of a raise in a worked
   orebody; and the running union of ten pushbacks clipped by one ground.
 - Some booleans on inputs of a few thousand faces take minutes: the running

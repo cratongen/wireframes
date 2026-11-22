@@ -285,10 +285,8 @@ No other dependency without a line in this table.
    stopes in two levels against a common wall at dip 89.6 minus a drive on their
    floor, found by the property test of `rounding.md` section 10) and runs as an
    ignored test. The mining scenarios of `crates/boolean/tests/attacks_2.rs`
-   found more, each kept as an ignored test marked `attack 2`: two level splits
-   of a rotated stope block through its own vertices, repeated union then
-   difference of a raise in a worked
-   orebody, and the running union of pushbacks clipped by one ground. Tests that
+   found more, each kept as an ignored test marked `attack 2`: repeated union then
+   difference of a raise in a worked orebody, and the running union of pushbacks clipped by one ground. Tests that
    meet the limit read the mesh from the
    error and keep their checks on it, and report the failure rate, never hide it.
 
@@ -1177,7 +1175,13 @@ A part of a closed input that this does not certify is drafted again as a boolea
 drafts its result, and rounded again: each point gets a copy per umbrella of faces
 about it (faces joined across its edges as `Shells` joins them), and each shell is
 cleaned up on its own. The second draft is kept only when it certifies, so a part
-certified by the first is unchanged.
+certified by the first is unchanged. When neither draft certifies a part of a solid
+and the plane is a coordinate plane (`normal` with one nonzero component `k`), the
+part is computed as the intersection (negative side) or difference (positive side)
+of the input with a box whose face lies exactly on `x_k = origin[k]` and which holds
+the mesh with a margin of its largest extent; it is kept when that boolean
+certifies. Any other plane has no box face exactly on it, so this retry does not
+apply to it.
 `split_by_plane_report` returns the two parts with a `RoundingReport` each. When a
 part of a closed mesh is not a solid, the input is validated: for a solid input the
 part errors with `Error::Kernel` carrying its report and mesh (`"uncertified:

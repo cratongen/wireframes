@@ -1045,7 +1045,20 @@ the faces no longer alternate in direction around the edge. Every operation of
 method C places the corner of that face at an existing point, and none of them
 moves it below the wall without inventing a coordinate. This is the gap section
 3.C names (a feature thinner than rounding with no hot point that repairs it),
-met inside one input. Not fixed in this pass.
+met inside one input. Not fixed by any operation of method C.
+
+**Coordinate planes.** The boolean of the block with a box whose top lies on the
+level certifies b and c, as it did for the 120 tries of the attack sweep. Its
+exact result is the same set as the split's part, so a part that neither split
+draft certifies is now, for a coordinate plane, computed that way and kept when
+the boolean certifies (`boxed` in `slice.rs`): a box face lies exactly on
+`x_k = origin[k]` because that is an `f64`. Level splits b and c pass unchanged.
+Why the boolean's rounding certifies them was not traced: its arrangement
+triangulates the cap through the box's top face, which gives the descent
+other faces to act on. This is evidence, not a proof. An inclined plane has no
+box face exactly on it, so an inclined split of a block holding a step thinner
+than rounding at the plane can still raise `uncertified`; no attack case does
+today.
 
 ## 12. Time
 

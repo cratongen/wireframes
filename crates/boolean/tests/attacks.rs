@@ -517,14 +517,12 @@ fn level_split_of_a_stope_block_through_its_vertex_a_is_two_solids() {
 
 /// Seed 12, the first of two horizontal planes through its vertices.
 #[test]
-#[ignore = "attack 2: the split raises uncertified (2 non-manifold edges, 3 self-intersections) for 210 faces"]
 fn level_split_of_a_stope_block_through_its_vertex_b_is_two_solids() {
     split_holds("split_block_level_b");
 }
 
 /// Seed 12, the second horizontal plane.
 #[test]
-#[ignore = "attack 2: the split raises uncertified (14 self-intersections, 4 coplanar overlaps) for 210 faces"]
 fn level_split_of_a_stope_block_through_its_vertex_c_is_two_solids() {
     split_holds("split_block_level_c");
 }

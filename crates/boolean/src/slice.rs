@@ -7,7 +7,7 @@ use wireframes_core::topology::Shells;
 use wireframes_core::{Column, EdgeMap, Error, Mesh, Polylines, Result, Table};
 
 use crate::hp::{self, Pt};
-use crate::ops::{is_closed_result, solid_result};
+use crate::ops::{BooleanOptions, Op, boolean, is_closed_result, solid_result};
 use crate::round::{self, Draft, RoundingReport};
 use crate::triangulate::{Geom, cdt, even_odd};
 
@@ -209,6 +209,53 @@ fn shells_of(
         .map(|c| root(&mut parent, c))
         .collect();
     Ok((shells.of, umbrella))
+}
+
+/// Part `side` (0 negative, 1 positive) of the solid `mesh` as a boolean with
+/// a box whose face lies exactly on the plane, which needs a coordinate
+/// plane: `normal` with one nonzero component `k`, so the face is
+/// `x_k = origin[k]`, an `f64`. `None` for any other plane, a plane outside
+/// the box about the mesh, or a boolean the rounding does not certify.
+fn boxed(
+    mesh: &Mesh,
+    origin: [f64; 3],
+    normal: [f64; 3],
+    side: usize,
+) -> Result<Option<(Mesh, RoundingReport)>> {
+    let axes: Vec<usize> = (0..3).filter(|&k| normal[k] != 0.0).collect();
+    let &[k] = &axes[..] else {
+        return Ok(None);
+    };
+    let (mut lo, mut hi) = ([f64::INFINITY; 3], [f64::NEG_INFINITY; 3]);
+    for p in mesh.vertices() {
+        for j in 0..3 {
+            lo[j] = lo[j].min(p[j]);
+            hi[j] = hi[j].max(p[j]);
+        }
+    }
+    let margin = (0..3).map(|j| hi[j] - lo[j]).fold(1.0, f64::max);
+    let (mut lo, mut hi) = (lo.map(|x| x - margin), hi.map(|x| x + margin));
+    if !(lo[k] < origin[k] && origin[k] < hi[k]) || !mesh.validate(0.0)?.summary.is_solid() {
+        return Ok(None);
+    }
+    if normal[k] > 0.0 {
+        hi[k] = origin[k];
+    } else {
+        lo[k] = origin[k];
+    }
+    let half = wireframes_core::fixtures::box_mesh(lo, hi)
+        .with_crs(mesh.crs.clone())
+        .with_length_unit(mesh.length_unit.clone());
+    let op = if side == 0 {
+        Op::Intersection
+    } else {
+        Op::Difference
+    };
+    match boolean(mesh, &half, op, &BooleanOptions::default()) {
+        Ok(r) => Ok(Some((r.mesh, r.rounding))),
+        Err(Error::Kernel { .. }) => Ok(None),
+        Err(e) => Err(e),
+    }
 }
 
 /// `(negative, positive)`; points on the plane go to positive.
@@ -545,11 +592,13 @@ pub fn split_by_plane_report(
             return Ok(first);
         }
         let again = build(&faces[side], side, true)?;
-        Ok(if again.2 && solid(&again.0)? {
-            again
-        } else {
-            first
-        })
+        if again.2 && solid(&again.0)? {
+            return Ok(again);
+        }
+        if let Some((m, r)) = boxed(mesh, origin, normal, side)? {
+            return Ok((m, r, true));
+        }
+        Ok(first)
     };
     let ((lo, rlo, clo), (hi, rhi, chi)) = (part(0)?, part(1)?);
     if closed && !(clo && chi && solid(&lo)? && solid(&hi)?) && solid(mesh)? {
@@ -695,4 +744,45 @@ pub fn slice_by_plane(
         .with_attributes(attrs)?
         .with_crs(mesh.crs.clone())
         .with_length_unit(mesh.length_unit.clone()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn volume(m: &Mesh) -> f64 {
+        m.triangles()
+            .iter()
+            .map(|t| {
+                let [a, b, c] = t.map(|i| m.vertices()[i as usize]);
+                a[0] * (b[1] * c[2] - b[2] * c[1])
+                    + a[1] * (b[2] * c[0] - b[0] * c[2])
+                    + a[2] * (b[0] * c[1] - b[1] * c[0])
+            })
+            .sum::<f64>()
+            / 6.0
+    }
+
+    #[test]
+    fn a_box_on_a_coordinate_plane_takes_each_side() {
+        let m = wireframes_core::fixtures::box_mesh([0.0; 3], [2.0, 3.0, 4.0]);
+        for (normal, below) in [([0.0, 0.0, 1.0], 6.0), ([0.0, 0.0, -1.0], 18.0)] {
+            let (lo, rl) = boxed(&m, [5.0, 5.0, 1.0], normal, 0).unwrap().unwrap();
+            let (hi, rh) = boxed(&m, [5.0, 5.0, 1.0], normal, 1).unwrap().unwrap();
+            assert!((volume(&lo) - below).abs() <= rl.volume_bound + 1e-12);
+            assert!((volume(&hi) - (24.0 - below)).abs() <= rh.volume_bound + 1e-12);
+            assert!(lo.validate(0.0).unwrap().summary.is_solid());
+            assert!(hi.validate(0.0).unwrap().summary.is_solid());
+        }
+        assert!(
+            boxed(&m, [0.0, 0.0, 1.0], [0.0, 1.0, 1.0], 0)
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            boxed(&m, [0.0, 0.0, 9.0], [0.0, 0.0, 1.0], 0)
+                .unwrap()
+                .is_none()
+        );
+    }
 }
