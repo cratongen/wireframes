@@ -3,6 +3,32 @@
 `wireframes` is a Rust-core, Python-exposed library to read, write, plot, measure,
 and combine 3D solids, surfaces, and strings for mining, geology, and petroleum.
 
+## Agent plugin
+
+Without help, a coding agent guesses at wireframes calls. The plugin gives it the library's rules and tells it to
+read each signature from the installed package, so the code it writes matches your version. One plugin serves
+Claude, Codex, ChatGPT and Antigravity.
+
+In [Claude Code](https://claude.com/claude-code):
+
+```text
+/plugin marketplace add cratongen/wireframes
+/plugin install wireframes@wireframes
+```
+
+In [Codex](https://developers.openai.com/codex), and from there in the ChatGPT desktop app:
+
+```sh
+codex plugin marketplace add cratongen/wireframes
+codex plugin add wireframes@wireframes
+```
+
+In [Antigravity](https://antigravity.google):
+
+```sh
+agy plugin install https://github.com/cratongen/wireframes/tree/main/packaging/plugin
+```
+
 ## Scope and relationship to boitata
 
 `wireframes` is a standalone geometry package with zero dependency on `boitata`.

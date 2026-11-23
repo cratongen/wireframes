@@ -1,0 +1,12 @@
+{
+  "name": "wireframes",
+  "description": "Teaches coding agents the wireframes library for solids, surfaces and strings.",
+  "owner": { "name": "Gustavo Pretto Scholze" },
+  "plugins": [
+    {
+      "name": "wireframes",
+      "source": "./packaging/plugin",
+      "description": "How to write correct wireframes code: the kinds of object, the calls each one takes, and where to look up a signature in the installed package."
+    }
+  ]
+}

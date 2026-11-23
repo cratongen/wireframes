@@ -1,0 +1,29 @@
+{
+  "$schema": "https://antigravity.google/schemas/v1/plugin.json",
+  "name": "wireframes",
+  "displayName": "wireframes",
+  "version": "0.1.0-alpha.1",
+  "description": "How to write correct wireframes code: the kinds of object, the calls each one takes, and where to look up a signature in the installed package.",
+  "author": { "name": "Gustavo Pretto Scholze" },
+  "homepage": "https://cratongen.github.io/wireframes/",
+  "repository": "https://github.com/cratongen/wireframes",
+  "license": "MIT",
+  "keywords": ["mesh", "geometry", "mining", "geology", "boolean"],
+  "suggestedPrompts": [
+    "Validate a solid with wireframes and report the volume",
+    "Clip a solid by a surface with wireframes and check the volume identity",
+    "Compute block fractions of a solid over a block model with wireframes"
+  ],
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "wireframes",
+        "shortDescription": "Solids, surfaces, strings",
+        "longDescription": "How to write correct wireframes code: the kinds of object, the calls each one takes, and where to look up a signature in the installed package.",
+        "developerName": "Gustavo Pretto Scholze",
+        "category": "Coding",
+        "websiteURL": "https://cratongen.github.io/wireframes/"
+      }
+    }
+  }
+}
