@@ -31,10 +31,12 @@ agy plugin install https://github.com/cratongen/wireframes/tree/main/packaging/p
 
 ## Scope and relationship to boitata
 
-`wireframes` is a standalone geometry package with zero dependency on `boitata`.
-Once `wireframes` reaches Milestone 7, `boitata` will depend on `wireframes` and delete
-its internal mesh type (`crates/core/src/mesh.rs`) and mesh readers
-(`crates/io`: PLY, VTK, Gmsh `.msh`, Medit `.mesh`). Grids, block models,
+`wireframes` is a standalone geometry package with zero dependency on `boitata`,
+and `boitata` will never depend on `wireframes`. The two exchange meshes, strings,
+points, grids, block models and drillholes as `__minetypes__` protocol dicts.
+`boitata` keeps a minimal internal mesh for its own kernels. Its mesh readers and
+writers warn in `boitata` 0.8.0 and go away in 0.9.0, so you read and write mesh
+files with `wireframes` and pass the result to `boitata`. Grids, block models,
 drillholes, variograms, kriging, and simulation stay in `boitata`.
 
 ## Stack
@@ -286,12 +288,14 @@ tonnage without warning. `wireframes` enforces three rules:
     the volume matches the input to rounding; it is off by default and needs
     a closed solid.
 
-### M7: Boitata adopts wireframes
+### M7: Boitata reads meshes through wireframes
 
-- **Scope**: publish `wireframes` wheels, add `wireframes` as a dependency of `boitata`,
-  replace `boitata`'s `Mesh` (`crates/core/src/mesh.rs`) and mesh readers
-  (`crates/io`: PLY, VTK, `.msh`, `.mesh`) with `wireframes`, and pass `boitata`'s
-  entire verification and example suite.
+- **Scope**: publish `wireframes` wheels. `boitata` accepts any object with a
+  `__minetypes__` mesh, with no dependency on `wireframes` in Python or Rust, and
+  its examples read meshes with `wireframes`. `boitata` 0.8.0 deprecates its mesh
+  readers and writers (`read_mesh`, `write_mesh`, the mesh path of `read_vtk` and
+  `write_vtk`), 0.9.0 deletes them, and `boitata`'s whole verification and example
+  suite passes.
 - **Acceptance check**:
   ```sh
   mise -C ../boitata run verify   # boitata checked out next to wireframes
@@ -301,7 +305,7 @@ tonnage without warning. `wireframes` enforces three rules:
   (glibc 2.28 or newer), macOS (Intel and Apple silicon) and Windows x64, and
   pip builds from the sdist on other platforms. The release workflow builds and
   tests each wheel when a `v*` tag is pushed. Pull requests have no CI yet, and
-  boitata does not depend on wireframes yet. `mise run compat` checks that a
+  boitata does not take protocol meshes yet. `mise run compat` checks that a
   locally built wheel installs with pip, uv, pixi and conda.
 
 ## Performance

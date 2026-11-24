@@ -67,9 +67,9 @@ Each line: the decision, then why.
 16. `offset` moves vertices along angle-weighted normals and validates the output.
     It refuses an offset whose result self-intersects. A true Minkowski offset is
     deferred.
-17. Gmsh `.msh` and Medit `.mesh` are not in this contract. The README says boitata
-    will delete those readers in M7, so M7 must either keep them in boitata or add
-    them here. Deferred, listed in section 12.
+17. Gmsh `.msh` and Medit `.mesh` are not in this contract. boitata deletes its
+    mesh readers, these two included, in boitata 0.9.0, so wireframes must read and
+    write both before that release. Deferred, listed in section 12.
 18. A valid solid may consist of several closed, outward-oriented, manifold shells
     that touch each other along edges or at vertices, as long as their interiors do
     not overlap (owner decision, 2026-11-19). Contact between shells is information,
@@ -2058,7 +2058,7 @@ These refine the sections above; where they differ, this section wins.
 
 ## 15. Deferred (not in this contract)
 
-Gmsh `.msh` and Medit `.mesh` I/O (needed before M7, see decision 17); loft
+Gmsh `.msh` and Medit `.mesh` I/O (needed before boitata 0.9.0, see decision 17); loft
 branching; true Minkowski offset; self-intersection repair; mesh-mesh intersection
 lines as Polylines (falls out of the arrangement; add as `intersection_lines` in a
 later revision); drape of polylines onto a surface; polygon booleans on
