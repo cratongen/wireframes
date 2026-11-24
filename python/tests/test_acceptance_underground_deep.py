@@ -85,12 +85,21 @@ def lofted_vein(sections=40, thick=0.1, dip=70.0, seed=7):
 
 
 def brute_inside_length(m, a, b):
-    """Inside length of segment a-b from its exact crossings, classifying each piece by its midpoint."""
+    """Inside length of segment a-b from its exact crossings. A piece takes the label of its midpoint, unless the
+    midpoint rounds to within a few ulps of the surface: a hole grazing a vertex can cut a sliver thinner than that
+    rounding, so such a piece takes the direction of the crossing that opens it."""
     length = np.linalg.norm(b - a)
     hits = m.segment_hits([a], [b])
-    t = np.unique(np.concatenate([[0.0], np.array(hits["t"]), [1.0]]))
-    mid = (t[:-1] + t[1:]) / 2
-    return (np.diff(t) * length)[m.locate(a + mid[:, None] * (b - a)) <= 0].sum()
+    at, entering = np.array(hits["t"]), hits["entering"].tolist()
+    t = np.unique(np.concatenate([[0.0], at, [1.0]]))
+    mid = a + ((t[:-1] + t[1:]) / 2)[:, None] * (b - a)
+    inside = m.locate(mid) <= 0
+    near = np.abs(m.signed_distance(mid)) <= 8 * np.spacing(np.abs(mid).max())
+    for i in np.flatnonzero(near):
+        opening = [e for s, e in zip(at, entering, strict=True) if s == t[i] and e is not None]
+        if opening:
+            inside[i] = opening[0]
+    return (np.diff(t) * length)[inside].sum()
 
 
 # ---------------------------------------------------------------- lofting
@@ -428,9 +437,7 @@ def test_drillholes_through_lofted_mesh_vertices(lens31):
         lo, hi, inside = ug.intervals(lens31, [a, b])
         assert lo[0] == 0.0 and (lo[1:] == hi[:-1]).all() and (inside[1:] != inside[:-1]).all()
         got, brute = (hi - lo)[inside].sum(), brute_inside_length(lens31, a, b)
-        # A hole within an ulp of a vertex can graze a chord a few ulps of the UTM coordinates
-        # long; the brute midpoint rounds out of it, so the oracle resolves only that spacing.
-        assert close(got, brute) or abs(got - brute) <= 8 * np.spacing(np.abs(a).max())
+        assert close(got, brute)
 
 
 def test_drillholes_along_lofted_mesh_edges_are_inside(lens31):
