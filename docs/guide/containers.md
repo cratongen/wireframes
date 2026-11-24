@@ -74,6 +74,24 @@ t.drop_null()
 Floats map to float64, integers to int64, booleans to bool and strings to utf8; `None` (and NaN in a float
 column) marks a null.
 
+## Protocol
+
+`Mesh`, `Polylines`, `PointSet` and `Table` implement `__minetypes__`, protocol version 1. The dict holds
+plain values and NumPy arrays. A stored float64, int64, bool, coordinate or triangle buffer is a read-only
+view. A column with a validity mask is copied: a float null becomes NaN, an int null widens the column to
+float64, and a bool or text null becomes int32 codes with `-1` for the missing row. There is no mask array
+in the dict. `from_minetypes` copies a dict, or any object whose `__minetypes__` returns one, back into a
+wireframes object. An open part needs at least two vertices; one vertex belongs in a `PointSet`.
+
+```python
+box = wf.datasets.box([0, 0, 0], [1, 1, 1])
+spec = box.__minetypes__()
+assert spec["kind"] == "mesh" and spec["triangles"].dtype.name == "uint32"
+assert wf.Mesh.from_minetypes(spec).volume == 1.0
+column = wf.Table({"au": [1.0, None]}).__minetypes__()["columns"]["au"]
+assert column[0] == 1.0 and np.isnan(column[1])
+```
+
 ## Labels
 
 `crs` and `length_unit` are labels. Operations that combine two geometries check that declared labels match and

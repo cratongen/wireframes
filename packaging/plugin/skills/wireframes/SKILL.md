@@ -213,10 +213,10 @@ mesh on each pass validates again.
 The same holds for `locate`, `contains`, `signed_distance`, `distance`, `closest_point`, `ray_hits` and
 `segment_hits`: pass the whole array. `trace_intervals(trace, depths)` takes the whole trace.
 
-`block_fraction` takes one `size` for every centroid in the call. On a regular or masked boitata model that
-size is `model.size`, and only when `model.extents is None` and `model.rotation` is `(0, 0, 0)`. A
-sub-blocked model stores a different box on each row. This call has no size per row, so group the rows that
-share a size and call once per group.
+`block_fraction` takes one `size` for every centroid in an array call. A protocol object of kind `grid` or
+`block_model` is the only argument: pass it alone, and sub-blocks are grouped by world size inside that call.
+An array call still has one size. For a boitata model that does not implement `__minetypes__`, group the rows
+that share a size and call once per group.
 
 ### Read once, write when you leave
 
@@ -280,10 +280,12 @@ fractions = solid.block_fraction(model.coords, model.size)
 model = model.with_column("inside", fractions)
 ```
 
-Use that `block_fraction` call when `model.extents is None` and `model.rotation` is `(0, 0, 0)`. boitata
-stores a rotated model's angles as `(azimuth, dip, rake)` and does not export the `(3, 3)` axis matrix
-`block_fraction` takes in `rotation=`. For a rotated model, build that matrix yourself. Its columns are the
-block axes in world coordinates, orthonormal, determinant +1.
+Use that `block_fraction` call when the boitata model has no `__minetypes__`, `model.extents is None` and
+`model.rotation` is `(0, 0, 0)`. boitata stores a rotated model's angles as `(azimuth, dip, rake)` and does not
+export the `(3, 3)` axis matrix `block_fraction` takes in `rotation=`. For a rotated model without the
+protocol, build that matrix yourself. Its columns are the block axes in world coordinates, orthonormal,
+determinant +1. When the object implements `__minetypes__` and its kind is `grid` or `block_model`, pass the
+object alone. Rotation and sub-block `offset` and `scale` come from the dict.
 
 `transiograms.Grid` is an axis-aligned grid. `grid.coords` are the cell centroids and `grid.size` is the cell
 size, so the same fraction call takes them:

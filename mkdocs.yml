@@ -43,3 +43,4 @@ nav:
       - "Open pit: topography to reconciliation": examples/06-open-pit/README.md
       - "Underground: orebody to tonnage report": examples/07-underground/README.md
       - "Files and repair: exports to valid solids": examples/08-files-repair/README.md
+      - "The mining protocol": examples/09-protocol/README.md

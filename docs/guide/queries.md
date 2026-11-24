@@ -7,8 +7,8 @@
 | `signed_distance(points)` | distance to the surface, negative inside |
 | `distance(points)`, `closest_point(points)` | unsigned distance; closest points, faces and distances |
 | `ray_hits(origins, directions)`, `segment_hits(starts, ends)` | table of hits: `t`, `face`, `x`, `y`, `z`, `kind`, `entering` |
-| `trace_intervals(trace, depths)` | table of runs: `from`, `to`, `inside`, `entry_face`, `exit_face` |
-| `block_fraction(centroids, size, rotation=None)` | fraction of each block inside the solid |
+| `trace_intervals(trace, depths=None)` | table of runs: `from`, `to`, `inside`, `entry_face`, `exit_face` |
+| `block_fraction(centroids, size=None, rotation=None)` | fraction of each block inside the solid |
 
 `locate`, `contains`, `signed_distance`, `trace_intervals` and `block_fraction` need a solid; `distance`,
 `closest_point` and the hit queries take any mesh. The mesh builds its spatial index on the first query and
@@ -31,6 +31,11 @@ solids that split another solid (fault blocks of an orebody, or its mined and un
 to the fraction of the whole. `rotation` takes a `(3, 3)` matrix whose columns are the block axes. A size that is
 not positive raises `wf.InvalidInput`.
 
+A protocol object of kind `grid` or `block_model` is the only argument. `origin` is the minimum corner of cell
+`(0, 0, 0)`, and `rotation` is `(azimuth, dip, rake)` in degrees. A sub-blocked model passes `parent`, `offset`
+and `scale`. A `drillholes` object is the only argument of `trace_intervals`: each hole is the slice of
+`path_coords` and `path_depths` between `path_offsets`, and the table adds `hole_index` as int64.
+
 Both need a solid: an open or otherwise invalid mesh raises `wf.InvalidMesh` with the report.
 
 ```python
@@ -47,6 +52,22 @@ depths = np.array([0.0, 300.0])
 f = solid.block_fraction(centroids, [10, 10, 5])
 iv = solid.trace_intervals(trace_xyz, depths)
 inside = iv.filter(iv["inside"])
+
+model = {
+    "protocol": 1,
+    "kind": "grid",
+    "columns": {},
+    "units": {},
+    "categories": {},
+    "crs": None,
+    "length_unit": None,
+    "origin": [0.0, 0.0, 0.0],
+    "size": [2.0, 2.0, 2.0],
+    "count": [1, 1, 1],
+    "rotation": [0.0, 0.0, 0.0],
+}
+cube = wf.datasets.box([0, 0, 0], [2, 2, 2])
+assert cube.block_fraction(model).tolist() == [1.0]
 ```
 
 ## Example

@@ -6,6 +6,7 @@ mod containers;
 mod errors;
 mod io;
 mod ops;
+mod protocol;
 mod query;
 mod validate;
 

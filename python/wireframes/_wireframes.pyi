@@ -51,6 +51,13 @@ class Table:
         """The table as a polars DataFrame; needs polars."""
     def to_pandas(self) -> Any:
         """The table as a pandas DataFrame; needs pandas."""
+    def __minetypes__(self) -> dict[str, Any]:
+        """Protocol dict, version 1, kind ``table``. Masked columns are copied."""
+    @staticmethod
+    def from_minetypes(obj: Any) -> Table:
+        """A table copied from a protocol dict or an object with ``__minetypes__``."""
+    def __arrow_c_stream__(self, requested_schema: Any = None) -> Any:
+        """Arrow C stream of this table. Needs pyarrow."""
     def __len__(self) -> int: ...
 
 class MeshReport:
@@ -388,12 +395,21 @@ class Mesh:
         """Hits of each ray: ray, t, face, x, y, z, kind, entering."""
     def segment_hits(self, starts: ArrayLike, ends: ArrayLike) -> Table:
         """Hits of each segment: segment, t, face, x, y, z, kind, entering."""
-    def trace_intervals(self, trace: ArrayLike, depths: ArrayLike) -> Table:
-        """Inside and outside runs of a trace: from, to, inside, entry_face, exit_face."""
+    def trace_intervals(self, trace: ArrayLike | Any, depths: ArrayLike | None = None) -> Table:
+        """Inside and outside runs of a trace, or of a ``drillholes`` protocol object."""
     def block_fraction(
-        self, centroids: Points, size: ArrayLike, *, rotation: ArrayLike | None = None
+        self,
+        centroids: Points | Any,
+        size: ArrayLike | None = None,
+        *,
+        rotation: ArrayLike | None = None,
     ) -> Floats:
-        """Exact fraction of each block inside the solid."""
+        """Exact fraction of each block inside the solid. A ``grid`` or ``block_model`` is the only argument."""
+    def __minetypes__(self) -> dict[str, Any]:
+        """Protocol dict, version 1, kind ``mesh``. ``coords`` and ``triangles`` are views."""
+    @staticmethod
+    def from_minetypes(obj: Any) -> Mesh:
+        """A mesh copied from a protocol dict or an object with ``__minetypes__``."""
     def close_to_elevation(self, z: float) -> Mesh:
         """The solid between this surface and the plane at `z`."""
     def decimate(
@@ -511,6 +527,11 @@ class Polylines:
         """Polylines from a long table of vertices."""
     def to_points(self) -> PointSet:
         """Every vertex as a point with feature and part columns."""
+    def __minetypes__(self) -> dict[str, Any]:
+        """Protocol dict, version 1, kind ``polylines``. An open part needs at least two vertices."""
+    @staticmethod
+    def from_minetypes(obj: Any) -> Polylines:
+        """Polylines copied from a protocol dict or an object with ``__minetypes__``."""
 
 class PointSet:
     """3D point cloud with an attribute table."""
@@ -564,6 +585,11 @@ class PointSet:
         """``to_table()`` as a pandas DataFrame."""
     def to_pyarrow(self) -> Any:
         """``to_table()`` as a pyarrow Table."""
+    def __minetypes__(self) -> dict[str, Any]:
+        """Protocol dict, version 1, kind ``point_set``. ``coords`` is a view."""
+    @staticmethod
+    def from_minetypes(obj: Any) -> PointSet:
+        """A point set copied from a protocol dict or an object with ``__minetypes__``."""
 
 class UnstructuredGrid:
     """Volume and mixed cells kept as data for round trips."""

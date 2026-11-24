@@ -403,3 +403,7 @@ Table.to_pandas = _to_pandas
 Table.drop_null = _drop_null
 Polylines.from_table = staticmethod(_from_table)
 Polylines.to_points = _to_points
+
+from . import _protocol
+
+_protocol.install()

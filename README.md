@@ -99,8 +99,8 @@ omitted, and return `(fig, ax)`.
   through `matplotlib` (`wireframes[plot]`). Interactive WebGL or desktop viewers are
   out of scope.
 - **Grids and block models**: regular, masked, and sub-blocked grids live in
-  `boitata.BlockModel`; `wireframes` provides the geometric queries (`block_fraction`,
-  `contains`, `signed_distance`) that `boitata` calls.
+  `boitata.BlockModel`. `wireframes` queries them. `block_fraction` accepts a
+  `grid` or `block_model` protocol object, and `trace_intervals` accepts `drillholes`.
 
 ## Exact booleans and validation contract
 
